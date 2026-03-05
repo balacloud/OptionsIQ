@@ -111,12 +111,32 @@
 
 ---
 
+---
+
+## New Issues Found Day 2
+
+### KI-014: ibkr_provider.py market_data_type defaults to 3 (delayed)
+**File:** `backend/ibkr_provider.py` line 22
+**Problem:** `self.market_data_type = int(os.getenv("IBKR_MARKET_DATA_TYPE", "3"))` — defaults to delayed data. User has confirmed live subscriptions (US Securities Snapshot + Options Streaming). This violates Golden Rule #1.
+**Fix:** Change default to `1`. Remove env var override — reqMarketDataType(1) must be hardcoded at startup per architecture.
+**Phase:** 1
+**Status:** OPEN
+
+### KI-015: /api/integrate/sta-fetch/{ticker} endpoint missing from backend
+**File:** `backend/app.py` (missing endpoint)
+**Problem:** `SwingImportStrip.jsx` now calls `GET /api/integrate/sta-fetch/{ticker}` to pull swing fields from STA. This endpoint is documented in API_CONTRACTS.md but not implemented in the backend. STA connect button will always return 404.
+**Fix:** Add `GET /api/integrate/sta-fetch/<ticker>` route in app.py that calls `analyze_service.fetch_sta_data(ticker)`.
+**Phase:** 4 (API layer)
+**Status:** OPEN
+
+---
+
 ## Summary
 
 | Severity | Count | Resolved |
 |----------|-------|---------|
-| Critical | 4 | 0 |
-| High | 3 | 0 |
+| Critical | 5 | 0 |
+| High | 4 | 0 |
 | Medium | 4 | 0 |
 | Low | 2 | 0 |
-| **Total** | **13** | **0** |
+| **Total** | **15** | **0** |

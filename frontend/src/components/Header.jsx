@@ -1,45 +1,38 @@
-import { useState } from 'react';
-
-export default function Header({ ticker, data }) {
-  const [show, setShow] = useState(false);
+export default function Header({ ticker, data, onIbClick }) {
   const connected = !!data?.ibkr_connected;
-  const source = data?.data_source || 'mock';
-  const quality = data?.quality || (source === 'ibkr' ? 'full' : source === 'ibkr_cache' ? 'cached' : source === 'ibkr_partial' ? 'partial' : 'mock');
-  const sourceMap = {
-    ibkr: { label: 'IB Live', cls: 'src-live' },
-    ibkr_cache: { label: 'IB Cache', cls: 'src-cache' },
-    ibkr_partial: { label: 'IB Partial', cls: 'src-partial' },
-    mock: { label: 'Mock Fallback', cls: 'src-mock' },
-  };
-  const qualityMap = {
-    full: { label: 'Quality: Full', cls: 'q-full' },
-    cached: { label: 'Quality: Cached', cls: 'q-cached' },
-    partial: { label: 'Quality: Partial', cls: 'q-partial' },
-    mock: { label: 'Quality: Mock', cls: 'q-mock' },
-  };
-  const sourceUi = sourceMap[source] || { label: source, cls: 'src-mock' };
-  const qualityUi = qualityMap[quality] || qualityMap.mock;
-  const showWarning = quality !== 'full';
+  const source    = data?.data_source || 'mock';
+
+  const sourceLabel = {
+    ibkr:         'IB Live',
+    ibkr_cache:   'IB Cache',
+    ibkr_partial: 'IB Partial',
+    yfinance:     'yfinance',
+    mock:         'Mock',
+  }[source] || source;
+
   return (
-    <header className="header card">
-      <div>
-        <h1>OptionsIQ 2.0</h1>
-        <div className="sub">{ticker} · ${data?.underlying_price ?? '--'}</div>
-        <div className={`source-pill ${sourceUi.cls}`}>{sourceUi.label}</div>
-        <div className={`quality-pill ${qualityUi.cls}`}>{qualityUi.label}</div>
-        {showWarning ? <div className="quality-note">Live options fields are degraded; verify execution manually.</div> : null}
-      </div>
-      <button className="ib-status" onClick={() => setShow(true)}>
-        <span className={connected ? 'dot green' : 'dot red'}>{connected ? '● IB Gateway' : '○ Mock Mode'}</span>
-      </button>
-      {show ? (
-        <div className="modal" onClick={() => setShow(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            Start IB Gateway/TWS on your configured API port (current setup uses 4001; common defaults are 7497 paper, 7496 live).
-            <button onClick={() => setShow(false)}>Close</button>
+    <div className="card card-sm">
+      <div className="row-between">
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            OptionsIQ
           </div>
+          {ticker && (
+            <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 1 }}>
+              {ticker}
+              {data?.underlying_price && (
+                <span className="monospace" style={{ marginLeft: 6, color: 'var(--text)' }}>
+                  ${data.underlying_price.toFixed(2)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
-      ) : null}
-    </header>
+        <button className="ib-status-dot" onClick={onIbClick}>
+          <span className={`dot ${connected ? 'live' : 'offline'}`}>●</span>
+          <span>{connected ? sourceLabel : 'Offline'}</span>
+        </button>
+      </div>
+    </div>
   );
 }

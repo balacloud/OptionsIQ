@@ -11,51 +11,92 @@ import PaperTradeBanner from './components/PaperTradeBanner';
 import useOptionsData from './hooks/useOptionsData';
 import './index.css';
 
-const defaults = {
+const emptySwing = {
   swing_signal: 'BUY',
-  entry_pullback: 204.15,
-  entry_momentum: 234.35,
-  stop_loss: 192.93,
-  target1: 254.62,
-  target2: 278.36,
-  risk_reward: 4.5,
-  vcp_pivot: 242.05,
-  vcp_confidence: 70,
-  adx: 40.2,
-  last_close: 234.35,
-  s1_support: 225.8,
+  entry_pullback: '',
+  entry_momentum: '',
+  stop_loss: '',
+  target1: '',
+  target2: '',
+  risk_reward: '',
+  vcp_pivot: '',
+  vcp_confidence: '',
+  adx: '',
+  last_close: '',
+  s1_support: '',
   spy_above_200sma: true,
-  spy_5day_return: 0.008,
-  earnings_days_away: 45,
+  spy_5day_return: '',
+  earnings_days_away: '',
+  fomc_days_away: '',
   pattern: 'VCP',
 };
 
+function QualityBanner({ data }) {
+  const source  = data?.data_source;
+  const quality = data?.quality;
+  const asof    = data?.timestamp;
+
+  if (!source || source === 'ibkr') return null;
+
+  let cls = 'banner-cached', icon = 'i', text = '';
+  if (source === 'ibkr_cache') {
+    const mins = asof ? Math.round((Date.now() - new Date(asof + 'Z').getTime()) / 60000) : '?';
+    text = `Using cached chain — data from ${mins} min ago. Refreshing in background.`;
+    cls = 'banner-cached';
+    icon = 'i';
+  } else if (source === 'yfinance') {
+    text = 'Live data unavailable — using yfinance. Greeks are estimated via Black-Scholes.';
+    cls = 'banner-delayed';
+    icon = '!';
+  } else if (source === 'mock') {
+    text = 'MOCK DATA — for development only. Do not paper trade.';
+    cls = 'banner-mock';
+    icon = '!';
+  } else if (quality === 'partial') {
+    text = 'Partial chain — some greeks may be missing. Verify strikes manually.';
+    cls = 'banner-delayed';
+    icon = '!';
+  } else {
+    return null;
+  }
+
+  return (
+    <div className={`quality-banner ${cls}`}>
+      <span className="banner-icon">{icon}</span>
+      <span className="banner-text">{text}</span>
+    </div>
+  );
+}
+
 export default function App() {
   const { data, loading, error, analyze } = useOptionsData();
-  const [ticker, setTicker] = useState('AME');
+  const [ticker, setTicker]     = useState('');
   const [direction, setDirection] = useState('buy_call');
-  const [swing, setSwing] = useState(defaults);
+  const [swing, setSwing]       = useState(emptySwing);
+  const [ibModal, setIbModal]   = useState(false);
 
   const lockedBySignal = useMemo(() => (
     swing.swing_signal === 'BUY' ? ['sell_call', 'buy_put'] : []
   ), [swing.swing_signal]);
 
   useEffect(() => {
-    if (swing.swing_signal === 'BUY') setDirection((d) => (d === 'sell_call' || d === 'buy_put' ? 'buy_call' : d));
+    if (swing.swing_signal === 'BUY') {
+      setDirection((d) => (d === 'sell_call' || d === 'buy_put' ? 'buy_call' : d));
+    }
   }, [swing.swing_signal]);
 
   const onAnalyze = async () => {
+    if (!ticker.trim()) return;
     try {
-      await analyze({ ticker, direction, ...swing });
-    } catch (_) {
-      // Error text is already surfaced via useOptionsData `error` state.
-    }
+      await analyze({ ticker: ticker.trim().toUpperCase(), direction, ...swing });
+    } catch (_) {}
   };
 
+  // Support deep-link from STA: ?ticker=AMD&auto=true&swing_data={...}
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlTicker = params.get('ticker');
-    const auto = params.get('auto') === 'true';
+    const params     = new URLSearchParams(window.location.search);
+    const urlTicker  = params.get('ticker');
+    const auto       = params.get('auto') === 'true';
     const swingParam = params.get('swing_data');
     if (urlTicker) setTicker(urlTicker.toUpperCase());
     if (swingParam) {
@@ -64,34 +105,102 @@ export default function App() {
         setSwing((s) => ({ ...s, ...parsed }));
       } catch (_) {}
     }
-    if (auto) {
-      analyze({ ticker: (urlTicker || ticker).toUpperCase(), direction, ...swing }).catch(() => {});
-    } else {
-      onAnalyze();
+    if (auto && urlTicker) {
+      analyze({ ticker: urlTicker.toUpperCase(), direction, ...swing }).catch(() => {});
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="page">
-      <Header ticker={ticker} data={data} loading={loading} />
-      <div className="toolbar">
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} maxLength={8} />
-        <button onClick={onAnalyze} disabled={loading}>{loading ? 'Analyzing...' : 'Analyze'}</button>
+    <div className="app-shell">
+      <QualityBanner data={data} />
+
+      <div className="app-layout">
+        {/* ── Left Panel: controls + verdict ── */}
+        <aside className="left-panel">
+          <Header
+            ticker={ticker}
+            data={data}
+            onIbClick={() => setIbModal(true)}
+          />
+
+          {/* Ticker + Analyze */}
+          <div className="card card-sm">
+            <div className="ticker-bar">
+              <input
+                className="ticker-input"
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                placeholder="AMD"
+                maxLength={8}
+              />
+              <button className="analyze-btn" onClick={onAnalyze} disabled={loading}>
+                {loading ? 'Analyzing...' : 'Analyze'}
+              </button>
+            </div>
+            {data?.underlying_price && (
+              <div style={{ marginTop: 10 }}>
+                <div className="underlying-label">{data.ticker} underlying</div>
+                <div className="underlying-price">${data.underlying_price.toFixed(2)}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Direction */}
+          <div className="card card-sm">
+            <div className="section-title">Direction</div>
+            <DirectionSelector
+              direction={direction}
+              setDirection={setDirection}
+              swingSignal={swing.swing_signal}
+              locked={lockedBySignal}
+            />
+          </div>
+
+          {/* Master Verdict */}
+          <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
+
+          {/* Swing Import — collapsible */}
+          <SwingImportStrip swing={swing} setSwing={setSwing} ticker={ticker} />
+        </aside>
+
+        {/* ── Right Panel: results ── */}
+        <main className="right-panel">
+          {error && <div className="error-bar">{error}</div>}
+
+          <GatesGrid gates={data?.gates || []} />
+          <TopThreeCards
+            strategies={data?.top_strategies || []}
+            gates={data?.gates || []}
+            pnlTable={data?.pnl_table}
+          />
+          <PnLTable
+            table={data?.pnl_table}
+            gateFailed={(data?.gates || []).some((g) => g.id === 'pivot_confirm' && g.status === 'fail')}
+          />
+          <BehavioralChecks checks={data?.behavioral_checks || []} />
+          <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
+        </main>
       </div>
-      <SwingImportStrip swing={swing} setSwing={setSwing} />
-      <DirectionSelector
-        direction={direction}
-        setDirection={setDirection}
-        swingSignal={swing.swing_signal}
-        locked={lockedBySignal}
-      />
-      <MasterVerdict verdict={data?.verdict} />
-      <GatesGrid gates={data?.gates || []} />
-      <BehavioralChecks checks={data?.behavioral_checks || []} />
-      <TopThreeCards strategies={data?.top_strategies || []} gates={data?.gates || []} />
-      <PnLTable table={data?.pnl_table} gateFailed={(data?.gates || []).some((g) => g.id === 'pivot_confirm' && g.status === 'fail')} />
-      <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
-      {error ? <div className="error">{error}</div> : null}
+
+      {/* IB Gateway modal */}
+      {ibModal && (
+        <div className="modal" onClick={() => setIbModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">IB Gateway Connection</div>
+            <div className="modal-body">
+              Start IB Gateway or TWS and enable API connections.<br /><br />
+              <strong>Default ports:</strong><br />
+              7497 — TWS Paper Trading<br />
+              7496 — TWS Live Trading<br />
+              4001 — IB Gateway Live<br />
+              4002 — IB Gateway Paper
+            </div>
+            <div className="modal-footer">
+              <button className="btn-primary" onClick={() => setIbModal(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

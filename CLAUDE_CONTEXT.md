@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 1 (March 5, 2026)
-> **Current Version:** v0.1 (scaffold only — no working code yet)
-> **Project Phase:** Phase 0 complete → Phase 1 starting
+> **Last Updated:** Day 2 (March 5, 2026)
+> **Current Version:** v0.2 (frontend redesigned, backend still scaffold)
+> **Project Phase:** Phase 0 complete, Frontend UI done → Phase 1 (backend) starting
 
 ---
 
@@ -27,18 +27,32 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | Area | Status | Notes |
 |------|--------|-------|
 | Backend | Scaffold only | Codex files copied, not yet refactored |
-| Frontend | Scaffold only | Codex files copied, not yet refactored |
+| Frontend | REDESIGNED | Two-panel desktop layout, collapsible sections, verdict hero |
 | IBKR connection | Not working | app.py still the God Object |
 | Gate logic | Correct (keep) | gate_engine.py verified correct |
 | P&L math | Correct (keep) | pnl_calculator.py verified correct |
 | Strategy ranking | Correct (keep) | strategy_ranker.py verified correct |
 | IV store | Correct (keep) | iv_store.py verified correct |
-| constants.py | Not created yet | Phase 1 task |
+| constants.py | Not created yet | Phase 1 task — next priority |
 | bs_calculator.py | Not created yet | Phase 1 task |
 | data_service.py | Not created yet | Phase 2 task |
 | IB worker thread | Not created yet | Phase 2 task |
 | yfinance_provider | Not created yet | Phase 2 task |
 | analyze_service.py | Not created yet | Phase 3 task |
+| /api/integrate/sta-fetch/{ticker} | Not implemented | Phase 4 — frontend calls it, backend missing |
+
+### Frontend Files (all redesigned Day 2)
+| File | Status |
+|------|--------|
+| index.css | DONE — two-panel grid, collapsible styles, verdict hero, quality banner |
+| App.jsx | DONE — two-panel layout, quality banner, no hardcoded defaults |
+| MasterVerdict.jsx | DONE — hero card, colored bg, gate dot summary |
+| GatesGrid.jsx | DONE — collapsible, dot-bar summary |
+| SwingImportStrip.jsx | DONE — human labels, real STA endpoint, FOMC field, sectioned |
+| TopThreeCards.jsx | DONE — Rank 1 dominant, Ranks 2-3 collapsible |
+| PnLTable.jsx | DONE — collapsible |
+| BehavioralChecks.jsx | DONE — collapsible, block/warn count in header |
+| Header.jsx | DONE — simplified, modal via onIbClick prop |
 
 ---
 
@@ -91,7 +105,7 @@ backend/
 
 ---
 
-## Known Issues (Day 1)
+## Known Issues
 
 Full list: `docs/versioned/KNOWN_ISSUES_DAY1.md`
 
@@ -99,11 +113,13 @@ Critical (blocks paper trading):
 1. app.py God Object — must split before anything works
 2. mock_provider hardcoded to AME — breaks any other ticker
 3. In-memory cache lost on restart
+4. `ibkr_provider.py:22` market_data_type=3 — must be 1 (live subscriptions confirmed) [NEW]
 
 High:
-4. No yfinance middle tier
-5. QUICK_ANALYZE_MODE silently uses fake HV20
-6. _merge_swing() fabricates missing fields silently
+5. No yfinance middle tier
+6. QUICK_ANALYZE_MODE silently uses fake HV20
+7. _merge_swing() fabricates missing fields silently
+8. `/api/integrate/sta-fetch/{ticker}` endpoint missing from backend [NEW]
 
 ---
 
@@ -112,13 +128,16 @@ High:
 | Day | Date | What Happened |
 |-----|------|--------------|
 | Day 1 | Mar 5, 2026 | Project scaffolded. Phase 0 docs created. Codex files ported. |
+| Day 2 | Mar 5, 2026 | GOLDEN_RULES enhanced (STA process layer). Research Plan reviewed, code conflicts documented. Data architecture principles established. Full frontend UI redesign (8 files). |
 
 ---
 
-## Next Session Priorities
+## Next Session Priorities (Day 3)
 
-1. Phase 1: Create `constants.py` (all thresholds from build plan)
-2. Phase 1: Create `bs_calculator.py` (Black-Scholes greeks)
-3. Phase 1: Fix `mock_provider.py` (dynamic pricing per ticker)
-4. Phase 2: Wrap `ibkr_provider.py` in dedicated IB worker thread
-5. Phase 2: Create `data_service.py`
+1. Phase 1: Create `constants.py` (authoritative values from Research Plan Section 4F)
+2. Phase 1: Fix `ibkr_provider.py:22` — change market_data_type from 3 to 1
+3. Phase 1: Create `bs_calculator.py` (Black-Scholes via scipy)
+4. Phase 1: Fix `mock_provider.py` (dynamic pricing, not hardcoded AME)
+5. Phase 1: Fix `iv_store.py` (add entry_price, mark_price columns to paper_trades)
+6. Phase 1: Remove `QUICK_ANALYZE_MODE` from app.py
+7. Phase 4: Add `/api/integrate/sta-fetch/{ticker}` endpoint to backend
