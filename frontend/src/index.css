@@ -1,0 +1,66 @@
+:root {
+  --bg: #0D1117;
+  --bg2: #161B22;
+  --bg3: #1C2333;
+  --green: #00C896;
+  --red: #FF4444;
+  --amber: #F59E0B;
+  --blue: #3B82F6;
+  --purple: #A78BFA;
+  --border: #30363D;
+  --text: #E6EDF3;
+  --text-dim: #8B949E;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at top right, #243252 0%, var(--bg) 45%); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; }
+.page { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+.card { background: linear-gradient(180deg, var(--bg2), var(--bg)); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.toolbar { display: flex; gap: 8px; }
+input, select, button { background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+button { cursor: pointer; }
+.header { display: flex; justify-content: space-between; align-items: center; }
+.sub { color: var(--text-dim); }
+.source-pill { margin-top: 8px; display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+.source-pill.src-live { color: var(--green); border-color: color-mix(in oklab, var(--green) 60%, var(--border)); }
+.source-pill.src-cache { color: var(--blue); border-color: color-mix(in oklab, var(--blue) 60%, var(--border)); }
+.source-pill.src-partial { color: var(--amber); border-color: color-mix(in oklab, var(--amber) 60%, var(--border)); }
+.source-pill.src-mock { color: var(--red); border-color: color-mix(in oklab, var(--red) 60%, var(--border)); }
+.quality-pill { margin-top: 6px; display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); margin-left: 8px; }
+.quality-pill.q-full { color: var(--green); border-color: color-mix(in oklab, var(--green) 60%, var(--border)); }
+.quality-pill.q-cached { color: var(--blue); border-color: color-mix(in oklab, var(--blue) 60%, var(--border)); }
+.quality-pill.q-partial { color: var(--amber); border-color: color-mix(in oklab, var(--amber) 60%, var(--border)); }
+.quality-pill.q-mock { color: var(--red); border-color: color-mix(in oklab, var(--red) 60%, var(--border)); }
+.quality-note { margin-top: 6px; color: var(--amber); font-size: 12px; }
+.dot.green { color: var(--green); }
+.dot.red { color: var(--red); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.cards4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.cards3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.dir-card.active { border-color: var(--blue); }
+.dir-card.disabled { opacity: .4; pointer-events: none; }
+.verdict.green { color: var(--green); }
+.verdict.red { color: var(--red); }
+.verdict.amber { color: var(--amber); }
+.gate { border: 1px solid var(--border); padding: 8px; border-radius: 8px; }
+.gate.pass { border-color: var(--green); }
+.gate.warn { border-color: var(--amber); }
+.gate.fail { border-color: var(--red); }
+.check { border-left: 4px solid var(--purple); padding-left: 10px; margin-bottom: 8px; }
+.strategy-card { position: relative; border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow: hidden; }
+.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.65); display: grid; place-items: center; color: var(--red); font-weight: 700; }
+table { width: 100%; border-collapse: collapse; }
+td, th { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; }
+.row-target { border-left: 4px solid var(--green); }
+.row-stop { color: var(--text-dim); }
+.profit { color: var(--green); font-family: monospace; }
+.loss { color: var(--red); font-family: monospace; }
+.badge.green-b { color: var(--green); }
+.badge.amber-b { color: var(--amber); }
+.row-between { display: flex; justify-content: space-between; align-items: center; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; }
+.modal-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 300px; }
+@media (max-width: 900px) {
+  .grid4, .cards4, .grid3, .cards3 { grid-template-columns: repeat(1, minmax(0,1fr)); }
+}
