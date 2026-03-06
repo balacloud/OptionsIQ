@@ -59,10 +59,18 @@ class IVStore:
                   premium REAL NOT NULL,
                   lots REAL NOT NULL,
                   account_size REAL NOT NULL,
+                  entry_price REAL,
+                  mark_price REAL,
                   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            # Migrate existing databases that predate entry_price / mark_price
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(paper_trades)").fetchall()}
+            if "entry_price" not in existing:
+                conn.execute("ALTER TABLE paper_trades ADD COLUMN entry_price REAL")
+            if "mark_price" not in existing:
+                conn.execute("ALTER TABLE paper_trades ADD COLUMN mark_price REAL")
 
     def store_iv(self, ticker: str, date: str, iv: float, source: str = "ibkr") -> None:
         ticker = ticker.upper().strip()
@@ -170,12 +178,14 @@ class IVStore:
         return round(hv, 2)
 
     def save_paper_trade(self, trade: dict) -> int:
+        entry_price = trade.get("entry_price") or trade.get("premium")
         with self._conn() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO paper_trades
-                (ticker, direction, strategy_rank, strike, expiry, premium, lots, account_size)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (ticker, direction, strategy_rank, strike, expiry, premium,
+                 lots, account_size, entry_price, mark_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     trade["ticker"].upper().strip(),
@@ -186,6 +196,8 @@ class IVStore:
                     float(trade["premium"]),
                     float(trade["lots"]),
                     float(trade["account_size"]),
+                    float(entry_price) if entry_price is not None else None,
+                    float(trade["mark_price"]) if trade.get("mark_price") is not None else None,
                 ),
             )
             return int(cur.lastrowid)
@@ -195,7 +207,7 @@ class IVStore:
             rows = conn.execute(
                 """
                 SELECT id, ticker, direction, strategy_rank, strike, expiry,
-                       premium, lots, account_size, created_at
+                       premium, lots, account_size, entry_price, mark_price, created_at
                 FROM paper_trades
                 ORDER BY id DESC
                 """

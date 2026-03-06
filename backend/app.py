@@ -9,15 +9,20 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
+import requests as _requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
+from constants import STA_BASE_URL
+from data_service import DataService
 from gate_engine import GateEngine
+from ib_worker import IBWorker
 from iv_store import IVStore
 from mock_provider import MockProvider
 from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
+from yfinance_provider import YFinanceProvider
 
 VERSION = "2.0"
 load_dotenv(Path(__file__).resolve().with_name(".env"))
@@ -32,6 +37,16 @@ gate_engine = GateEngine()
 strategy_ranker = StrategyRanker()
 pnl_calculator = PnLCalculator()
 
+# Phase 2: IBWorker + DataService
+_ib_worker = IBWorker()
+_yf_provider = YFinanceProvider()
+data_svc = DataService(
+    ib_worker=_ib_worker,
+    yf_provider=_yf_provider,
+    mock_provider=mock_provider,
+)
+
+# Legacy compat — used by older helpers below until full refactor is done
 IBKRProvider = None
 IBKRNotAvailableError = Exception
 ibkr_provider = None
@@ -327,50 +342,77 @@ def _direction_track(direction: str) -> str:
     return "A" if direction in {"buy_call", "sell_call"} else "B"
 
 
+def _f(v, default):
+    """Parse a float from payload — treats empty string / None as missing."""
+    try:
+        return float(v) if v not in (None, "", "null") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _i(v, default):
+    try:
+        return int(float(v)) if v not in (None, "", "null") else default
+    except (TypeError, ValueError):
+        return default
+
+
 def _merge_swing(payload: dict, underlying: float) -> dict:
     return {
-        "signal": payload.get("swing_signal", "BUY"),
-        "entry_pullback": float(payload.get("entry_pullback", underlying * 0.97)),
-        "entry_momentum": float(payload.get("entry_momentum", underlying)),
-        "stop_loss": float(payload.get("stop_loss", underlying * 0.92)),
-        "target1": float(payload.get("target1", underlying * 1.08)),
-        "target2": float(payload.get("target2", underlying * 1.15)),
-        "risk_reward": float(payload.get("risk_reward", 3.0)),
-        "vcp_pivot": float(payload.get("vcp_pivot", underlying * 1.01)),
-        "vcp_confidence": float(payload.get("vcp_confidence", 70)),
-        "adx": float(payload.get("adx", 35.0)),
-        "last_close": float(payload.get("last_close", underlying)),
-        "s1_support": float(payload.get("s1_support", underlying * 0.95)),
+        "signal": payload.get("swing_signal") or "BUY",
+        "entry_pullback": _f(payload.get("entry_pullback"), underlying * 0.97),
+        "entry_momentum": _f(payload.get("entry_momentum"), underlying),
+        "stop_loss": _f(payload.get("stop_loss"), underlying * 0.92),
+        "target1": _f(payload.get("target1"), underlying * 1.08),
+        "target2": _f(payload.get("target2"), underlying * 1.15),
+        "risk_reward": _f(payload.get("risk_reward"), 3.0),
+        "vcp_pivot": _f(payload.get("vcp_pivot"), underlying * 1.01),
+        "vcp_confidence": _f(payload.get("vcp_confidence"), 70),
+        "adx": _f(payload.get("adx"), 35.0),
+        "last_close": _f(payload.get("last_close"), underlying),
+        "s1_support": _f(payload.get("s1_support"), underlying * 0.95),
         "spy_above_200sma": bool(payload.get("spy_above_200sma", True)),
-        "spy_5day_return": float(payload.get("spy_5day_return", 0.0)),
-        "earnings_days_away": int(payload.get("earnings_days_away", 45)),
-        "pattern": payload.get("pattern", "VCP"),
-        "source": payload.get("source", "manual"),
+        "spy_5day_return": _f(payload.get("spy_5day_return"), 0.0),
+        "earnings_days_away": _i(payload.get("earnings_days_away"), 45),
+        "pattern": payload.get("pattern") or "VCP",
+        "source": payload.get("source") or "manual",
     }
 
 
-def _extract_iv_data(ticker: str, chain: dict, provider) -> dict:
-    quick_mode = str(os.getenv("QUICK_ANALYZE_MODE", "1")).lower() in {"1", "true", "yes"}
+def _extract_iv_data(ticker: str, chain: dict, provider, ib_worker=None) -> dict:
+    # QUICK_ANALYZE_MODE removed (KI-007) — always use real data for HV20.
+    # Golden Rule #2: IBKRProvider must ONLY be called from the ib-worker thread.
+    # Use ib_worker.submit() for any IBKR calls, never call provider methods directly.
     contracts = chain.get("contracts", [])
     ivs = [float(c.get("impliedVol", 0.0)) * 100 for c in contracts if c.get("impliedVol") is not None]
-    current_iv = round(sum(ivs) / len(ivs), 2) if ivs else 20.0
+    current_iv = round(sum(ivs) / len(ivs), 2) if ivs else None
+
+    def _call_provider(fn, *args):
+        """Route IBKR calls through ib_worker; call other providers directly."""
+        if ib_worker is not None and provider is ib_worker.provider:
+            try:
+                return ib_worker.submit(fn, *args, timeout=20.0)
+            except (TimeoutError, Exception) as exc:
+                app.logger.warning("IBWorker IV call timed out/failed: %s", exc)
+                return None if fn.__name__ == "get_historical_iv" else []
+        return fn(*args)
 
     history = iv_store.get_iv_history(ticker, 252)
     if len(history) < 30:
-        hist_source = mock_provider.get_historical_iv(ticker, 365) if quick_mode else provider.get_historical_iv(ticker, 365)
-        for h in hist_source:
-            iv_store.store_iv(ticker, h["date"], h["iv"], source="mock" if provider is mock_provider else "ibkr")
-        history = iv_store.get_iv_history(ticker, 252)
+        hist_source = _call_provider(provider.get_historical_iv, ticker, 365)
+        if hist_source:
+            source_label = "mock" if provider is mock_provider else "ibkr"
+            for h in hist_source:
+                iv_store.store_iv(ticker, h["date"], h["iv"], source=source_label)
+            history = iv_store.get_iv_history(ticker, 252)
 
-    ivr_pct = iv_store.compute_ivr_pct(ticker, current_iv)
-    bars_provider = mock_provider if quick_mode else provider
-    bars = bars_provider.get_ohlcv_daily(ticker, 60) if hasattr(bars_provider, "get_ohlcv_daily") else []
+    ivr_pct = iv_store.compute_ivr_pct(ticker, current_iv) if current_iv is not None else None
+    bars = _call_provider(provider.get_ohlcv_daily, ticker, 60) if hasattr(provider, "get_ohlcv_daily") else []
     if bars:
         iv_store.store_ohlcv(ticker, bars)
     hv_20 = iv_store.compute_hv(ticker, 20)
-    if hv_20 is None:
-        hv_20 = 17.1
-    ratio = round((current_iv / hv_20), 2) if hv_20 else 0.0
+    # Return None for hv_20 if unavailable — never fake it (Golden Rule #11)
+    ratio = round((current_iv / hv_20), 2) if (current_iv and hv_20) else None
 
     return {
         "current_iv": current_iv,
@@ -448,12 +490,14 @@ def _behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
 
 @app.get("/api/health")
 def health():
-    _, connected = _provider_pair()
+    ib_status = data_svc.ibkr_status()
     return jsonify(
         {
             "status": "ok",
-            "ibkr_connected": connected,
-            "mock_mode": not connected,
+            "ibkr_connected": ib_status["connected"],
+            "ibkr_error": ib_status.get("error"),
+            "circuit_breaker": ib_status.get("circuit_breaker"),
+            "mock_mode": not ib_status["connected"],
             "version": VERSION,
         }
     )
@@ -464,7 +508,7 @@ def analyze_options():
     payload = request.get_json(silent=True) or {}
     ticker = str(payload.get("ticker", "AME")).upper().strip()
     direction = str(payload.get("direction", "buy_call")).strip()
-    account_size = float(payload.get("account_size", os.getenv("ACCOUNT_SIZE", 50000)))
+    account_size = float(payload.get("account_size", os.getenv("ACCOUNT_SIZE", 25000)))
     risk_pct = float(payload.get("risk_pct", os.getenv("RISK_PCT", 0.01)))
     planned_hold_days = int(payload.get("planned_hold_days", os.getenv("PLANNED_HOLD_DAYS", 7)))
     chain_profile = str(payload.get("chain_profile", os.getenv("CHAIN_PROFILE_DEFAULT", "smart"))).strip().lower()
@@ -475,10 +519,6 @@ def analyze_options():
     except Exception:
         min_dte = int(os.getenv("IBKR_MIN_DTE", "14"))
 
-    provider, connected = _provider_pair(ensure_connected=False)
-    data_source = "mock"
-    quality = "mock"
-    cache_first = str(os.getenv("ANALYZE_CACHE_FIRST", "1")).lower() in {"1", "true", "yes"}
     underlying_hint = payload.get("last_close")
     try:
         underlying_hint = float(underlying_hint) if underlying_hint is not None else None
@@ -490,81 +530,39 @@ def analyze_options():
     except Exception:
         target_price = underlying_hint
 
-    cached_chain = _cache_chain_get(ticker, chain_profile=chain_profile, direction=direction) if cache_first else None
-    if cached_chain is not None:
-        chain = cached_chain
-        underlying = float(chain.get("underlying_price", mock_provider.get_underlying_price(ticker)))
-        connected = True
-        data_source = "ibkr_cache"
-        quality = _quality_label(data_source, chain)
-        provider = mock_provider
-        _refresh_chain_async(ticker, chain_profile=chain_profile, direction=direction)
-    else:
-        try:
-            chain = _fetch_chain_with_retry(
-                provider,
-                ticker,
-                timeout_sec=_timeout_for_profile(chain_profile),
-                underlying_hint=underlying_hint,
-                direction=direction,
-                target_price=target_price,
-                chain_profile=chain_profile,
-                min_dte=min_dte,
-            )
-            underlying = float(chain.get("underlying_price") or provider.get_underlying_price(ticker))
-            connected = provider is not mock_provider
-            data_source = "ibkr" if connected else "mock"
-            quality = _quality_label(data_source, chain)
-            if connected:
-                _cache_chain_set(ticker, chain, chain_profile=chain_profile, direction=direction)
-        except IBKRNotAvailableError:
-            cached_chain = _cache_chain_get(ticker, chain_profile=chain_profile, direction=direction)
-            if cached_chain is not None:
-                chain = cached_chain
-                underlying = float(chain.get("underlying_price", mock_provider.get_underlying_price(ticker)))
-                connected = True
-                data_source = "ibkr_cache"
-                quality = _quality_label(data_source, chain)
-                provider = mock_provider
-                _refresh_chain_async(ticker, chain_profile=chain_profile, direction=direction)
-            elif (stale_chain := _cache_chain_get(ticker, allow_stale=True, chain_profile=chain_profile, direction=direction)) is not None:
-                chain = stale_chain
-                underlying = float(chain.get("underlying_price", mock_provider.get_underlying_price(ticker)))
-                connected = True
-                data_source = "ibkr_cache"
-                quality = "stale_cache"
-                provider = mock_provider
-                _refresh_chain_async(ticker, chain_profile=chain_profile, direction=direction)
-            elif ibkr_provider is not None and ibkr_provider.is_connected():
-                underlying = float(payload.get("last_close", mock_provider.get_underlying_price(ticker)))
-                chain = _build_partial_chain_from_ib(
-                    ticker,
-                    underlying,
-                    chain_profile=chain_profile,
-                    direction=direction,
-                    min_dte=min_dte,
-                )
-                connected = True
-                data_source = "ibkr_partial"
-                quality = _quality_label(data_source, chain)
-                provider = mock_provider
-            else:
-                chain = mock_provider.get_options_chain(ticker)
-                underlying = float(chain.get("underlying_price"))
-                connected = False
-                data_source = "mock"
-                quality = _quality_label(data_source, chain)
-                provider = mock_provider
+    # Phase 2: data_svc handles provider selection, cache, and circuit breaker
+    chain, data_source = data_svc.get_chain(
+        ticker,
+        profile=chain_profile,
+        direction=direction,
+        underlying_hint=underlying_hint,
+        target_price=target_price,
+        min_dte=min_dte,
+    )
+    underlying = float(chain.get("underlying_price") or data_svc.get_underlying_price(ticker, hint=underlying_hint))
+    connected = data_source not in {"mock"}
+    quality = data_svc.quality_label(data_source, chain)
+
+    # IV data uses the same provider hierarchy via iv_store
+    iv_provider = mock_provider  # for get_historical_iv / get_ohlcv_daily
+    if data_source in {"ibkr_live", "ibkr_cache", "ibkr_stale"} and _ib_worker.provider is not None:
+        iv_provider = _ib_worker.provider
+    elif data_source == "yfinance":
+        iv_provider = _yf_provider
 
     swing_data = _merge_swing(payload, underlying)
-    ivr_data = _extract_iv_data(ticker, chain, provider)
+    ivr_data = _extract_iv_data(ticker, chain, iv_provider, ib_worker=_ib_worker)
 
     engine = GateEngine(planned_hold_days=planned_hold_days)
     strategies_preview = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=45)
     selected = strategies_preview[0] if strategies_preview else {}
 
+    # gate_engine is frozen and calls float() on all numeric fields directly.
+    # None values must be coerced to 0.0 before passing — never let None reach gate_engine.
+    ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
+
     gate_payload = {
-        **ivr_data,
+        **ivr_for_gates,
         **swing_data,
         "underlying_price": underlying,
         "selected_expiry_dte": int(selected.get("dte", 21)),
@@ -577,8 +575,8 @@ def analyze_options():
         "ask": selected.get("ask"),
         "account_size": account_size,
         "risk_pct": risk_pct,
-        "fomc_days_away": int(payload.get("fomc_days_away", 30)),
-        "lots": float(payload.get("lots", 1.0)),
+        "fomc_days_away": _i(payload.get("fomc_days_away"), 30),
+        "lots": _f(payload.get("lots"), 1.0),
     }
 
     gates = engine.run(direction, gate_payload)
@@ -677,7 +675,7 @@ def ivr_debug(ticker: str):
     except Exception:
         chain = _cache_chain_get(ticker) or mock_provider.get_options_chain(ticker)
         provider = mock_provider
-    data = _extract_iv_data(ticker.upper(), chain, provider)
+    data = _extract_iv_data(ticker.upper(), chain, provider, ib_worker=_ib_worker)
     return jsonify(data)
 
 
@@ -720,6 +718,61 @@ def seed_iv(ticker: str):
             "seeded_days": len(hist),
             "earliest_date": hist[0]["date"],
             "latest_date": hist[-1]["date"],
+        }
+    )
+
+
+@app.get("/api/integrate/sta-fetch/<ticker>")
+def sta_fetch(ticker: str):
+    """
+    Fetch swing data from STA (localhost:5001) and return assembled fields.
+    Frontend SwingImportStrip calls this to pre-fill the analysis form.
+    KI-015 fix: endpoint was missing from backend.
+    """
+    symbol = ticker.upper().strip()
+    timeout = 3.0
+
+    try:
+        sr = _requests.get(f"{STA_BASE_URL}/api/sr/{symbol}", timeout=timeout).json()
+        stock = _requests.get(f"{STA_BASE_URL}/api/stock/{symbol}", timeout=timeout).json()
+        patterns = _requests.get(f"{STA_BASE_URL}/api/patterns/{symbol}", timeout=timeout).json()
+        context = _requests.get(f"{STA_BASE_URL}/api/context/SPY", timeout=timeout).json()
+        earnings = _requests.get(f"{STA_BASE_URL}/api/earnings/{symbol}", timeout=timeout).json()
+    except Exception:
+        return jsonify(
+            {
+                "status": "offline",
+                "source": "manual",
+                "message": f"STA not reachable at {STA_BASE_URL} — use Manual mode",
+            }
+        )
+
+    levels = sr.get("levels", {})
+    vcp = patterns.get("vcp", {})
+    cycles = context.get("cycles", {})
+
+    return jsonify(
+        {
+            "status": "ok",
+            "source": "sta_live",
+            "ticker": symbol,
+            "swing_signal": stock.get("swing_signal", "BUY"),
+            "entry_pullback": levels.get("entry_pullback"),
+            "entry_momentum": stock.get("last_close"),
+            "stop_loss": levels.get("stop_loss"),
+            "target1": levels.get("target1"),
+            "target2": levels.get("target2"),
+            "risk_reward": stock.get("risk_reward"),
+            "vcp_pivot": vcp.get("pivot"),
+            "vcp_confidence": vcp.get("confidence"),
+            "adx": stock.get("adx"),
+            "last_close": stock.get("last_close"),
+            "s1_support": levels.get("s1_support"),
+            "spy_above_200sma": stock.get("spy_above_200sma"),
+            "spy_5day_return": stock.get("spy_5day_return"),
+            "earnings_days_away": earnings.get("days_away"),
+            "pattern": patterns.get("pattern"),
+            "fomc_days_away": cycles.get("fomc_days"),
         }
     )
 

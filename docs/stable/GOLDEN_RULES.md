@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 2 (March 5, 2026)
+> **Last Updated:** Day 3 (March 6, 2026)
 
 ---
 
@@ -216,6 +216,14 @@ grep -n "@app.route" backend/app.py
 - **Progressive disclosure** — Secondary sections collapsed by default. Show summary indicators (dot-bar, count) in headers so users can decide whether to expand.
 - **Human-readable labels in UI** — Never expose internal field names (`entry_pullback`) to users. Labels are the interface; field names are implementation details.
 - **Desktop two-panel: left sticky** — Verdict and controls always visible while results scroll on the right.
+
+### Day 3: Concurrency and Threading
+- **IBWorker owns the IB() instance — no exceptions.** Even helper methods like get_historical_iv() and get_ohlcv_daily() must go through IBWorker.submit(). Calling ib_insync methods from any other thread causes asyncio event-loop conflicts that hang indefinitely with no error message.
+- **Queue poisoning is a real threat.** When submit(timeout=24s) times out, the worker keeps running. Every subsequent request waits for the hung call to finish. Fix: add `expires_at` to each `_Request` so the worker discards stale requests.
+- **ib.RequestTimeout=0 means unlimited.** Always set `ib.RequestTimeout = N` before any reqTickers call. Otherwise a slow IBKR response blocks the worker indefinitely.
+- **Frozen files can be worked around.** gate_engine.py is frozen (math correct). But it calls float() on all keys directly — if a value is None (not missing), float(None) crashes. Fix: coerce None → 0.0 in gate_payload construction before passing to gate_engine. Never modify the gate math; adapt the inputs.
+- **Direction-aware fetching is mandatory for performance.** Fetching 12 generic ATM contracts when the user wants ITM delta-0.68 calls wastes IBKR quota and time. Always target the direction's DTE sweet spot (buyers 45-90, sellers 21-45) and strike zone (buyers 8-20% ITM, sellers ATM ±6%).
+- **Structure cache (reqSecDefOptParams) is free speed.** Chain structure (strikes + expiries) is stable for 4+ hours intraday. Cache it in memory. First call populates; subsequent calls skip the round-trip entirely.
 
 ### Day 1: Scaffold Lessons
 - **Read frozen files before touching them** — `gate_engine.py`, `pnl_calculator.py`, `strategy_ranker.py`, `iv_store.py` are verified correct; the only allowed change is importing from `constants.py`

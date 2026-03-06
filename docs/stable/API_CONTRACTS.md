@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 1 (March 5, 2026)
+> **Last Updated:** Day 3 (March 6, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -12,10 +12,16 @@ Returns connection status of all subsystems.
 ```json
 {
   "status": "ok",
-  "ibkr": "connected" | "offline" | "error",
-  "data_tier": "live" | "cached" | "yfinance" | "mock",
-  "ib_worker": "running" | "stopped",
-  "version": "1.0.0"
+  "ibkr_connected": true,
+  "ibkr_error": null,
+  "circuit_breaker": {
+    "open": false,
+    "failures": 0,
+    "open_until": null,
+    "seconds_remaining": 0.0
+  },
+  "mock_mode": false,
+  "version": "2.0"
 }
 ```
 
@@ -30,8 +36,13 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
 {
   "ticker": "AMD",
   "direction": "buy_call" | "sell_call" | "buy_put" | "sell_put",
+  "chain_profile": "smart" | "full",
+  "account_size": 25000,
+  "risk_pct": 0.01,
+  "planned_hold_days": 7,
+  "min_dte": 14,
 
-  // Swing fields (from STA or manual entry)
+  // Swing fields (from STA or manual entry — all optional, defaults computed from underlying)
   "swing_signal": "BUY" | "SELL",
   "entry_pullback": 204.15,
   "entry_momentum": 234.35,
@@ -48,58 +59,106 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
   "spy_5day_return": 0.008,
   "earnings_days_away": 45,
   "pattern": "VCP",
-  "fomc_days_away": 21
+  "fomc_days_away": 21,
+  "lots": 1.0
 }
 ```
+**Note:** Empty strings `""` are treated as missing (same as omitting the field).
 
 **Response:**
 ```json
 {
   "ticker": "AMD",
   "direction": "buy_call",
-  "data_quality": "live" | "cached" | "yfinance" | "mock",
+  "track": "A",
+  "underlying_price": 198.53,
+  "data_source": "ibkr_live" | "ibkr_cache" | "ibkr_stale" | "yfinance" | "mock",
+  "chain_profile": "smart",
+  "min_dte": 14,
+  "quality": "live" | "cached" | "stale" | "yfinance" | "degraded" | "partial" | "mock",
+  "chain_quality": {
+    "contracts": 8,
+    "core_complete_pct": 100.0,
+    "greeks_complete_pct": 87.5,
+    "quote_complete_pct": 0.0
+  },
+  "ibkr_connected": true,
+  "timestamp": "2026-03-06T11:30:00",
+  "swing_data": { ... },
   "verdict": {
-    "overall": "GO" | "CAUTION" | "NO_GO",
-    "gates_passed": 7,
-    "gates_total": 9,
-    "hard_block": false
+    "color": "green" | "amber" | "red",
+    "score_label": "GO",
+    "headline": "Strong setup — IV cheap, momentum confirmed",
+    "pass": 7,
+    "warn": 1,
+    "fail": 1,
+    "total": 9
   },
   "gates": [
     {
       "id": "ivr_check",
-      "label": "IV Rank < 30%",
+      "name": "IV Rank",
       "status": "pass" | "warn" | "fail",
       "value": "22.4%",
       "detail": "IVR 22.4 — cheap IV, good time to buy"
     }
   ],
-  "behavioral_checks": [],
+  "behavioral_checks": [
+    {
+      "id": "gate8_block",
+      "type": "hard_block" | "warning" | "info",
+      "label": "Hard Block: Pivot Not Confirmed",
+      "message": "..."
+    }
+  ],
   "top_strategies": [
     {
       "rank": 1,
       "label": "ITM Call — delta 0.68",
       "strategy_type": "itm_call",
-      "strike": 225.0,
-      "expiry": "2026-04-17",
-      "dte": 43,
+      "strike": 180.0,
+      "expiry": "2026-04-24",
+      "dte": 49,
       "premium": 14.20,
-      "delta": 0.68,
+      "delta": 0.731,
       "theta": -0.12,
       "vega": 0.18,
-      "iv": 0.38,
-      "breakeven": 239.20,
-      "max_loss_per_lot": 1420.0,
-      "premium_per_lot": 1420.0,
-      "lots_at_1pct": 1.76,
-      "data_source": "ibkr_live"
+      "iv": 0.38
     }
   ],
-  "pnl_table": {
-    "scenarios": [...],
-    "footer": {...}
-  }
+  "pnl_table": { ... },
+  "ivr_data": {
+    "current_iv": 56.87,
+    "ivr_pct": 60.61,
+    "hv_20": 58.56,
+    "hv_iv_ratio": 0.97,
+    "history_days": 231,
+    "fallback_used": false
+  },
+  "put_call_ratio": 0.85,
+  "max_pain_strike": 195.0,
+  "recommended_dte": 49,
+  "direction_locked": []
 }
 ```
+
+---
+
+## GET /api/options/chain/{ticker}
+
+Debug endpoint — returns raw chain data for a ticker.
+
+**Query params:** `chain_profile=smart|full`, `min_dte=14`, `direction=buy_call|...`, `target_price=float`
+
+**Response:** chain dict with `ibkr_connected`, `data_source`, `contracts[]`
+
+---
+
+## GET /api/options/ivr/{ticker}
+
+Debug endpoint — returns IV/HV data for a ticker.
+
+**Response:** same structure as `ivr_data` in analyze response.
 
 ---
 
@@ -138,43 +197,33 @@ Calls STA at localhost:5001 and assembles swing fields for the given ticker.
 {
   "status": "offline",
   "source": "manual",
-  "message": "STA not reachable at localhost:5001 — use Manual mode"
+  "message": "STA not reachable at http://localhost:5001 — use Manual mode"
 }
 ```
 
 ---
 
-## GET /api/paper-trades
+## GET /api/integrate/ping
 
-Returns all recorded paper trades, newest first.
+Health check for STA integration.
 
-**Response:**
-```json
-{
-  "trades": [
-    {
-      "id": 1,
-      "ticker": "AMD",
-      "direction": "buy_call",
-      "strategy_rank": 1,
-      "strike": 225.0,
-      "expiry": "2026-04-17",
-      "premium": 14.20,
-      "lots": 1.0,
-      "account_size": 25000,
-      "entry_price": 14.20,
-      "mark_price": 16.45,
-      "unrealized_pnl": 225.0,
-      "data_quality": "live",
-      "created_at": "2026-03-05T10:30:00"
-    }
-  ]
-}
-```
+**Response:** `{"status": "ok", "version": "2.0", "accepts_swing_data": true}`
 
 ---
 
-## POST /api/paper-trades
+## POST /api/integrate/status
+
+**Response:** `{"status": "ready", "accepts_swing_data": true, "version": "2.0"}`
+
+---
+
+## GET /api/integrate/schema
+
+Returns expected field names and types for the POST /api/options/analyze body.
+
+---
+
+## POST /api/options/paper-trade
 
 Record a new paper trade.
 
@@ -184,21 +233,31 @@ Record a new paper trade.
   "ticker": "AMD",
   "direction": "buy_call",
   "strategy_rank": 1,
-  "strike": 225.0,
-  "expiry": "2026-04-17",
+  "strike": 180.0,
+  "expiry": "2026-04-24",
   "premium": 14.20,
   "lots": 1.0,
   "account_size": 25000
 }
 ```
 
-**Response:**
-```json
-{
-  "id": 1,
-  "status": "recorded"
-}
-```
+**Response:** `{"success": true, "trade_id": 1}`
+
+---
+
+## GET /api/options/paper-trades
+
+Returns all recorded paper trades with mark-to-market P&L.
+
+**Response:** Array of trade objects with `current_underlying` and `mark_to_market_pnl`.
+
+---
+
+## POST /api/options/seed-iv/{ticker}
+
+Seeds IV history for a ticker from IBKR (or mock fallback).
+
+**Response:** `{"seeded_days": 231, "earliest_date": "2025-03-05", "latest_date": "2026-03-05"}`
 
 ---
 
