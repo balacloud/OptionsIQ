@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -22,13 +23,14 @@ class _Stop:
 
 
 class _Request:
-    __slots__ = ("fn", "args", "kwargs", "result_q")
+    __slots__ = ("fn", "args", "kwargs", "result_q", "expires_at")
 
-    def __init__(self, fn: Callable, args: tuple, kwargs: dict) -> None:
+    def __init__(self, fn: Callable, args: tuple, kwargs: dict, timeout: float) -> None:
         self.fn = fn
         self.args = args
         self.kwargs = kwargs
         self.result_q: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
+        self.expires_at: float = time.monotonic() + timeout
 
 
 class IBWorker:
@@ -79,6 +81,10 @@ class IBWorker:
             if isinstance(req, _Stop):
                 logger.info("IBWorker: shutting down")
                 break
+            if time.monotonic() > req.expires_at:
+                logger.warning("IBWorker: discarding expired request %s (queue poisoning prevention)", req.fn.__name__)
+                req.result_q.put(("err", TimeoutError(f"Request expired in queue: {req.fn.__name__}")))
+                continue
             try:
                 result = req.fn(*req.args, **req.kwargs)
                 req.result_q.put(("ok", result))
@@ -92,7 +98,7 @@ class IBWorker:
         Run *fn* in the worker thread. Blocks until done or timeout.
         Raises TimeoutError on timeout; re-raises provider exceptions.
         """
-        req = _Request(fn, args, kwargs)
+        req = _Request(fn, args, kwargs, timeout)
         self._req_queue.put(req)
         try:
             status, value = req.result_q.get(timeout=timeout)

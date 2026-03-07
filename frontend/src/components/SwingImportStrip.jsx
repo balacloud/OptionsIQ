@@ -36,11 +36,11 @@ export default function SwingImportStrip({ swing, setSwing, ticker }) {
       const res = await fetch(`${API_BASE}/api/integrate/sta-fetch/${ticker.trim().toUpperCase()}`);
       if (!res.ok) throw new Error(`STA returned ${res.status}`);
       const json = await res.json();
-      if (json && !json.error) {
+      if (json?.status === 'ok') {
         setSwing((s) => ({ ...s, ...json }));
         setStaLive(true);
       } else {
-        throw new Error(json?.error || 'No data returned');
+        throw new Error(json?.message || json?.error || 'STA returned no data');
       }
     } catch (e) {
       setStaError(`STA offline — use Manual mode. (${e.message})`);

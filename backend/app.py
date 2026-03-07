@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import os
 import logging
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -37,7 +33,7 @@ gate_engine = GateEngine()
 strategy_ranker = StrategyRanker()
 pnl_calculator = PnLCalculator()
 
-# Phase 2: IBWorker + DataService
+# Phase 2+: IBWorker (single IB() thread) + DataService (cascade + SQLite cache + CB)
 _ib_worker = IBWorker()
 _yf_provider = YFinanceProvider()
 data_svc = DataService(
@@ -46,171 +42,20 @@ data_svc = DataService(
     mock_provider=mock_provider,
 )
 
-# Legacy compat — used by older helpers below until full refactor is done
-IBKRProvider = None
-IBKRNotAvailableError = Exception
-ibkr_provider = None
-ibkr_init_error: str | None = None
-_chain_cache: dict[str, dict] = {}
-_chain_cache_lock = threading.Lock()
-_ib_chain_failures = 0
-_ib_chain_open_until = 0.0
-_ib_chain_lock = threading.Lock()
-_refreshing_tickers: set[str] = set()
-_refresh_lock = threading.Lock()
 
+# ─── Shared helpers ───────────────────────────────────────────────────────────
 
-def _chain_cache_key(ticker: str, chain_profile: str = "smart", direction: str | None = None) -> str:
-    p = (chain_profile or "smart").strip().lower()
-    d = (direction or "all").strip().lower()
-    return f"{ticker.upper()}::{p}::{d}"
-
-
-def _load_ibkr_provider() -> None:
-    global IBKRProvider, IBKRNotAvailableError, ibkr_provider, ibkr_init_error
-    try:
-        from ibkr_provider import IBKRNotAvailableError as _IBKRNotAvailableError, IBKRProvider as _IBKRProvider
-
-        IBKRProvider = _IBKRProvider
-        IBKRNotAvailableError = _IBKRNotAvailableError
-        ibkr_provider = IBKRProvider()
-        ibkr_init_error = None
-    except Exception as exc:
-        ibkr_provider = None
-        ibkr_init_error = f"{type(exc).__name__}: {exc}"
-
-
-_load_ibkr_provider()
-
-
-def _provider_pair(ensure_connected: bool = True):
-    connected = False
-    if ibkr_provider is None:
-        _load_ibkr_provider()
-        if ibkr_init_error:
-            app.logger.warning("IBKR provider init failed: %s", ibkr_init_error)
-    if ibkr_provider is not None:
+def _get_live_price(ticker: str) -> float:
+    """Get underlying price via IBWorker (if connected) or yfinance fallback."""
+    if _ib_worker.is_connected() and _ib_worker.provider:
         try:
-            if ensure_connected and not ibkr_provider.is_connected() and hasattr(ibkr_provider, "_ensure_connected"):
-                ibkr_provider._ensure_connected()
-            connected = ibkr_provider.is_connected()
-        except Exception as exc:
-            connected = False
-            app.logger.warning("IBKR connect check failed: %s: %s", type(exc).__name__, exc)
-    if not ensure_connected and ibkr_provider is not None:
-        return ibkr_provider, connected
-    if not connected:
-        app.logger.info("IB Gateway not available — using mock data")
-    return (ibkr_provider if connected else mock_provider), connected
-
-
-def _get_chain_with_timeout(
-    provider,
-    ticker: str,
-    timeout_sec: float = 12.0,
-    underlying_hint: float | None = None,
-    direction: str | None = None,
-    target_price: float | None = None,
-    chain_profile: str | None = None,
-    min_dte: int | None = None,
-) -> dict:
-    if provider is mock_provider:
-        return provider.get_options_chain(ticker)
-    if not _ib_chain_allowed():
-        raise IBKRNotAvailableError("IB chain circuit open")
-    ex = ThreadPoolExecutor(max_workers=1)
-    fut = ex.submit(provider.get_options_chain, ticker, underlying_hint, direction, target_price, chain_profile, min_dte)
+            return _ib_worker.submit(_ib_worker.provider.get_underlying_price, ticker, timeout=10.0)
+        except Exception:
+            pass
     try:
-        chain = fut.result(timeout=timeout_sec)
-        _ib_chain_record(success=True)
-        return chain
-    except FutureTimeoutError:
-        app.logger.warning("IB chain request timed out after %.1fs", timeout_sec)
-        fut.cancel()
-        ex.shutdown(wait=False, cancel_futures=True)
-        _ib_chain_record(success=False)
-        raise IBKRNotAvailableError("IB chain timeout")
+        return _yf_provider.get_underlying_price(ticker)
     except Exception:
-        _ib_chain_record(success=False)
-        raise
-    finally:
-        ex.shutdown(wait=False, cancel_futures=True)
-
-
-def _fetch_chain_with_retry(
-    provider,
-    ticker: str,
-    timeout_sec: float,
-    underlying_hint: float | None = None,
-    direction: str | None = None,
-    target_price: float | None = None,
-    chain_profile: str | None = None,
-    min_dte: int | None = None,
-) -> dict:
-    attempts = max(1, int(os.getenv("IB_CHAIN_RETRY_ATTEMPTS", "2")))
-    backoff = float(os.getenv("IB_CHAIN_RETRY_BACKOFF_SEC", "0.6"))
-    last_err = None
-    for i in range(attempts):
-        try:
-            return _get_chain_with_timeout(
-                provider,
-                ticker,
-                timeout_sec=timeout_sec,
-                underlying_hint=underlying_hint,
-                direction=direction,
-                target_price=target_price,
-                chain_profile=chain_profile,
-                min_dte=min_dte,
-            )
-        except Exception as exc:
-            last_err = exc
-            if i < attempts - 1:
-                time.sleep(backoff)
-    raise last_err if last_err else IBKRNotAvailableError("IB chain unavailable")
-
-
-def _ib_chain_allowed() -> bool:
-    with _ib_chain_lock:
-        return time.time() >= _ib_chain_open_until
-
-
-def _ib_chain_record(success: bool) -> None:
-    global _ib_chain_failures, _ib_chain_open_until
-    threshold = int(os.getenv("IB_CHAIN_CB_FAILURE_THRESHOLD", "2"))
-    cooldown = int(os.getenv("IB_CHAIN_CB_COOLDOWN_SEC", "45"))
-    with _ib_chain_lock:
-        if success:
-            _ib_chain_failures = 0
-            _ib_chain_open_until = 0.0
-            return
-        _ib_chain_failures += 1
-        if _ib_chain_failures >= threshold:
-            _ib_chain_open_until = time.time() + cooldown
-            app.logger.warning("IB chain circuit OPEN for %ss after %s failures", cooldown, _ib_chain_failures)
-
-
-def _cache_chain_set(ticker: str, chain: dict, chain_profile: str = "smart", direction: str | None = None) -> None:
-    ttl = int(os.getenv("CHAIN_CACHE_TTL_SEC", "120"))
-    key = _chain_cache_key(ticker, chain_profile=chain_profile, direction=direction)
-    with _chain_cache_lock:
-        _chain_cache[key] = {
-            "saved_at": time.time(),
-            "expires_at": time.time() + ttl,
-            "chain": deepcopy(chain),
-        }
-
-
-def _cache_chain_get(ticker: str, allow_stale: bool = False, chain_profile: str = "smart", direction: str | None = None) -> dict | None:
-    key = _chain_cache_key(ticker, chain_profile=chain_profile, direction=direction)
-    now = time.time()
-    with _chain_cache_lock:
-        entry = _chain_cache.get(key)
-        if not entry:
-            return None
-        if (not allow_stale) and now > float(entry["expires_at"]):
-            _chain_cache.pop(key, None)
-            return None
-        return deepcopy(entry["chain"])
+        return 0.0
 
 
 def _chain_field_stats(chain: dict) -> dict:
@@ -222,9 +67,7 @@ def _chain_field_stats(chain: dict) -> dict:
     def _ok_num(v):
         return isinstance(v, (int, float)) and v == v and v >= 0
 
-    core_complete = 0
-    greeks_complete = 0
-    quote_complete = 0
+    core_complete = greeks_complete = quote_complete = 0
     for c in contracts:
         if all(c.get(k) is not None for k in ("expiry", "dte", "right", "strike")):
             core_complete += 1
@@ -239,103 +82,6 @@ def _chain_field_stats(chain: dict) -> dict:
         "greeks_complete_pct": round((greeks_complete / total) * 100, 1),
         "quote_complete_pct": round((quote_complete / total) * 100, 1),
     }
-
-
-def _quality_label(data_source: str, chain: dict) -> str:
-    if data_source == "mock":
-        return "mock"
-    if data_source == "ibkr_partial":
-        return "partial"
-    if data_source == "ibkr_cache":
-        return "cached"
-
-    stats = _chain_field_stats(chain)
-    if stats["contracts"] == 0:
-        return "partial"
-    if stats["quote_complete_pct"] >= 70.0 and stats["greeks_complete_pct"] >= 70.0:
-        return "full"
-    if stats["greeks_complete_pct"] >= 40.0:
-        return "degraded"
-    return "partial"
-
-
-def _timeout_for_profile(chain_profile: str) -> float:
-    p = (chain_profile or "smart").strip().lower()
-    if p == "full":
-        return float(os.getenv("ANALYZE_TIMEOUT_FULL_SEC", os.getenv("ANALYZE_TIMEOUT_SEC", "18")))
-    return float(os.getenv("ANALYZE_TIMEOUT_SMART_SEC", os.getenv("ANALYZE_TIMEOUT_SEC", "18")))
-
-
-def _refresh_chain_async(ticker: str, chain_profile: str = "smart", direction: str | None = None) -> None:
-    key = _chain_cache_key(ticker, chain_profile=chain_profile, direction=direction)
-    with _refresh_lock:
-        if key in _refreshing_tickers:
-            return
-        _refreshing_tickers.add(key)
-
-    def _run():
-        try:
-            provider, _ = _provider_pair(ensure_connected=False)
-            if provider is mock_provider:
-                return
-            chain = _fetch_chain_with_retry(
-                provider,
-                ticker.upper(),
-                timeout_sec=_timeout_for_profile(chain_profile),
-                direction=direction,
-                target_price=None,
-                chain_profile=chain_profile,
-                min_dte=int(os.getenv("IBKR_MIN_DTE", "14")),
-            )
-            _cache_chain_set(ticker, chain, chain_profile=chain_profile, direction=direction)
-        except Exception as exc:
-            app.logger.info("Background chain refresh skipped for %s: %s", key, exc)
-        finally:
-            with _refresh_lock:
-                _refreshing_tickers.discard(key)
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def _warm_cache_startup() -> None:
-    tickers = [t.strip().upper() for t in os.getenv("WARM_TICKERS", "AME").split(",") if t.strip()]
-    for t in tickers:
-        _refresh_chain_async(t, chain_profile="smart", direction=None)
-
-
-def _build_partial_chain_from_ib(
-    ticker: str,
-    underlying: float,
-    chain_profile: str = "smart",
-    direction: str | None = None,
-    min_dte: int = 14,
-) -> dict:
-    """Use mock structure but anchor to live underlying when options chain is unavailable."""
-    chain = mock_provider.get_options_chain(ticker)
-    contracts = chain.get("contracts", [])
-    contracts = [c for c in contracts if int(c.get("dte", 0)) >= int(min_dte)]
-
-    if direction in {"buy_call", "sell_call"}:
-        rights = {"C", "P"}  # keep put anchors
-        contracts = [c for c in contracts if c.get("right") in rights]
-    elif direction in {"buy_put", "sell_put"}:
-        rights = {"P", "C"}  # keep call anchors
-        contracts = [c for c in contracts if c.get("right") in rights]
-
-    if (chain_profile or "smart").lower() == "smart":
-        expiries = sorted({c.get("expiry") for c in contracts})
-        if expiries:
-            keep = expiries[0]
-            contracts = [c for c in contracts if c.get("expiry") == keep]
-        contracts = contracts[:12]
-
-    chain["contracts"] = contracts
-    chain["underlying_price"] = round(float(underlying), 2)
-    for c in chain.get("contracts", []):
-        c["undPrice"] = chain["underlying_price"]
-        c["symbol"] = ticker.upper()
-    chain["partial"] = True
-    return chain
 
 
 def _direction_track(direction: str) -> str:
@@ -380,7 +126,6 @@ def _merge_swing(payload: dict, underlying: float) -> dict:
 
 
 def _extract_iv_data(ticker: str, chain: dict, provider, ib_worker=None) -> dict:
-    # QUICK_ANALYZE_MODE removed (KI-007) — always use real data for HV20.
     # Golden Rule #2: IBKRProvider must ONLY be called from the ib-worker thread.
     # Use ib_worker.submit() for any IBKR calls, never call provider methods directly.
     contracts = chain.get("contracts", [])
@@ -411,7 +156,6 @@ def _extract_iv_data(ticker: str, chain: dict, provider, ib_worker=None) -> dict
     if bars:
         iv_store.store_ohlcv(ticker, bars)
     hv_20 = iv_store.compute_hv(ticker, 20)
-    # Return None for hv_20 if unavailable — never fake it (Golden Rule #11)
     ratio = round((current_iv / hv_20), 2) if (current_iv and hv_20) else None
 
     return {
@@ -488,6 +232,8 @@ def _behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
     ]
 
 
+# ─── Routes ───────────────────────────────────────────────────────────────────
+
 @app.get("/api/health")
 def health():
     ib_status = data_svc.ibkr_status()
@@ -530,7 +276,6 @@ def analyze_options():
     except Exception:
         target_price = underlying_hint
 
-    # Phase 2: data_svc handles provider selection, cache, and circuit breaker
     chain, data_source = data_svc.get_chain(
         ticker,
         profile=chain_profile,
@@ -543,8 +288,7 @@ def analyze_options():
     connected = data_source not in {"mock"}
     quality = data_svc.quality_label(data_source, chain)
 
-    # IV data uses the same provider hierarchy via iv_store
-    iv_provider = mock_provider  # for get_historical_iv / get_ohlcv_daily
+    iv_provider = mock_provider
     if data_source in {"ibkr_live", "ibkr_cache", "ibkr_stale"} and _ib_worker.provider is not None:
         iv_provider = _ib_worker.provider
     elif data_source == "yfinance":
@@ -623,8 +367,7 @@ def analyze_options():
 
 @app.get("/api/options/chain/<ticker>")
 def chain_debug(ticker: str):
-    provider, connected = _provider_pair(ensure_connected=False)
-    data_source = "mock"
+    """Debug endpoint — returns raw chain data via DataService."""
     chain_profile = str(request.args.get("chain_profile", os.getenv("CHAIN_PROFILE_DEFAULT", "smart"))).strip().lower()
     if chain_profile not in {"smart", "full"}:
         chain_profile = "smart"
@@ -634,48 +377,28 @@ def chain_debug(ticker: str):
         min_dte = int(os.getenv("IBKR_MIN_DTE", "14"))
     direction = request.args.get("direction")
     target_price = request.args.get("target_price", type=float)
-    try:
-        chain = _fetch_chain_with_retry(
-            provider,
-            ticker.upper(),
-            timeout_sec=_timeout_for_profile(chain_profile),
-            direction=direction,
-            target_price=target_price,
-            chain_profile=chain_profile,
-            min_dte=min_dte,
-        )
-        connected = provider is not mock_provider
-        data_source = "ibkr" if connected else "mock"
-        if connected:
-            _cache_chain_set(ticker, chain, chain_profile=chain_profile, direction=direction)
-    except Exception:
-        cached_chain = _cache_chain_get(ticker, chain_profile=chain_profile, direction=direction)
-        if cached_chain is not None:
-            chain = cached_chain
-            connected = True
-            data_source = "ibkr_cache"
-        else:
-            chain = mock_provider.get_options_chain(ticker)
-            connected = False
-            data_source = "mock"
-    return jsonify({"ibkr_connected": connected, "data_source": data_source, "chain_profile": chain_profile, "min_dte": min_dte, **chain})
+    chain, data_source = data_svc.get_chain(
+        ticker.upper(),
+        profile=chain_profile,
+        direction=direction,
+        target_price=target_price,
+        min_dte=min_dte,
+    )
+    return jsonify({"ibkr_connected": data_source != "mock", "data_source": data_source,
+                    "chain_profile": chain_profile, "min_dte": min_dte, **chain})
 
 
 @app.get("/api/options/ivr/<ticker>")
 def ivr_debug(ticker: str):
-    provider, _ = _provider_pair(ensure_connected=False)
-    try:
-        chain = _fetch_chain_with_retry(
-            provider,
-            ticker.upper(),
-            timeout_sec=_timeout_for_profile("full"),
-            direction=None,
-            target_price=None,
-        )
-    except Exception:
-        chain = _cache_chain_get(ticker) or mock_provider.get_options_chain(ticker)
-        provider = mock_provider
-    data = _extract_iv_data(ticker.upper(), chain, provider, ib_worker=_ib_worker)
+    """Debug endpoint — returns IV/HV data via DataService."""
+    symbol = ticker.upper()
+    chain, data_source = data_svc.get_chain(symbol, profile="full")
+    iv_provider = (
+        _ib_worker.provider
+        if data_source in {"ibkr_live", "ibkr_cache", "ibkr_stale"} and _ib_worker.provider
+        else _yf_provider
+    )
+    data = _extract_iv_data(symbol, chain, iv_provider, ib_worker=_ib_worker)
     return jsonify(data)
 
 
@@ -692,11 +415,10 @@ def save_paper_trade():
 
 @app.get("/api/options/paper-trades")
 def list_paper_trades():
-    provider, _ = _provider_pair()
     trades = iv_store.list_paper_trades()
     out = []
     for t in trades:
-        underlying = provider.get_underlying_price(t["ticker"])
+        underlying = _get_live_price(t["ticker"])
         if t["direction"] == "sell_put":
             pnl = (float(t["premium"]) - max(0.0, float(t["strike"]) - underlying)) * 100 * float(t["lots"])
         else:
@@ -707,19 +429,26 @@ def list_paper_trades():
 
 @app.post("/api/options/seed-iv/<ticker>")
 def seed_iv(ticker: str):
-    provider, connected = _provider_pair()
-    hist = provider.get_historical_iv(ticker.upper(), 365)
+    """Seeds IV history from IBWorker (if connected) or yfinance fallback."""
+    symbol = ticker.upper()
+    connected = _ib_worker.is_connected() and _ib_worker.provider is not None
+    hist = []
+    if connected:
+        try:
+            hist = _ib_worker.submit(_ib_worker.provider.get_historical_iv, symbol, 365, timeout=30.0)
+        except Exception as exc:
+            app.logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
+    if not hist:
+        try:
+            hist = _yf_provider.get_historical_iv(symbol, 365)
+            connected = False
+        except Exception:
+            hist = []
     for row in hist:
-        iv_store.store_iv(ticker.upper(), row["date"], row["iv"], source="ibkr" if connected else "mock")
+        iv_store.store_iv(symbol, row["date"], row["iv"], source="ibkr" if connected else "yfinance")
     if not hist:
         return jsonify({"seeded_days": 0, "earliest_date": None, "latest_date": None})
-    return jsonify(
-        {
-            "seeded_days": len(hist),
-            "earliest_date": hist[0]["date"],
-            "latest_date": hist[-1]["date"],
-        }
-    )
+    return jsonify({"seeded_days": len(hist), "earliest_date": hist[0]["date"], "latest_date": hist[-1]["date"]})
 
 
 @app.get("/api/integrate/sta-fetch/<ticker>")
@@ -727,11 +456,9 @@ def sta_fetch(ticker: str):
     """
     Fetch swing data from STA (localhost:5001) and return assembled fields.
     Frontend SwingImportStrip calls this to pre-fill the analysis form.
-    KI-015 fix: endpoint was missing from backend.
     """
     symbol = ticker.upper().strip()
     timeout = 3.0
-
     try:
         sr = _requests.get(f"{STA_BASE_URL}/api/sr/{symbol}", timeout=timeout).json()
         stock = _requests.get(f"{STA_BASE_URL}/api/stock/{symbol}", timeout=timeout).json()
@@ -739,42 +466,38 @@ def sta_fetch(ticker: str):
         context = _requests.get(f"{STA_BASE_URL}/api/context/SPY", timeout=timeout).json()
         earnings = _requests.get(f"{STA_BASE_URL}/api/earnings/{symbol}", timeout=timeout).json()
     except Exception:
-        return jsonify(
-            {
-                "status": "offline",
-                "source": "manual",
-                "message": f"STA not reachable at {STA_BASE_URL} — use Manual mode",
-            }
-        )
+        return jsonify({
+            "status": "offline",
+            "source": "manual",
+            "message": f"STA not reachable at {STA_BASE_URL} — use Manual mode",
+        })
 
     levels = sr.get("levels", {})
     vcp = patterns.get("vcp", {})
     cycles = context.get("cycles", {})
 
-    return jsonify(
-        {
-            "status": "ok",
-            "source": "sta_live",
-            "ticker": symbol,
-            "swing_signal": stock.get("swing_signal", "BUY"),
-            "entry_pullback": levels.get("entry_pullback"),
-            "entry_momentum": stock.get("last_close"),
-            "stop_loss": levels.get("stop_loss"),
-            "target1": levels.get("target1"),
-            "target2": levels.get("target2"),
-            "risk_reward": stock.get("risk_reward"),
-            "vcp_pivot": vcp.get("pivot"),
-            "vcp_confidence": vcp.get("confidence"),
-            "adx": stock.get("adx"),
-            "last_close": stock.get("last_close"),
-            "s1_support": levels.get("s1_support"),
-            "spy_above_200sma": stock.get("spy_above_200sma"),
-            "spy_5day_return": stock.get("spy_5day_return"),
-            "earnings_days_away": earnings.get("days_away"),
-            "pattern": patterns.get("pattern"),
-            "fomc_days_away": cycles.get("fomc_days"),
-        }
-    )
+    return jsonify({
+        "status": "ok",
+        "source": "sta_live",
+        "ticker": symbol,
+        "swing_signal": stock.get("swing_signal", "BUY"),
+        "entry_pullback": levels.get("entry_pullback"),
+        "entry_momentum": stock.get("last_close"),
+        "stop_loss": levels.get("stop_loss"),
+        "target1": levels.get("target1"),
+        "target2": levels.get("target2"),
+        "risk_reward": stock.get("risk_reward"),
+        "vcp_pivot": vcp.get("pivot"),
+        "vcp_confidence": vcp.get("confidence"),
+        "adx": stock.get("adx"),
+        "last_close": stock.get("last_close"),
+        "s1_support": levels.get("s1_support"),
+        "spy_above_200sma": stock.get("spy_above_200sma"),
+        "spy_5day_return": stock.get("spy_5day_return"),
+        "earnings_days_away": earnings.get("days_away"),
+        "pattern": patterns.get("pattern"),
+        "fomc_days_away": cycles.get("fomc_days"),
+    })
 
 
 @app.post("/api/integrate/status")
@@ -790,31 +513,15 @@ def integrate_ping():
 @app.get("/api/integrate/schema")
 def integrate_schema():
     schema = {
-        "ticker": "str",
-        "direction": "str",
-        "account_size": "float",
-        "risk_pct": "float",
-        "planned_hold_days": "int",
-        "swing_signal": "str",
-        "entry_pullback": "float",
-        "entry_momentum": "float",
-        "stop_loss": "float",
-        "target1": "float",
-        "target2": "float",
-        "risk_reward": "float",
-        "vcp_pivot": "float",
-        "vcp_confidence": "float",
-        "adx": "float",
-        "last_close": "float",
-        "s1_support": "float",
-        "spy_above_200sma": "bool",
-        "spy_5day_return": "float",
-        "earnings_days_away": "int",
-        "pattern": "str",
+        "ticker": "str", "direction": "str", "account_size": "float", "risk_pct": "float",
+        "planned_hold_days": "int", "swing_signal": "str", "entry_pullback": "float",
+        "entry_momentum": "float", "stop_loss": "float", "target1": "float", "target2": "float",
+        "risk_reward": "float", "vcp_pivot": "float", "vcp_confidence": "float", "adx": "float",
+        "last_close": "float", "s1_support": "float", "spy_above_200sma": "bool",
+        "spy_5day_return": "float", "earnings_days_away": "int", "pattern": "str",
     }
     return jsonify(schema)
 
 
 if __name__ == "__main__":
-    _warm_cache_startup()
     app.run(host="0.0.0.0", port=5051, debug=False)

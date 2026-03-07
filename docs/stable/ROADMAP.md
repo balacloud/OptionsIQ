@@ -1,103 +1,51 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 3 (March 6, 2026)
-> **Current Version:** v0.3
+> **Last Updated:** Day 4 (March 7, 2026)
+> **Current Version:** v0.4
 
 ---
 
 ## Phase 0 — Documentation (Day 1) ✅ COMPLETE
-
-- [x] CLAUDE_CONTEXT.md
-- [x] GOLDEN_RULES.md
-- [x] ROADMAP.md
-- [x] API_CONTRACTS.md
-- [x] KNOWN_ISSUES_DAY1.md
-- [x] PROJECT_STATUS_DAY1_SHORT.md
-- [x] Codex source files ported to new structure
-- [x] .gitignore, .env.example, requirements.txt, start.sh, stop.sh
-
----
+- [x] CLAUDE_CONTEXT.md, GOLDEN_RULES.md, ROADMAP.md, API_CONTRACTS.md
+- [x] Codex source files ported, .gitignore, .env.example, requirements.txt, start.sh, stop.sh
 
 ## Phase 1 — Backend Foundation (Day 3) ✅ COMPLETE
-
-- [x] `constants.py` — all thresholds, DTE limits, ports, defaults, direction-aware strike windows
-- [x] `bs_calculator.py` — Black-Scholes greeks + price (scipy.stats.norm)
-- [x] Fix `ibkr_provider.py` — `market_data_type = 1` (live data, Golden Rule #1)
-- [x] Remove `QUICK_ANALYZE_MODE` from app.py (KI-007)
-- [ ] Fix `mock_provider.py` — dynamic pricing (LOW PRIORITY — yfinance covers fallback)
-- [ ] Fix `iv_store.py` — add `entry_price`, `mark_price` columns to paper_trades (deferred)
-
-**Done when:** Python imports clean, `constants.py` is source of truth ✓
-
----
+- [x] `constants.py`, `bs_calculator.py`, `ibkr_provider.py` market_data_type=1
 
 ## Phase 2 — Data Layer (Day 3) ✅ COMPLETE
+- [x] `ib_worker.py`, `yfinance_provider.py`, `data_service.py`
+- [x] Direction-aware chain fetch + 4h structure cache + threading violation fixed
 
-- [x] `ib_worker.py` — single IB() thread, submit() queue, asyncio event loop per thread
-- [x] `yfinance_provider.py` — middle tier (price, chain structure, IV, BS greeks)
-- [x] `data_service.py` — provider cascade + persistent SQLite cache + circuit breaker
-- [x] Direction-aware chain fetch — DTE sweet spot + ITM/ATM strike targeting
-- [x] 4h in-memory structure cache — avoids repeated reqSecDefOptParams
-- [x] Threading violation fixed — all IBKRProvider calls via IBWorker.submit()
-- [x] gate_engine None crash fixed — ivr_for_gates coercion layer
+## Phase 3 — Fix Concurrency + Analyze Service (Day 4) ✅ P1 COMPLETE
 
-**Done when:** `curl localhost:5051/api/health` returns `ibkr_connected: true` ✓
-**Live test:** AAPL chain fetched in ~8s, AMD at $198.53, IVR 60.6% ✓
+### P1 ✅ ALL DONE
+- [x] `expires_at` on IBWorker `_Request` — queue poisoning fix (KI-016)
+- [x] `ib.RequestTimeout = 15` around reqTickers (KI-017)
+- [x] Legacy circuit breaker removed from app.py (KI-018)
+- [x] `right=None` in strategy_ranker fixed (KI-020)
+- [x] Ticker override bug fixed — App.jsx spread order
+- [x] STA offline detection fixed — `json?.status === 'ok'`
 
----
+### P2 — Day 5
+- [ ] Create `analyze_service.py` — extract `_merge_swing`, `_extract_iv_data`, `_behavioral_checks`
+- [ ] Synthetic-default warning when swing fields null (KI-022)
+- [ ] FOMC days auto-compute from constants.FOMC_DATES
+- [ ] app.py to ≤150 lines (currently 527, KI-023)
 
-## Phase 3 — Fix Concurrency + Analyze Service (Day 4 — NEXT)
+### P3 — Day 5
+- [ ] IBWorker background heartbeat (KI-019)
 
-### P1 — Must fix before paper trading
-- [ ] Add `expires_at` to IBWorker `_Request` — discard expired requests (KI-016)
-- [ ] Set `ib.RequestTimeout` around reqTickers in IBKRProvider (KI-017)
-- [ ] Remove legacy circuit breaker from app.py (KI-018)
-
-### P2 — Analyze service extraction
-- [ ] `analyze_service.py` — extract business logic from app.py
-  - [ ] `_merge_swing()` with validation warnings
-  - [ ] `_extract_iv_data()` with proper provider routing
-  - [ ] `_behavioral_checks()`
-  - [ ] FOMC days auto-compute from constants.FOMC_DATES
-- [ ] app.py becomes routes-only ≤150 lines (Rule 4)
-
-### P3 — Debug
-- [ ] Investigate `right=None` in strategy_ranker output (KI-020)
-- [ ] Add background heartbeat to IBWorker (KI-019)
-
-**Done when:** `POST /api/options/analyze` returns valid response, app.py ≤150 lines, no queue poisoning
-
----
-
-## Phase 4 — API Polish + Frontend Wire-up (Day 5)
-
-- [ ] Full market-hours test (9:30am-4pm ET) — live bid/ask/greeks
-- [ ] Add "Market closed" banner to frontend quality system
-- [ ] `useOptionsData.js` — API_BASE from `REACT_APP_API_URL` env var (KI-013)
-- [ ] `SwingImportStrip.jsx` — verify STA connect works end-to-end
-- [ ] Request deduplication in DataService (KI-016 enhancement)
-
-**Done when:** Full browser flow working — AMD → analyze → gates + strategies + P&L
-
----
+## Phase 4 — API Polish + Frontend (Day 5)
+- [ ] Full market-hours test — AMD + NVDA + PLTR, all four directions
+- [ ] Synthetic swing default warning banner (KI-022)
 
 ## Phase 5 — Paper Trading Ready (Day 5-6)
-
-- [ ] Paper trade record + mark-to-market verified working
-- [ ] Quality banners display correctly for all data tiers
-- [ ] IV history seeded for target tickers (AMD, NVDA, PLTR, RKLB, AMZN)
+- [ ] Paper trade record + mark-to-market verified
+- [ ] IV history seeded for AMD, NVDA, PLTR, RKLB, AMZN
 - [ ] git tag v1.0 — paper trading begins
 
----
-
-## Post-v1.0 (Backlog — do not build until paper trading running)
-
-- [ ] Real-time chain refresh (background polling)
-- [ ] Paper trade P&L history chart
-- [ ] Multi-ticker watchlist
-- [ ] Export paper trades to CSV
-- [ ] Persistent structure cache in SQLite (currently in-memory, lost on restart)
-- [ ] Market hours detection → skip live pricing pre/post market
-- [ ] Request deduplication in IBWorker (N simultaneous requests = 1 IBKR call)
+## Post-v1.0 (Backlog)
+- [ ] Real-time chain refresh, P&L history chart, multi-ticker watchlist, CSV export
+- [ ] Persistent structure cache in SQLite, market hours detection
 
 ---
 
@@ -108,3 +56,4 @@
 | v0.1 | Day 1 | Scaffold — Codex files ported, Phase 0 docs complete |
 | v0.2 | Day 2 | Frontend redesigned — two-panel layout, verdict hero, collapsible sections |
 | v0.3 | Day 3 | Data layer complete — IBWorker, DataService, direction-aware fetch, live IBKR confirmed |
+| v0.4 | Day 4 | Concurrency P1 fixes (KI-016/017/018), ticker override + STA offline detection fixed |

@@ -397,9 +397,14 @@ class IBKRProvider:
                 return 0 if f is None else int(f)
 
             out = []
+            req_timeout = 15  # seconds per reqTickers batch — prevents indefinite block (KI-017)
             for i in range(0, len(qual), max(1, batch_size)):
                 chunk = qual[i : i + batch_size]
-                tickers = self.ib.reqTickers(*chunk)
+                self.ib.RequestTimeout = req_timeout
+                try:
+                    tickers = self.ib.reqTickers(*chunk)
+                finally:
+                    self.ib.RequestTimeout = 0  # restore to default (unlimited) after each batch
                 for tk in tickers:
                     qc = tk.contract
                     greeks = tk.modelGreeks

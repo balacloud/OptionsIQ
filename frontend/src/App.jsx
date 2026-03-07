@@ -88,7 +88,7 @@ export default function App() {
   const onAnalyze = async () => {
     if (!ticker.trim()) return;
     try {
-      await analyze({ ticker: ticker.trim().toUpperCase(), direction, ...swing });
+      await analyze({ direction, ...swing, ticker: ticker.trim().toUpperCase() });
     } catch (_) {}
   };
 
@@ -106,7 +106,7 @@ export default function App() {
       } catch (_) {}
     }
     if (auto && urlTicker) {
-      analyze({ ticker: urlTicker.toUpperCase(), direction, ...swing }).catch(() => {});
+      analyze({ direction, ...swing, ticker: urlTicker.toUpperCase() }).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

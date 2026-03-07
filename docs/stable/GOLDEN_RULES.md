@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 3 (March 6, 2026)
+> **Last Updated:** Day 4 (March 7, 2026)
 
 ---
 
@@ -216,6 +216,12 @@ grep -n "@app.route" backend/app.py
 - **Progressive disclosure** — Secondary sections collapsed by default. Show summary indicators (dot-bar, count) in headers so users can decide whether to expand.
 - **Human-readable labels in UI** — Never expose internal field names (`entry_pullback`) to users. Labels are the interface; field names are implementation details.
 - **Desktop two-panel: left sticky** — Verdict and controls always visible while results scroll on the right.
+
+### Day 4: Spread Order, Detection Patterns, Legacy Cleanup
+- **Spread order determines precedence in JS.** `{ ticker: "MEOH", ...swing }` — if swing has `ticker: "AMD"`, AMD wins. Always put explicit override fields AFTER the spread: `{ ...swing, ticker: "MEOH" }`. This applies to any field that should never be overridden by a previous state import.
+- **`!json.error` is a weak offline check.** An offline response using `status: "offline"` (no `error` field) passes `!json.error` as true. Always check the affirmative: `json?.status === 'ok'`.
+- **Remove legacy code the moment the replacement is confirmed working.** Two circuit breakers (app.py legacy + DataService) diverged silently across sessions. The moment DataService CB was confirmed working on Day 3, the app.py CB should have been removed. It wasn't — and it added confusion for two sessions.
+- **app.py line count is a real health metric.** Every business logic function in app.py is untestable in isolation. 821 lines = significant tech debt. Target ≤150 is not aesthetic — it's testability.
 
 ### Day 3: Concurrency and Threading
 - **IBWorker owns the IB() instance — no exceptions.** Even helper methods like get_historical_iv() and get_ohlcv_daily() must go through IBWorker.submit(). Calling ib_insync methods from any other thread causes asyncio event-loop conflicts that hang indefinitely with no error message.

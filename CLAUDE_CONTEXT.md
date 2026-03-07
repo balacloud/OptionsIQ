@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 3 (March 6, 2026)
-> **Current Version:** v0.3 (data layer complete, live IBKR confirmed working)
-> **Project Phase:** Phase 2 complete → Phase 3 (analyze_service.py) next
+> **Last Updated:** Day 4 (March 7, 2026)
+> **Current Version:** v0.4 (concurrency P1 complete, legacy CB removed)
+> **Project Phase:** Phase 3 P1 complete → Phase 3 P2 (analyze_service.py) next
 
 ---
 
@@ -26,38 +26,40 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 2 complete | IBWorker + DataService + yfinance working |
-| Frontend | Done (Day 2) | Two-panel layout, verdict hero, collapsible sections |
-| IBKR connection | WORKING | Live confirmed: AMD/AAPL chains fetched, account U11574928 |
+| Backend | Phase 3 P1 complete | Concurrency fixes done |
+| Frontend | Done + bug fixes (Day 4) | Ticker override fixed, STA offline fixed |
+| IBKR connection | WORKING | Live confirmed: AMD/AAPL/MEOH, account U11574928 |
 | Gate logic | Correct (frozen) | gate_engine.py verified correct |
 | P&L math | Correct (frozen) | pnl_calculator.py verified correct |
-| Strategy ranking | Correct (frozen) | strategy_ranker.py verified correct |
+| Strategy ranking | Correct (frozen) | right=None fixed (KI-020) |
 | IV store | Correct (frozen) | iv_store.py verified correct |
 | constants.py | DONE (Day 3) | All thresholds + direction-aware DTE/strike windows |
 | bs_calculator.py | DONE (Day 3) | Black-Scholes greeks fallback |
-| ib_worker.py | DONE (Day 3) | Single IB() thread, submit() queue |
+| ib_worker.py | DONE (Day 4) | Queue poisoning fixed (expires_at) |
 | yfinance_provider.py | DONE (Day 3) | Middle tier, BS greeks fill |
 | data_service.py | DONE (Day 3) | Provider cascade + SQLite cache + circuit breaker |
-| ibkr_provider.py | DONE (Day 3) | Direction-aware fetch, structure cache, market_data_type=1 |
-| analyze_service.py | NOT CREATED | Phase 3 — extract from app.py |
-| app.py | Partial refactor | Still God Object (>150 lines). DataService wired in but legacy code still present. |
-| /api/integrate/sta-fetch/{ticker} | DONE (Day 3) | KI-015 resolved |
+| ibkr_provider.py | DONE (Day 4) | RequestTimeout=15 around reqTickers |
+| analyze_service.py | NOT CREATED | Day 5 P1 — extract from app.py |
+| app.py | Partial refactor | 527 lines (down from 821). Legacy CB removed. Still >150 target. |
 
 ### Backend Files (current state)
 ```
 backend/
-  app.py              PARTIAL — DataService wired, legacy CB + helpers still present
+  app.py              527 lines — legacy CB gone, routes + helpers. Still needs analyze_service.py split.
   constants.py        DONE — all thresholds, direction-aware DTE/strike windows
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
-  ib_worker.py        DONE — single thread, submit() queue
+  ib_worker.py        DONE — single thread, submit() queue, expires_at queue poisoning fix
   yfinance_provider.py DONE — middle tier
-  data_service.py     DONE — provider cascade + SQLite cache + circuit breaker
-  ibkr_provider.py    DONE — direction-aware fetch, 4h structure cache, live market data type
+  data_service.py     DONE — provider cascade + SQLite cache + AUTHORITATIVE circuit breaker
+  ibkr_provider.py    DONE — direction-aware fetch, 4h structure cache, RequestTimeout=15
   mock_provider.py    PARTIAL — still partially hardcoded (low priority)
   gate_engine.py      FROZEN — math correct
-  strategy_ranker.py  FROZEN — math correct
+  strategy_ranker.py  FROZEN — math correct, right field fixed
   pnl_calculator.py   FROZEN — math correct
   iv_store.py         FROZEN — math correct
+
+  # TO CREATE:
+  analyze_service.py  Day 5 P1 — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ---
@@ -80,9 +82,10 @@ backend/
 ### IBWorker Thread Model
 ```
 Flask thread → IBWorker.submit(fn, timeout=24s) → queue.Queue → "ib-worker" thread
-                                                                  ↓
-                                                           IBKRProvider methods
-                                                           (single IB() instance)
+                ↓ (if timeout expires on Flask side)         ↓
+          TimeoutError raised                          _Request.expires_at checked
+          (request already in queue)                   → expired = discard, log warning
+                                                       → fresh = execute normally
 ```
 **Critical:** All IBKRProvider calls MUST go through IBWorker.submit(). Never call
 ibkr_provider methods directly from Flask routes or helpers.
@@ -115,19 +118,17 @@ Structure cache (4h in-memory) avoids repeated reqSecDefOptParams.
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY3.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY4.md`
 
-Critical (blocks paper trading):
-1. IBWorker queue poisoning — timed-out request still runs, blocks queue (see CONCURRENCY_ARCHITECTURE.md P1)
-2. app.py still God Object — needs analyze_service.py extraction before ≤150 lines
-3. strategy_ranker returns `right=None` in top_strategies output (investigation needed)
-4. Pre-market: 0% quote completion (expected — IBKR options data only live during market hours)
+Open (Phase 5):
+1. **analyze_service.py missing** — app.py still 527 lines, target ≤150 (KI-001/KI-023)
+2. **Synthetic swing defaults silent** — no banner when stop/target are fabricated (KI-022/KI-005)
+3. **No IBWorker heartbeat** — silent TCP drops not detected (KI-019)
+4. **fomc_days_away not auto-computed** — defaults to 30 always (KI-008)
 
-High:
-5. No IBWorker request expiry — queued requests don't expire when caller already timed out
-6. Dual circuit breakers (app.py legacy + DataService) — inconsistent state possible
-7. No connection heartbeat — silent TCP drops not detected
-8. mock_provider still partially hardcoded AME structure (low priority)
+Backlog (low priority):
+5. mock_provider partially hardcoded AME structure (KI-003)
+6. API URL hardcoded in useOptionsData.js (KI-013)
 
 ---
 
@@ -136,26 +137,30 @@ High:
 | Day | Date | What Happened |
 |-----|------|--------------|
 | Day 1 | Mar 5, 2026 | Project scaffolded. Phase 0 docs created. Codex files ported. |
-| Day 2 | Mar 5, 2026 | GOLDEN_RULES enhanced. Research Plan reviewed, code conflicts documented. Full frontend UI redesign (8 files). |
-| Day 3 | Mar 6, 2026 | Phase 1+2 complete. constants.py, bs_calculator.py, ib_worker.py, yfinance_provider.py, data_service.py all created. ibkr_provider.py: direction-aware fetch + structure cache + live market data type fixed. Threading violation fixed (_extract_iv_data → IBWorker). gate_engine None crash fixed. Empty-string parsing fixed. Live IBKR confirmed: account U11574928, AMD/AAPL chains fetched. CONCURRENCY_ARCHITECTURE.md research plan written. |
+| Day 2 | Mar 5, 2026 | GOLDEN_RULES enhanced. Full frontend UI redesign (8 files). |
+| Day 3 | Mar 6, 2026 | Phase 1+2 complete. IBWorker, DataService, direction-aware fetch. Live IBKR confirmed. |
+| Day 4 | Mar 7, 2026 | KI-016 queue poisoning fixed (expires_at). KI-017 RequestTimeout=15. KI-018 legacy CB removed from app.py (821→527 lines). KI-020 strategy_ranker right=None fixed. Ticker override bug fixed (App.jsx spread order). STA offline detection fixed (SwingImportStrip). MEOH confirmed live. |
 
 ---
 
-## Next Session Priorities (Day 4)
+## Next Session Priorities (Day 5)
 
-### P1 — Fix queue poisoning (must do before live paper trading)
-1. Add `expires_at` to IBWorker `_Request` — worker discards expired requests
-2. Set `ib.RequestTimeout` around `reqTickers` in IBKRProvider
-3. Remove legacy circuit breaker from app.py (`_ib_chain_*` variables + functions)
+### P1 — Create analyze_service.py (must do)
+1. Extract `_merge_swing()` → add synthetic-default detection + warning flag
+2. Extract `_extract_iv_data()` → keep IBWorker routing
+3. Extract `_behavioral_checks()`
+4. Extract gate assembly logic
+5. app.py becomes routes-only ≤150 lines
 
-### P2 — Phase 3: analyze_service.py
-4. Extract business logic from app.py into `analyze_service.py`
-5. app.py becomes routes-only ≤150 lines (Rule 4)
+### P2 — IBWorker heartbeat (KI-019)
+6. Add `_heartbeat_loop()` in IBWorker — `reqCurrentTime()` every 30s when idle
+7. `is_connected()` checks heartbeat timestamp freshness (max 60s gap)
 
-### P3 — Debug + polish
-6. Investigate `right=None` in strategy_ranker output
-7. Background heartbeat in IBWorker (connection health)
-8. Test full flow during market hours (9:30am-4pm ET) for live quote data
+### P3 — Paper trading verification
+8. Record a paper trade end-to-end (AMD or NVDA)
+9. Verify mark-to-market P&L in `GET /api/options/paper-trades`
+10. Test sell_put direction (different gate track)
 
 ### Reference
-- See `docs/stable/CONCURRENCY_ARCHITECTURE.md` for full thread/concurrency research plan
+- `docs/stable/CONCURRENCY_ARCHITECTURE.md` — full concurrency plan
+- `docs/versioned/KNOWN_ISSUES_DAY4.md` — current issue list
