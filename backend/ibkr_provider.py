@@ -48,6 +48,7 @@ class _StructCacheEntry(NamedTuple):
     expiries: list[tuple[str, int]]  # [(expiry_str, dte), ...]
     strikes: list[float]
     saved_at: float
+    underlying_at_cache: float = 0.0  # underlying price when cache was built
 
 
 class IBKRProvider:
@@ -157,7 +158,7 @@ class IBKRProvider:
 
     # ─── Structure cache ─────────────────────────────────────────────────────
 
-    def _struct_cached(self, ticker: str) -> _StructCacheEntry | None:
+    def _struct_cached(self, ticker: str, underlying: float = 0.0) -> _StructCacheEntry | None:
         with self._struct_lock:
             entry = self._struct_cache.get(ticker)
         if entry is None:
@@ -166,12 +167,22 @@ class IBKRProvider:
             with self._struct_lock:
                 self._struct_cache.pop(ticker, None)
             return None
+        # Invalidate cache if underlying moved >15% since cache was built (e.g. split, large gap)
+        if underlying > 0 and entry.underlying_at_cache > 0:
+            price_drift = abs(underlying - entry.underlying_at_cache) / entry.underlying_at_cache
+            if price_drift > 0.15:
+                logger.info("_struct_cached: invalidating %s — price drifted %.1f%% (%.2f → %.2f)",
+                            ticker, price_drift * 100, entry.underlying_at_cache, underlying)
+                with self._struct_lock:
+                    self._struct_cache.pop(ticker, None)
+                return None
         return entry
 
-    def _struct_store(self, ticker: str, expiries: list, strikes: list) -> None:
+    def _struct_store(self, ticker: str, expiries: list, strikes: list, underlying: float = 0.0) -> None:
         with self._struct_lock:
             self._struct_cache[ticker] = _StructCacheEntry(
-                expiries=expiries, strikes=strikes, saved_at=time.time()
+                expiries=expiries, strikes=strikes, saved_at=time.time(),
+                underlying_at_cache=underlying,
             )
 
     # ─── Phase 1: Chain structure (fast, 2-3s) ───────────────────────────────
@@ -197,8 +208,8 @@ class IBKRProvider:
         hard_min = max(DEFAULT_MIN_DTE, min_dte)
         hard_max = min(DEFAULT_MAX_DTE, max_dte)
 
-        # Try structure cache first
-        cached = self._struct_cached(ticker)
+        # Try structure cache first (invalidated if underlying drifted >15%)
+        cached = self._struct_cached(ticker, underlying)
         if cached is not None:
             all_expiries = cached.expiries
             all_strikes = cached.strikes
@@ -230,7 +241,7 @@ class IBKRProvider:
                     continue
             all_expiries = sorted(all_expiries, key=lambda x: x[1])
             all_strikes = sorted(float(s) for s in chain_params.strikes)
-            self._struct_store(ticker, all_expiries, all_strikes)
+            self._struct_store(ticker, all_expiries, all_strikes, underlying)
 
         # ── Select expiries for this request ──────────────────────────────────
         # Primary: find expiries in the direction's DTE sweet spot
@@ -366,6 +377,34 @@ class IBKRProvider:
 
             # ── Phase 4: Qualify + price selected contracts ───────────────────
             qual = self.ib.qualifyContracts(*[c for c, _ in contracts_to_fetch])
+
+            # If too few contracts qualified (<3), the chosen expiry likely has sparse strikes.
+            # Retry with the broader fallback expiry list (all_expiries) before giving up.
+            if len(qual) < 3:
+                logger.warning(
+                    "get_options_chain: only %d contracts qualified for %s — "
+                    "retrying with ±15%% broad strike window across all valid expiries",
+                    len(qual),
+                    symbol,
+                )
+                broad_expiries = [(e, d) for e, d in all_expiries if hard_min <= d <= hard_max][:3]
+                broad_strikes = [
+                    s for s in all_strikes
+                    if underlying * 0.85 <= s <= underlying * 1.15
+                ]
+                broad_strikes.sort(key=lambda s: abs(s - underlying))
+                broad_strikes = broad_strikes[:8]
+                retry_contracts = [
+                    (Option(symbol, exp, strike, right, "SMART"), dte)
+                    for exp, dte in broad_expiries
+                    for strike in broad_strikes
+                    for right in primary_rights
+                ][:max_contracts]
+                retry_qual = self.ib.qualifyContracts(*[c for c, _ in retry_contracts])
+                if len(retry_qual) > len(qual):
+                    qual = retry_qual
+                    contracts_to_fetch = retry_contracts  # update for dte_map below
+
             if not qual:
                 return {
                     "ticker": symbol,

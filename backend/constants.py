@@ -63,9 +63,9 @@ SELLER_SWEET_MAX_DTE    = 45     # Seller sweet spot upper bound
 # ---------------------------------------------------------------------------
 # Chain fetch profiles
 # ---------------------------------------------------------------------------
-SMART_MAX_EXPIRIES      = 1      # Smart: one expiry targeted to DTE sweet spot
-SMART_MAX_STRIKES       = 4      # Smart: 4 strikes in direction-aware zone
-SMART_MAX_CONTRACTS     = 8      # Smart: 8 contracts total (down from 12 — faster reqTickers)
+SMART_MAX_EXPIRIES      = 2      # Smart: 2 expiries — backup if first expiry has no valid strikes
+SMART_MAX_STRIKES       = 6      # Smart: 6 strikes — buffer for qualification filter (some fail per-expiry)
+SMART_MAX_CONTRACTS     = 12     # Smart: 6 strikes × 2 expiries (adjusted from 8)
 SMART_STRIKE_WINDOW     = 0.10   # Smart: fallback ±10% when no direction hint
 
 FULL_MAX_EXPIRIES       = 3      # Full: up to 3 expiries in DTE window

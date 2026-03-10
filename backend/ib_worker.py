@@ -42,11 +42,15 @@ class IBWorker:
         price = worker.submit(worker.provider.get_underlying_price, "AAPL", timeout=10)
     """
 
+    HEARTBEAT_INTERVAL = 30.0   # seconds between idle pings
+    HEARTBEAT_STALE_SEC = 75.0  # declare disconnected if no successful call in this window
+
     def __init__(self) -> None:
         self._req_queue: queue.Queue[_Request | _Stop] = queue.Queue()
         self._provider = None  # IBKRProvider — created inside worker thread
         self._init_error: str | None = None
         self._ready = threading.Event()
+        self._last_heartbeat: float = 0.0  # monotonic time of last successful IBKR call
 
         self._thread = threading.Thread(
             target=self._run, daemon=True, name="ib-worker"
@@ -77,7 +81,19 @@ class IBWorker:
             self._ready.set()
 
         while True:
-            req = self._req_queue.get()
+            try:
+                req = self._req_queue.get(timeout=self.HEARTBEAT_INTERVAL)
+            except queue.Empty:
+                # Queue idle for HEARTBEAT_INTERVAL — ping IB Gateway (KI-019)
+                if self._provider is not None:
+                    try:
+                        self._provider.ib.reqCurrentTime()
+                        self._last_heartbeat = time.monotonic()
+                        logger.debug("IBWorker: heartbeat OK")
+                    except Exception as exc:
+                        logger.warning("IBWorker: heartbeat failed — connection may be lost: %s", exc)
+                continue
+
             if isinstance(req, _Stop):
                 logger.info("IBWorker: shutting down")
                 break
@@ -88,6 +104,7 @@ class IBWorker:
             try:
                 result = req.fn(*req.args, **req.kwargs)
                 req.result_q.put(("ok", result))
+                self._last_heartbeat = time.monotonic()  # any successful call counts as heartbeat
             except Exception as exc:
                 req.result_q.put(("err", exc))
 
@@ -121,7 +138,16 @@ class IBWorker:
         if self._provider is None:
             return False
         try:
-            return bool(self._provider.is_connected())
+            if not bool(self._provider.is_connected()):
+                return False
+            # If we've had at least one successful call, check heartbeat freshness.
+            # A stale heartbeat (> HEARTBEAT_STALE_SEC) means a silent TCP drop.
+            if self._last_heartbeat > 0:
+                if time.monotonic() - self._last_heartbeat > self.HEARTBEAT_STALE_SEC:
+                    logger.warning("IBWorker: heartbeat stale (%.0fs) — treating as disconnected",
+                                   time.monotonic() - self._last_heartbeat)
+                    return False
+            return True
         except Exception:
             return False
 

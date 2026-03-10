@@ -6,19 +6,21 @@ const cards = [
 ];
 
 export default function DirectionSelector({ direction, setDirection, swingSignal, locked }) {
-  const lockByBuy = swingSignal === 'BUY';
   return (
     <section className="card">
       <h3>Direction</h3>
       <div className="cards4">
         {cards.map((c) => {
-          const disabled = lockByBuy && locked.includes(c.id);
+          const disabled = locked.includes(c.id);
+          const lockMsg  = swingSignal === 'BUY'  ? 'Locked: contradicts BUY signal'
+                         : swingSignal === 'SELL' ? 'Locked: contradicts SELL signal'
+                         : '';
           return (
             <button
               key={c.id}
               className={`dir-card ${direction === c.id ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
               onClick={() => !disabled && setDirection(c.id)}
-              title={disabled ? 'Locked: contradicts BUY signal' : ''}
+              title={disabled ? lockMsg : ''}
             >
               {c.label}
             </button>

@@ -117,7 +117,7 @@ def _merge_swing(payload: dict, underlying: float) -> dict:
         "adx": _f(payload.get("adx"), 35.0),
         "last_close": _f(payload.get("last_close"), underlying),
         "s1_support": _f(payload.get("s1_support"), underlying * 0.95),
-        "spy_above_200sma": bool(payload.get("spy_above_200sma", True)),
+        "spy_above_200sma": bool(payload.get("spy_above_200sma") if payload.get("spy_above_200sma") is not None else True),
         "spy_5day_return": _f(payload.get("spy_5day_return"), 0.0),
         "earnings_days_away": _i(payload.get("earnings_days_away"), 45),
         "pattern": payload.get("pattern") or "VCP",
@@ -472,31 +472,62 @@ def sta_fetch(ticker: str):
             "message": f"STA not reachable at {STA_BASE_URL} — use Manual mode",
         })
 
-    levels = sr.get("levels", {})
-    vcp = patterns.get("vcp", {})
-    cycles = context.get("cycles", {})
+    # STA /api/sr/<ticker> uses camelCase top-level fields — no nested "levels" object
+    meta = sr.get("meta", {})
+    vcp = patterns.get("patterns", {}).get("vcp", {})
+
+    # FOMC days from context cycles cards
+    fomc_days = None
+    for card in context.get("cycles", {}).get("cards", []):
+        if "FOMC" in card.get("name", ""):
+            fomc_days = card.get("raw_value")
+            break
+
+    # swing_signal from trade viability
+    viable = meta.get("tradeViability", {}).get("viable", "")
+    swing_signal = "BUY" if viable == "YES" else "SELL"
+
+    # nearest support level (last = closest to price)
+    support_levels = sr.get("support", [])
+    s1_support = support_levels[-1] if support_levels else None
+
+    # SPY regime — compute from yfinance (not in STA API)
+    spy_above_200sma = True  # safe default: don't penalize if we can't fetch
+    spy_5day_return = None
+    try:
+        import yfinance as yf
+        spy_hist = yf.Ticker("SPY").history(period="1y", interval="1d")
+        if not spy_hist.empty and len(spy_hist) >= 200:
+            latest_close = float(spy_hist["Close"].iloc[-1])
+            sma200 = float(spy_hist["Close"].iloc[-200:].mean())
+            spy_above_200sma = latest_close > sma200
+            if len(spy_hist) >= 6:
+                five_day_ago = float(spy_hist["Close"].iloc[-6])
+                spy_5day_return = round((latest_close - five_day_ago) / five_day_ago * 100, 2)
+    except Exception:
+        pass  # keep defaults — don't fail sta_fetch for SPY data
 
     return jsonify({
         "status": "ok",
         "source": "sta_live",
         "ticker": symbol,
-        "swing_signal": stock.get("swing_signal", "BUY"),
-        "entry_pullback": levels.get("entry_pullback"),
-        "entry_momentum": stock.get("last_close"),
-        "stop_loss": levels.get("stop_loss"),
-        "target1": levels.get("target1"),
-        "target2": levels.get("target2"),
-        "risk_reward": stock.get("risk_reward"),
-        "vcp_pivot": vcp.get("pivot"),
+        "swing_signal": swing_signal,
+        "entry_pullback": sr.get("suggestedEntry"),
+        "entry_momentum": stock.get("currentPrice"),
+        "stop_loss": sr.get("suggestedStop"),
+        "target1": sr.get("suggestedTarget"),
+        "target2": None,  # STA provides single target
+        "risk_reward": sr.get("riskReward"),
+        "vcp_pivot": vcp.get("pivot_price"),
         "vcp_confidence": vcp.get("confidence"),
-        "adx": stock.get("adx"),
-        "last_close": stock.get("last_close"),
-        "s1_support": levels.get("s1_support"),
-        "spy_above_200sma": stock.get("spy_above_200sma"),
-        "spy_5day_return": stock.get("spy_5day_return"),
-        "earnings_days_away": earnings.get("days_away"),
+        "adx": meta.get("adx", {}).get("adx"),
+        "last_close": stock.get("currentPrice"),
+        "s1_support": s1_support,
+        "spy_above_200sma": spy_above_200sma,
+        "spy_5day_return": spy_5day_return,
+        "earnings_days_away": earnings.get("days_until"),
         "pattern": patterns.get("pattern"),
-        "fomc_days_away": cycles.get("fomc_days"),
+        "fomc_days_away": fomc_days,
     })
 
 

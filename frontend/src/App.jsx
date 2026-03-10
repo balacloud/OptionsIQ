@@ -75,9 +75,11 @@ export default function App() {
   const [swing, setSwing]       = useState(emptySwing);
   const [ibModal, setIbModal]   = useState(false);
 
-  const lockedBySignal = useMemo(() => (
-    swing.swing_signal === 'BUY' ? ['sell_call', 'buy_put'] : []
-  ), [swing.swing_signal]);
+  const lockedBySignal = useMemo(() => {
+    if (swing.swing_signal === 'BUY')  return ['sell_call', 'buy_put'];
+    if (swing.swing_signal === 'SELL') return ['buy_call', 'sell_put'];
+    return [];
+  }, [swing.swing_signal]);
 
   useEffect(() => {
     if (swing.swing_signal === 'BUY') {

@@ -8,18 +8,22 @@ set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# Check .env exists
-if [ ! -f "$ROOT/.env" ]; then
-  echo "ERROR: .env not found. Copy .env.example to .env and fill in ACCOUNT_SIZE."
+# Check .env exists (lives in backend/)
+if [ ! -f "$ROOT/backend/.env" ]; then
+  echo "ERROR: backend/.env not found. Copy .env.example to backend/.env and fill in ACCOUNT_SIZE."
   exit 1
 fi
 
 # Start backend
 echo "Starting OptionsIQ backend on port 5051..."
 cd "$ROOT/backend"
-source venv/bin/activate 2>/dev/null || python3 -m venv venv && source venv/bin/activate
+if [ ! -d "venv" ]; then
+  echo "Creating Python venv..."
+  python3 -m venv venv
+fi
+source venv/bin/activate
 pip install -q -r requirements.txt
-nohup python app.py > backend.log 2>&1 &
+nohup python3 app.py > backend.log 2>&1 &
 BACKEND_PID=$!
 echo "Backend PID: $BACKEND_PID"
 

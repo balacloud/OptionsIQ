@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 3 (March 6, 2026)
+> **Last Updated:** Day 5 (March 10, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -263,10 +263,23 @@ Seeds IV history for a ticker from IBKR (or mock fallback).
 
 ## STA Endpoints Used (Read-Only, No Modifications)
 
-| Field | STA Endpoint | Response Key |
-|-------|-------------|-------------|
-| stop_loss, target1, target2, s1_support | GET localhost:5001/api/sr/{ticker} | levels |
-| adx, last_close, swing_signal, spy_above_200sma, spy_5day_return | GET localhost:5001/api/stock/{ticker} | various |
-| vcp_confidence, vcp_pivot, pattern | GET localhost:5001/api/patterns/{ticker} | vcp.* |
-| fomc_days_away | GET localhost:5001/api/context/SPY | cycles.fomc_days |
-| earnings_days_away | GET localhost:5001/api/earnings/{ticker} | days_away |
+> **Updated Day 5:** STA API uses camelCase top-level fields — no nested `levels` object.
+> `spy_above_200sma` and `spy_5day_return` are NOT in STA — computed from yfinance SPY.
+
+| Field | STA Endpoint | Actual Response Key |
+|-------|-------------|---------------------|
+| entry_pullback | GET localhost:5001/api/sr/{ticker} | `suggestedEntry` (top-level) |
+| stop_loss | GET localhost:5001/api/sr/{ticker} | `suggestedStop` (top-level) |
+| target1 | GET localhost:5001/api/sr/{ticker} | `suggestedTarget` (top-level) |
+| risk_reward | GET localhost:5001/api/sr/{ticker} | `riskReward` (top-level) |
+| s1_support | GET localhost:5001/api/sr/{ticker} | `support[-1]` (last/nearest support level) |
+| adx | GET localhost:5001/api/sr/{ticker} | `meta.adx.adx` |
+| swing_signal | GET localhost:5001/api/sr/{ticker} | derived: `meta.tradeViability.viable == "YES"` → "BUY" else "SELL" |
+| last_close / entry_momentum | GET localhost:5001/api/stock/{ticker} | `currentPrice` |
+| vcp_confidence | GET localhost:5001/api/patterns/{ticker} | `patterns.vcp.confidence` |
+| vcp_pivot | GET localhost:5001/api/patterns/{ticker} | `patterns.vcp.pivot_price` |
+| pattern | GET localhost:5001/api/patterns/{ticker} | `pattern` (top-level, may be null) |
+| fomc_days_away | GET localhost:5001/api/context/SPY | `cycles.cards[name="FOMC Proximity"].raw_value` |
+| earnings_days_away | GET localhost:5001/api/earnings/{ticker} | `days_until` (NOT `days_away`) |
+| spy_above_200sma | yfinance SPY (computed in backend) | SPY close > 200-day SMA |
+| spy_5day_return | yfinance SPY (computed in backend) | (close[-1] - close[-6]) / close[-6] × 100 |
