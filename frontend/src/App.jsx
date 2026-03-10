@@ -44,6 +44,10 @@ function QualityBanner({ data }) {
     text = `Using cached chain — data from ${mins} min ago. Refreshing in background.`;
     cls = 'banner-cached';
     icon = 'i';
+  } else if (source === 'ibkr_closed') {
+    text = 'Market closed — using estimated greeks (Black-Scholes + 20-day HV). No bid/ask/OI data. Use for directional setup review only.';
+    cls = 'banner-delayed';
+    icon = '!';
   } else if (source === 'yfinance') {
     text = 'Live data unavailable — using yfinance. Greeks are estimated via Black-Scholes.';
     cls = 'banner-delayed';

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import math
 import os
 import threading
 import time
 from datetime import date, datetime
 from typing import NamedTuple
+
+logger = logging.getLogger(__name__)
 
 from constants import (
     BUYER_DIRECTIONS,
@@ -185,6 +188,45 @@ class IBKRProvider:
                 underlying_at_cache=underlying,
             )
 
+    # ─── Market hours ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _market_is_open() -> bool:
+        """Returns True if US stock market is currently open (9:30am–4:00pm ET, Mon–Fri)."""
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # type: ignore[no-redef]
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        if now_et.weekday() >= 5:  # Saturday=5, Sunday=6
+            return False
+        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+        return market_open <= now_et < market_close
+
+    @staticmethod
+    def _get_hv_estimate(ticker: str) -> float:
+        """20-day historical volatility as IV proxy for closed-market BS greeks."""
+        try:
+            import yfinance as yf
+            hist = yf.Ticker(ticker).history(period="30d", interval="1d", auto_adjust=True)
+            if hist.empty or len(hist) < 5:
+                return 0.30
+            closes = list(hist["Close"])
+            returns = [
+                math.log(closes[i] / closes[i - 1])
+                for i in range(1, len(closes))
+                if closes[i] > 0 and closes[i - 1] > 0
+            ]
+            if len(returns) < 2:
+                return 0.30
+            mean = sum(returns) / len(returns)
+            variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+            hv = math.sqrt(variance) * math.sqrt(252)
+            return max(0.05, min(hv, 2.0))
+        except Exception:
+            return 0.30
+
     # ─── Phase 1: Chain structure (fast, 2-3s) ───────────────────────────────
 
     def _fetch_structure(
@@ -196,9 +238,11 @@ class IBKRProvider:
         underlying: float,
         max_expiries: int,
         max_strikes: int,
-    ) -> tuple[list[tuple[str, int]], list[float]]:
+    ) -> tuple[list[tuple[str, int]], list[float], list[tuple[str, int]], list[float]]:
         """
-        Returns (expiries, strikes) from cache or fresh reqSecDefOptParams.
+        Returns (chosen_expiries, chosen_strikes, all_expiries, all_strikes).
+        chosen_*: direction-filtered selection for this request.
+        all_*:    full universe from reqSecDefOptParams (for broad retry fallback).
         expiries: [(expiry_str, dte), ...] sorted ascending by DTE.
         strikes:  floats sorted by proximity to underlying center.
         """
@@ -279,7 +323,7 @@ class IBKRProvider:
             broad.sort(key=lambda s: abs(s - underlying))
             chosen_strikes = (chosen_strikes + broad)[:max_strikes]
 
-        return chosen_expiries, chosen_strikes
+        return chosen_expiries, chosen_strikes, all_expiries, all_strikes
 
     # ─── Underlying price ────────────────────────────────────────────────────
 
@@ -338,7 +382,8 @@ class IBKRProvider:
                 underlying = self.get_underlying_price(symbol)
 
             # ── Phase 2: Get chain structure (cached 4h) ──────────────────────
-            expiries, strikes = self._fetch_structure(
+            hard_min = max(DEFAULT_MIN_DTE, min_dte_val)
+            expiries, strikes, all_expiries, all_strikes = self._fetch_structure(
                 ticker=symbol,
                 direction=direction,
                 min_dte=min_dte_val,
@@ -418,6 +463,57 @@ class IBKRProvider:
                 for c, dte in contracts_to_fetch
             }
 
+            # ── Phase 4b: Market hours check ─────────────────────────────────
+            # When market is closed, reqTickers returns zero quotes (bid=ask=greeks=None).
+            # Instead: compute Black-Scholes greeks using 20-day HV as IV proxy.
+            # Returns "market_closed": True — data_service will set source "ibkr_closed".
+            if not self._market_is_open():
+                from bs_calculator import compute_greeks
+                from constants import RISK_FREE_RATE
+                iv_sigma = self._get_hv_estimate(symbol)
+                logger.info(
+                    "get_options_chain: market closed for %s — using BS greeks (HV=%.1f%%)",
+                    symbol, iv_sigma * 100,
+                )
+                out = []
+                for qc in qual:
+                    dte_val = int(dte_map.get(
+                        (qc.lastTradeDateOrContractMonth, float(qc.strike), qc.right), 0
+                    ))
+                    T = max(dte_val, 1) / 365.0
+                    bs = compute_greeks(underlying, float(qc.strike), T, RISK_FREE_RATE, iv_sigma, qc.right)
+                    out.append({
+                        "symbol": symbol,
+                        "expiry": datetime.strptime(
+                            qc.lastTradeDateOrContractMonth, "%Y%m%d"
+                        ).date().isoformat(),
+                        "dte": dte_val,
+                        "right": qc.right,
+                        "strike": float(qc.strike),
+                        "bid": None,
+                        "ask": None,
+                        "last": None,
+                        "mid": bs["price"] if bs else 0.0,
+                        "delta": bs["delta"] if bs else None,
+                        "gamma": bs["gamma"] if bs else None,
+                        "theta": bs["theta"] if bs else None,
+                        "vega": bs["vega"] if bs else None,
+                        "impliedVol": iv_sigma,
+                        "optPrice": bs["price"] if bs else 0.0,
+                        "undPrice": underlying,
+                        "openInterest": 0,
+                        "volume": 0,
+                        "bs_greeks": True,
+                    })
+                return {
+                    "ticker": symbol,
+                    "underlying_price": underlying,
+                    "asof": datetime.utcnow().isoformat(timespec="seconds"),
+                    "contracts": out,
+                    "market_closed": True,
+                }
+
+            # ── Phase 4c: reqTickers (live market data) ───────────────────────
             def _num(v):
                 try:
                     f = float(v)

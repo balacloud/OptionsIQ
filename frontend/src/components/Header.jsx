@@ -3,8 +3,10 @@ export default function Header({ ticker, data, onIbClick }) {
   const source    = data?.data_source || 'mock';
 
   const sourceLabel = {
-    ibkr:         'IB Live',
+    ibkr_live:    'IB Live',
+    ibkr_closed:  'IB Closed',
     ibkr_cache:   'IB Cache',
+    ibkr_stale:   'IB Stale',
     ibkr_partial: 'IB Partial',
     yfinance:     'yfinance',
     mock:         'Mock',

@@ -6,7 +6,8 @@ Persistent SQLite chain cache survives Flask restarts (TTL per constants.py).
 Circuit breaker: 2 consecutive IBKR failures → 45s cooldown.
 
 Provider quality labels returned:
-  "ibkr_live"   — fresh from IB Gateway
+  "ibkr_live"   — fresh from IB Gateway (market open, live bid/ask/greeks)
+  "ibkr_closed" — IBKR connected but market closed; BS-computed greeks, no bid/ask/OI
   "ibkr_cache"  — within TTL window (background refresh triggered)
   "ibkr_stale"  — beyond TTL but IBKR unavailable (background refresh triggered)
   "yfinance"    — yfinance fallback
@@ -246,7 +247,7 @@ class DataService:
     ) -> tuple[dict, str]:
         """
         Returns (chain_dict, data_source).
-        data_source: "ibkr_live" | "ibkr_cache" | "ibkr_stale" | "yfinance" | "mock"
+        data_source: "ibkr_live" | "ibkr_closed" | "ibkr_cache" | "ibkr_stale" | "yfinance" | "mock"
         """
         ticker = ticker.upper()
         min_dte_val = int(min_dte if min_dte is not None else DEFAULT_MIN_DTE)
@@ -275,6 +276,9 @@ class DataService:
                         timeout=self._timeout(profile),
                     )
                     self._cb_record(success=True)
+                    if chain.get("market_closed"):
+                        # BS-computed greeks — don't store in live-quote cache
+                        return chain, "ibkr_closed"
                     self._cache_set(ticker, chain, profile, direction)
                     return chain, "ibkr_live"
                 except TimeoutError:
@@ -358,6 +362,8 @@ class DataService:
             return "yfinance"
         if data_source == "ibkr_cache":
             return "cached"
+        if data_source == "ibkr_closed":
+            return "closed"
         # ibkr_live — check completeness
         contracts = chain.get("contracts") or []
         if not contracts:
