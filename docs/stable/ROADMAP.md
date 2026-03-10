@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 5 (March 10, 2026)
-> **Current Version:** v0.5
+> **Last Updated:** Day 6 (March 10, 2026)
+> **Current Version:** v0.6
 
 ---
 
@@ -42,8 +42,10 @@
 - [x] `SMART_MAX_STRIKES` 4→6, `SMART_MAX_EXPIRIES` 1→2, broad-window retry when <3 qualify
 - [x] `start.sh` `.env` path fix + venv creation fix
 
-## Phase 4 — Market Hours + Analyze Service (Day 6)
-- [ ] Market hours detection — use BS greeks when market closed (KI-024)
+## Phase 4 — Market Hours + Analyze Service (Day 6–7)
+- [x] Market hours detection — BS greeks when market closed (KI-024) ✅ Day 6
+- [x] ibkr_closed data source tier — no stale-quote caching ✅ Day 6
+- [x] Frontend: amber banner + "IB Closed" header label ✅ Day 6
 - [ ] Full weekday test — AMD + NVDA + PLTR, all four directions, market open
 - [ ] Synthetic swing default warning banner (KI-022)
 
@@ -68,3 +70,4 @@
 | v0.3 | Day 3 | Data layer complete — IBWorker, DataService, direction-aware fetch, live IBKR confirmed |
 | v0.4 | Day 4 | Concurrency P1 fixes (KI-016/017/018), ticker override + STA offline detection fixed |
 | v0.5 | Day 5 | KI-019 heartbeat done, STA field mapping fixed, SPY/200SMA from yfinance, direction lock SELL, struct cache drift, broader strike qualification |
+| v0.6 | Day 6 | KI-024 market hours detection — BS greeks when closed, ibkr_closed tier, frontend banner |

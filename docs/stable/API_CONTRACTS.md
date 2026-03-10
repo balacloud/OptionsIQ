@@ -72,10 +72,10 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
   "direction": "buy_call",
   "track": "A",
   "underlying_price": 198.53,
-  "data_source": "ibkr_live" | "ibkr_cache" | "ibkr_stale" | "yfinance" | "mock",
+  "data_source": "ibkr_live" | "ibkr_closed" | "ibkr_cache" | "ibkr_stale" | "yfinance" | "mock",
   "chain_profile": "smart",
   "min_dte": 14,
-  "quality": "live" | "cached" | "stale" | "yfinance" | "degraded" | "partial" | "mock",
+  "quality": "live" | "closed" | "cached" | "stale" | "yfinance" | "degraded" | "partial" | "mock",
   "chain_quality": {
     "contracts": 8,
     "core_complete_pct": 100.0,

@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 5 (March 10, 2026)
-> **Current Version:** v0.5 (all concurrency problems resolved, STA mapping fixed, off-hours bug diagnosed)
-> **Project Phase:** Phase 3 complete → Phase 4 (market hours detection + analyze_service.py)
+> **Last Updated:** Day 6 (March 10, 2026)
+> **Current Version:** v0.6 (KI-024 resolved — off-hours BS greeks, ibkr_closed tier)
+> **Project Phase:** Phase 4 in progress (market hours ✅ → analyze_service.py next)
 
 ---
 
@@ -26,8 +26,8 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 3 complete | All 5 concurrency problems resolved |
-| Frontend | Done + Day 4+5 fixes | Direction locking fixed (SELL), ticker override, STA offline |
+| Backend | Phase 4 in progress | KI-024 market hours detection done |
+| Frontend | Done + Day 4+5+6 fixes | Market closed banner + IB Closed label |
 | IBKR connection | WORKING | Live confirmed: AMD/AAPL/MEOH/CTRA/NVDA, account U11574928 |
 | Gate logic | Correct (frozen) | gate_engine.py verified correct |
 | P&L math | Correct (frozen) | pnl_calculator.py verified correct |
@@ -38,20 +38,20 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | ib_worker.py | DONE (Day 5) | Queue poisoning + heartbeat + RequestTimeout |
 | yfinance_provider.py | DONE | Middle tier, BS greeks fill |
 | data_service.py | DONE | Provider cascade + SQLite cache + single circuit breaker |
-| ibkr_provider.py | DONE (Day 5) | Direction-aware, struct cache (drift-aware), broad retry |
-| analyze_service.py | NOT CREATED | Day 6 P1 — extract from app.py |
+| ibkr_provider.py | DONE (Day 6) | Market hours detection, BS greeks when closed, logger fix, broad retry variable fix |
+| analyze_service.py | NOT CREATED | Day 6/7 P1 — extract from app.py |
 | app.py | Partial refactor | 558 lines. Still needs analyze_service.py split. |
 
 ### Backend Files (current state)
 ```
 backend/
-  app.py              558 lines — routes + helpers. Needs analyze_service.py split (Day 6 P1).
+  app.py              558 lines — routes + helpers. Needs analyze_service.py split (next P1).
   constants.py        DONE — all thresholds, direction-aware DTE/strike windows
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
   ib_worker.py        DONE — single thread, submit() queue, expires_at, heartbeat (30s idle)
   yfinance_provider.py DONE — middle tier, BS greeks fill
-  data_service.py     DONE — provider cascade + SQLite cache + AUTHORITATIVE circuit breaker
-  ibkr_provider.py    DONE — direction-aware fetch, struct cache (drift-aware), broad retry
+  data_service.py     DONE — provider cascade + SQLite cache + AUTHORITATIVE CB + ibkr_closed tier
+  ibkr_provider.py    DONE (Day 6) — market hours detection, BS greeks when closed, broad retry fixed
   mock_provider.py    PARTIAL — still partially hardcoded (low priority)
   gate_engine.py      FROZEN — math correct
   strategy_ranker.py  FROZEN — math correct, right field fixed
@@ -59,7 +59,7 @@ backend/
   iv_store.py         FROZEN — math correct
 
   # TO CREATE:
-  analyze_service.py  Day 6 P1 — extract _merge_swing, _extract_iv_data, _behavioral_checks
+  analyze_service.py  Next P1 — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ---
@@ -103,17 +103,19 @@ sell_put  → DTE 21-45 (seller sweet spot) + strikes ATM ±6%
 Structure cache (4h in-memory, invalidates if underlying drifts >15%) avoids repeated reqSecDefOptParams.
 When <3 contracts qualify, automatic retry with ±15% broad window across 3 expiries.
 
-### Market Hours Behavior
+### Market Hours Behavior (KI-024 resolved Day 6)
 ```
 MARKET OPEN (9:30am–4:00pm ET, Mon–Fri):
   reqTickers returns live bid/ask/greeks → all gates work correctly
   data_source = "ibkr_live", greeks_pct ~80-100%
 
 MARKET CLOSED (evenings, weekends, pre-market):
-  reqTickers returns zero quotes → greeks_pct = 0%
-  liquidity gate FAILS (OI=0), theta_burn may show 999%
-  data_source falls to "ibkr_stale" (cache hit) or live with empty contracts
-  FIX PLANNED (KI-024): detect market hours → use BS greeks when closed
+  IBKRProvider._market_is_open() → False → skip reqTickers
+  Calls _get_hv_estimate(ticker) via yfinance → 20-day HV as IV proxy
+  Computes BS greeks for all qualified contracts
+  data_source = "ibkr_closed" (new tier in data_service)
+  Frontend: amber banner "Market closed — using estimated greeks"
+  Liquidity gate still FAILs (OI=0 expected), but theta/delta/vega are real
 ```
 
 ### STA Field Mapping (verified Day 5)
@@ -150,11 +152,10 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY5.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY6.md`
 
-Open (Phase 6 — HIGH):
-1. **Market hours detection missing** — off-hours reqTickers returns zero data; theta_burn=999%, liquidity FAIL (KI-024)
-2. **Sparse strike qualification for large caps** — NVDA ITM window only gets 2 contracts on weekends; verify weekday behavior (KI-025)
+Open (HIGH):
+1. **Sparse strike qualification for large caps** — NVDA ITM window only gets 2 contracts on weekends; verify weekday behavior (KI-025)
 
 Open (Phase 6 — MEDIUM):
 3. **analyze_service.py missing** — app.py still 558 lines, target ≤150 (KI-001/KI-023)
@@ -176,30 +177,29 @@ Open (Low priority):
 | Day 3 | Mar 6, 2026 | Phase 1+2 complete. IBWorker, DataService, direction-aware fetch. Live IBKR confirmed. |
 | Day 4 | Mar 7, 2026 | KI-016 queue poisoning (expires_at). KI-017 RequestTimeout=15. KI-018 legacy CB removed (821→527). KI-020 strategy_ranker right=None. Ticker override + STA offline fixed. MEOH confirmed live. |
 | Day 5 | Mar 10, 2026 | KI-019 heartbeat done. STA field mapping fixed (suggestedEntry/Stop/Target). spy_above_200sma from yfinance. Direction lock SELL. Struct cache drift invalidation (15%). SMART_MAX_EXPIRIES 1→2, SMART_MAX_STRIKES 4→6, broad retry <3 contracts. start.sh .env fix. CTRA+NVDA tested. Market-closed behavior diagnosed (KI-024 new). |
+| Day 6 | Mar 10, 2026 | KI-024 market hours detection. ibkr_provider: _market_is_open() (ET TZ), _get_hv_estimate() (20-day HV). BS greeks when closed. ibkr_closed tier in data_service. Frontend amber banner + "IB Closed" header. Fixed logger import + broad retry variable scope bug. |
 
 ---
 
-## Next Session Priorities (Day 6)
+## Next Session Priorities (Day 7)
 
-### P1 — Market Hours Detection (highest impact)
-1. Add `_market_is_open()` to `ibkr_provider.py` — check ET timezone, Mon-Fri 9:30-16:00
-2. When closed: skip `reqTickers`, compute greeks from `bs_calculator.py`
-3. data_source shows "ibkr_closed" (new tier) — banner: "Market closed — using estimated greeks"
-4. Off-hours analysis becomes useful instead of showing 999% theta / 0 OI
+### P1 — Create analyze_service.py (must do)
+1. Extract `_merge_swing()` → add synthetic-default detection + warning flag
+2. Extract `_extract_iv_data()` → keep IBWorker routing
+3. Extract `_behavioral_checks()`
+4. Extract gate assembly logic
+5. app.py becomes routes-only ≤150 lines
 
-### P2 — Create analyze_service.py (must do)
-5. Extract `_merge_swing()` → add synthetic-default detection + warning flag
-6. Extract `_extract_iv_data()` → keep IBWorker routing
-7. Extract `_behavioral_checks()`
-8. Extract gate assembly logic
-9. app.py becomes routes-only ≤150 lines
+### P2 — Paper trading verification (weekday required)
+6. Record a paper trade end-to-end (AMD or CTRA when all gates pass during market hours)
+7. Verify mark-to-market P&L in `GET /api/options/paper-trades`
+8. Test sell_put direction (different gate track)
+9. Verify NVDA broad retry works with real greeks (market open)
 
-### P3 — Paper trading verification (weekday required)
-10. Record a paper trade end-to-end (AMD or CTRA when all gates pass)
-11. Verify mark-to-market P&L in `GET /api/options/paper-trades`
-12. Test sell_put direction (different gate track)
-13. Verify NVDA broad retry works with real greeks (market open)
+### P3 — Weekday verification
+10. Confirm ibkr_live path works correctly during 9:30am–4:00pm ET
+11. Verify ibkr_closed correctly switches at open/close boundary
 
 ### Reference
-- `docs/stable/CONCURRENCY_ARCHITECTURE.md` — all 5 problems resolved, market hours next
-- `docs/versioned/KNOWN_ISSUES_DAY5.md` — current issue list
+- `docs/stable/CONCURRENCY_ARCHITECTURE.md` — all 5 problems resolved + market hours
+- `docs/versioned/KNOWN_ISSUES_DAY6.md` — current issue list
