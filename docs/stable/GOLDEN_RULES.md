@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 4 (March 7, 2026)
+> **Last Updated:** Day 9 (March 11, 2026)
 
 ---
 
@@ -69,6 +69,51 @@ A hardcoded fallback value is worse than an error. Never return fake defaults (e
 ### Rule 12: Verify Data Contracts Before Writing Code.
 Check actual return structures from each module before writing consuming code. The producer (e.g., `data_service`) defines the API structure; consumers adapt to it. Never double-calculate a field — if `data_service` computed IV, don't recompute it in `analyze_service`.
 
+### Rule 13: No Module Is "Frozen" Until All 4 Directions Are Tested.
+`gate_engine.py`, `strategy_ranker.py`, and any direction-aware module CANNOT be declared frozen or "verified correct" until all four directions (`buy_call`, `sell_call`, `buy_put`, `sell_put`) have been explicitly exercised end-to-end with real or realistic data.
+Marking a module frozen after testing only 1 direction creates a false safety guarantee. The freeze label means: "tested, correct, do not touch." Until all paths are covered, the label is a lie.
+
+### Rule 14: Swing Field Defaults Are Forbidden. (Extension of Rule 11)
+`_merge_swing` (and any swing-merging code) MUST NOT fabricate plausible values for missing fields.
+- `vcp_confidence` missing → `None`, never `70`
+- `adx` missing → `None`, never `35`
+- `volume_ratio` missing → `None`, never `1.0`
+Any behavioral check that receives `None` for a field it needs must emit a `SKIP` result with a human-readable reason string, not a pass or fail based on phantom data.
+Adding a `swing_data_quality: "full" | "partial" | "manual"` flag is mandatory when any field is filled with a default.
+
+### Rule 15: Code Is the Source of Truth. Docs Are the Debt.
+If README, API_CONTRACTS.md, or any doc contradicts the actual code behavior — the doc is wrong, not the code.
+When you discover a contradiction:
+1. Verify code behavior with a diagnostic first (don't assume docs are right)
+2. Fix the doc immediately — do not defer
+3. If the code behavior is itself wrong (e.g., cache-first when live-first is required), fix the code AND the doc together
+
+Common contradictions to audit every 5 sessions:
+- IVR formula (percentile vs rank)
+- Gate Track routing per direction
+- Data provider hierarchy order
+- ACCOUNT_SIZE startup enforcement
+- Verdict logic (pass count thresholds)
+
+### Rule 16: Gate Track Assignment Must Be Explicit Per Direction.
+Gate engine MUST receive explicit direction context and apply the correct track:
+- `buy_call` → Track A (buyer gates: momentum, breakout, HV/IV, trend)
+- `sell_call` → Track A-Seller (seller gates: premium decay, range-bound, IV rank)
+- `buy_put` → Track B (put-buyer gates: breakdown, bearish momentum)
+- `sell_put` → Track B-Seller (put-seller gates: support hold, elevated IV, cash-secured)
+If a function accepts `direction` but ignores it and routes by some other heuristic, it is a bug. Audit gate routing every time a new direction is enabled.
+
+### Rule 17: Never Claim Enforcement You Haven't Implemented.
+If ACCOUNT_SIZE has a default value in code (`25000`), you CANNOT document it as "required — app raises at startup if not set." The documentation must match the actual runtime behavior.
+Before writing "app raises if X is missing," verify the raise exists in the startup path with a code read. If it doesn't exist, either implement it or document the actual behavior (default used, warning logged).
+
+### Rule 18: Liquidity Gate Thresholds Must Be Direction-Aware.
+The "strike nearness" sub-check in the liquidity gate (contract within N% of underlying) WILL always fail for ITM buyer strategies by design — that's what ITM means. Applying an ATM nearness filter to a delta-0.68 ITM call is a structural mismatch.
+Liquidity gate must either:
+(a) Disable strike-nearness for ITM buyer tracks (replace with delta-range check), or
+(b) Use direction-aware nearness thresholds (±20% for buyers, ±6% for sellers)
+Document which approach is used. Never apply a single nearness threshold across all 4 directions.
+
 ---
 
 ## SESSION RULES
@@ -94,33 +139,25 @@ Check actual return structures from each module before writing consuming code. T
 
 ## SESSION STARTUP CHECKLIST
 
-When user starts a new session:
-1. [x] Read `CLAUDE_CONTEXT.md` FIRST (master reference)
-2. [x] Read `docs/status/PROJECT_STATUS_DAY[N]_SHORT.md`
-3. [x] Verify context by summarizing current state to user
-4. [x] Ask: "What would you like to focus on today?"
-5. [ ] Do NOT ask user to re-explain the project
-6. [ ] Do NOT ask for files unless you need to modify them
-7. [ ] Do NOT jump to fixing — understand the problem first
+**Authoritative reading order is in `CLAUDE_CONTEXT.md` → Session Protocol → Startup Checklist.**
+
+Behavioral rules (non-negotiable):
+- Do NOT ask user to re-explain the project
+- Do NOT ask for files unless you need to modify them
+- Do NOT jump to fixing — understand the problem first
+- After reading all startup docs: state current version, top priority, blockers, then ask "What would you like to focus on today?"
 
 ---
 
 ## SESSION CLOSE CHECKLIST
 
-When user says "session ending" or "close session":
-1. [x] Create `docs/status/PROJECT_STATUS_DAY[N+1]_SHORT.md`
-2. [x] Ask: "Did any bugs get fixed or found?" -> Update `KNOWN_ISSUES_DAY[N].md`
-3. [x] Ask: "Did any APIs change?" -> Update `API_CONTRACTS.md`
-4. [x] Ask: "Did we learn a new rule?" -> Update `GOLDEN_RULES.md`
-5. [x] **UPDATE `CLAUDE_CONTEXT.md`** — Current Day, Version, Last Updated, State table, Session Log, Next Session Priorities
-6. [x] Update auto memory (`~/.claude/projects/.../memory/MEMORY.md`) if significant learnings
-7. [x] Git commit AND PUSH (don't forget push!)
-8. [x] Note any deferred tasks for next session
+**Authoritative update list is in `CLAUDE_CONTEXT.md` → Session Protocol → Close Checklist.**
 
-### How Updates Work (Claude Code):
-- Claude uses Edit/Write tools to update files directly in the filesystem
-- No manual user action needed for local file updates
-- Claude commits AND pushes to git — don't provide commands for user to run
+Key reminders:
+- Ask before updating: bugs fixed? APIs changed? new rule learned?
+- Claude does ALL file updates — no manual user action
+- Git commit AND push (skip push if no remote configured)
+- Note deferred tasks in Next Session Priorities
 
 ---
 
@@ -216,6 +253,13 @@ grep -n "@app.route" backend/app.py
 - **Progressive disclosure** — Secondary sections collapsed by default. Show summary indicators (dot-bar, count) in headers so users can decide whether to expand.
 - **Human-readable labels in UI** — Never expose internal field names (`entry_pullback`) to users. Labels are the interface; field names are implementation details.
 - **Desktop two-panel: left sticky** — Verdict and controls always visible while results scroll on the right.
+
+### Day 6: Critical Audit Findings — Systematic Gaps
+- **"Frozen" ≠ "Correct for all directions."** `gate_engine.py` and `strategy_ranker.py` were declared frozen after testing one direction. Both had routing bugs for `sell_call` and `buy_put`. Freeze label must require all-directions test coverage.
+- **`_merge_swing` violated Rule 11 silently.** Fabricated `vcp_confidence=70`, `adx=35` as defaults. Gate logic ran on phantom data and no one noticed because the output looked plausible. Silent fabrication is worse than a crash — it looks correct.
+- **Docs diverged from code in 4 places simultaneously.** IVR formula (percentile vs rank), data hierarchy (cache-first vs live-first), ACCOUNT_SIZE enforcement (code has default, docs say "raises"), verdict logic (thresholds mismatch). The common cause: docs written ahead of code and never sync'd back after implementation changed.
+- **Direction-specific logic needs direction-specific tests.** A system with 4 directions needs 4 test paths per module. One passing direction gives false confidence the other 3 are correct.
+- **Liquidity gates designed for sellers break buyers by construction.** Strike-nearness filters are an ATM-centric concept. Applying them to delta-0.68 ITM contracts is a category error.
 
 ### Day 4: Spread Order, Detection Patterns, Legacy Cleanup
 - **Spread order determines precedence in JS.** `{ ticker: "MEOH", ...swing }` — if swing has `ticker: "AMD"`, AMD wins. Always put explicit override fields AFTER the spread: `{ ...swing, ticker: "MEOH" }`. This applies to any field that should never be overridden by a previous state import.

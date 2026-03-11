@@ -27,7 +27,6 @@ from constants import (
     FULL_MAX_CONTRACTS,
     FULL_MAX_EXPIRIES,
     FULL_MAX_STRIKES,
-    IBKR_BATCH_SIZE,
     SELL_CALL_STRIKE_HIGH_PCT,
     SELL_CALL_STRIKE_LOW_PCT,
     SELL_PUT_STRIKE_HIGH_PCT,
@@ -308,8 +307,18 @@ class IBKRProvider:
             # Widen to ±15% if direction window had no strikes (thinly traded stock)
             window_strikes = [s for s in all_strikes if underlying * 0.85 <= s <= underlying * 1.15]
 
-        # Sort by proximity to underlying (closest first) and cap
-        window_strikes.sort(key=lambda s: abs(s - underlying))
+        # Sort strategy:
+        # - Sell directions need ATM short-leg AND far-OTM protection-leg in the same fetch.
+        #   Proximity sort wastes slots on near-ATM $2.5-increment stubs that fail qualify,
+        #   preventing the protection-leg strikes from reaching the cap. Use range order instead.
+        # - Buy directions: proximity sort still correct (we want the nearest ITM strike to
+        #   underlying as the primary anchor).
+        if direction == DIRECTION_SELL_CALL:
+            window_strikes.sort()           # ascending: ATM edge → OTM end
+        elif direction == DIRECTION_SELL_PUT:
+            window_strikes.sort(reverse=True)  # descending: ATM edge → OTM end (puts go lower)
+        else:
+            window_strikes.sort(key=lambda s: abs(s - underlying))
         chosen_strikes = window_strikes[:max_strikes]
 
         # Fallback: if direction-aware window yielded too few strikes, supplement
@@ -369,7 +378,6 @@ class IBKRProvider:
             max_expiries = SMART_MAX_EXPIRIES if is_smart else FULL_MAX_EXPIRIES
             max_strikes = SMART_MAX_STRIKES if is_smart else FULL_MAX_STRIKES
             max_contracts = SMART_MAX_CONTRACTS if is_smart else FULL_MAX_CONTRACTS
-            batch_size = IBKR_BATCH_SIZE
             min_dte_val = int(min_dte if min_dte is not None else DEFAULT_MIN_DTE)
 
             self._ensure_connected()
@@ -513,7 +521,10 @@ class IBKRProvider:
                     "market_closed": True,
                 }
 
-            # ── Phase 4c: reqTickers (live market data) ───────────────────────
+            # ── Phase 4c: reqMktData (streaming — fires tickOptionComputation) ──
+            # reqTickers() is a snapshot wrapper that does NOT reliably trigger
+            # tickOptionComputation (tick type 13 = modelGreeks). Must use
+            # reqMktData(snapshot=False) and wait for the async callback to fire.
             def _num(v):
                 try:
                     f = float(v)
@@ -531,67 +542,114 @@ class IBKRProvider:
                 f = _num(v)
                 return 0 if f is None else int(f)
 
-            out = []
-            req_timeout = 15  # seconds per reqTickers batch — prevents indefinite block (KI-017)
-            for i in range(0, len(qual), max(1, batch_size)):
-                chunk = qual[i : i + batch_size]
-                self.ib.RequestTimeout = req_timeout
+            def _extract(qc, tk) -> dict:
+                greeks = tk.modelGreeks
+                bid_raw = _num(tk.bid)
+                ask_raw = _num(tk.ask)
+                last_raw = _num(tk.last)
+                bid = bid_raw if bid_raw is not None and bid_raw > 0 else None
+                ask = ask_raw if ask_raw is not None and ask_raw > 0 else None
+                last = last_raw if last_raw is not None and last_raw > 0 else None
+                mid = (
+                    round((bid + ask) / 2, 4)
+                    if bid is not None and ask is not None
+                    else (last if last is not None else 0.0)
+                )
+                iv = (
+                    _num(greeks.impliedVol)
+                    if greeks and getattr(greeks, "impliedVol", None) is not None
+                    else _num(getattr(tk, "impliedVolatility", None))
+                )
+                # optOpenInterest (tick 22) is the per-contract OI field for individual options.
+                # callOpenInterest / putOpenInterest are aggregate fields on the underlying stock
+                # ticker — they are always None on an individual option contract subscription.
+                oi = getattr(tk, "optOpenInterest", None)
+                return {
+                    "symbol": symbol,
+                    "expiry": datetime.strptime(
+                        qc.lastTradeDateOrContractMonth, "%Y%m%d"
+                    ).date().isoformat(),
+                    "dte": int(dte_map.get(
+                        (qc.lastTradeDateOrContractMonth, float(qc.strike), qc.right), 0
+                    )),
+                    "right": qc.right,
+                    "strike": float(qc.strike),
+                    "bid": bid, "ask": ask, "last": last,
+                    "mid": _num0(mid, 4),
+                    "delta": _num(greeks.delta) if greeks else None,
+                    "gamma": _num(greeks.gamma) if greeks else None,
+                    "theta": _num(greeks.theta) if greeks else None,
+                    "vega": _num(greeks.vega) if greeks else None,
+                    "impliedVol": iv,
+                    "optPrice": _num0(getattr(tk, "optPrice", mid) or mid or 0.0),
+                    "undPrice": _num0(getattr(tk, "undPrice", underlying) or underlying),
+                    "openInterest": _int0(oi),
+                    "volume": _int0(getattr(tk, "volume", 0)),
+                }
+
+            # Subscribe all contracts — tickOptionComputation fires async
+            subs = {}
+            for qc in qual:
+                subs[qc] = self.ib.reqMktData(qc, genericTickList="", snapshot=False,
+                                               regulatorySnapshot=False)
+
+            # Wait for tickOptionComputation (tick type 13) callbacks to arrive
+            self.ib.sleep(3)
+            out = [_extract(qc, subs[qc]) for qc in qual]
+
+            # ── Phase 4d: extended wait if greeks not yet populated ────────────
+            # usopt warm-up: tickOptionComputation may arrive later on first connect.
+            greeks_ok = sum(1 for c in out if c.get("delta") is not None)
+            if greeks_ok == 0 and out:
+                logger.info(
+                    "get_options_chain: %s — 0%% greeks after 3s, waiting 5s more (usopt warming up)",
+                    symbol,
+                )
+                self.ib.sleep(5)
+                out = [_extract(qc, subs[qc]) for qc in qual]
+                logger.info(
+                    "get_options_chain: %s — after extended wait: %d/%d contracts have greeks",
+                    symbol,
+                    sum(1 for c in out if c.get("delta") is not None),
+                    len(out),
+                )
+
+            # Cancel all streaming subscriptions
+            for qc in qual:
                 try:
-                    tickers = self.ib.reqTickers(*chunk)
-                finally:
-                    self.ib.RequestTimeout = 0  # restore to default (unlimited) after each batch
-                for tk in tickers:
-                    qc = tk.contract
-                    greeks = tk.modelGreeks
-                    bid_raw = _num(tk.bid)
-                    ask_raw = _num(tk.ask)
-                    last_raw = _num(tk.last)
-                    bid = bid_raw if bid_raw is not None and bid_raw > 0 else None
-                    ask = ask_raw if ask_raw is not None and ask_raw > 0 else None
-                    last = last_raw if last_raw is not None and last_raw > 0 else None
-                    mid = (
-                        round((bid + ask) / 2, 4)
-                        if bid is not None and ask is not None
-                        else (last if last is not None else 0.0)
-                    )
-                    iv = (
-                        _num(greeks.impliedVol)
-                        if greeks and getattr(greeks, "impliedVol", None) is not None
-                        else _num(getattr(tk, "impliedVolatility", None))
-                    )
-                    oi = (
-                        getattr(tk, "callOpenInterest", None)
-                        if qc.right == "C"
-                        else getattr(tk, "putOpenInterest", None)
-                    )
-                    out.append(
-                        {
-                            "symbol": symbol,
-                            "expiry": datetime.strptime(
-                                qc.lastTradeDateOrContractMonth, "%Y%m%d"
-                            ).date().isoformat(),
-                            "dte": int(
-                                dte_map.get(
-                                    (qc.lastTradeDateOrContractMonth, float(qc.strike), qc.right), 0
-                                )
-                            ),
-                            "right": qc.right,
-                            "strike": float(qc.strike),
-                            "bid": bid,
-                            "ask": ask,
-                            "last": last,
-                            "mid": _num0(mid, 4),
-                            "delta": _num(greeks.delta) if greeks else None,
-                            "gamma": _num(greeks.gamma) if greeks else None,
-                            "theta": _num(greeks.theta) if greeks else None,
-                            "vega": _num(greeks.vega) if greeks else None,
-                            "impliedVol": iv,
-                            "optPrice": _num0(getattr(tk, "optPrice", mid) or mid or 0.0),
-                            "undPrice": _num0(getattr(tk, "undPrice", underlying) or underlying),
-                            "openInterest": _int0(oi),
-                            "volume": _int0(getattr(tk, "volume", 0)),
-                        }
-                    )
+                    self.ib.cancelMktData(qc)
+                except Exception:
+                    pass
+
+            # ── Phase 4e: BS fallback if usopt still providing no greeks ──────
+            # If usopt never connected, reqTickers returns contracts with delta=None.
+            # Fall back to Black-Scholes with HV estimate so the app is usable.
+            greeks_after_retry = sum(1 for c in out if c.get("delta") is not None)
+            if greeks_after_retry == 0 and out:
+                from bs_calculator import compute_greeks
+                from constants import RISK_FREE_RATE
+                iv_sigma = self._get_hv_estimate(symbol)
+                logger.warning(
+                    "get_options_chain: %s — usopt not delivering greeks after retry, "
+                    "falling back to BS greeks (HV=%.1f%%)",
+                    symbol, iv_sigma * 100,
+                )
+                out_bs = []
+                for c in out:
+                    dte_val = int(c.get("dte", 0))
+                    T = max(dte_val, 1) / 365.0
+                    bs = compute_greeks(underlying, c["strike"], T, RISK_FREE_RATE, iv_sigma, c["right"])
+                    out_bs.append({
+                        **c,
+                        "mid": bs["price"] if bs else c.get("mid", 0.0),
+                        "delta": bs["delta"] if bs else None,
+                        "gamma": bs["gamma"] if bs else None,
+                        "theta": bs["theta"] if bs else None,
+                        "vega": bs["vega"] if bs else None,
+                        "impliedVol": iv_sigma,
+                        "bs_greeks": True,
+                    })
+                out = out_bs
 
             return {
                 "ticker": symbol,

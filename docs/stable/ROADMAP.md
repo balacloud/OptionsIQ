@@ -1,12 +1,13 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 6 (March 10, 2026)
-> **Current Version:** v0.6
+> **Last Updated:** Day 9 (March 11, 2026)
+> **Current Version:** v0.8
 
 ---
 
 ## Phase 0 — Documentation (Day 1) ✅ COMPLETE
 - [x] CLAUDE_CONTEXT.md, GOLDEN_RULES.md, ROADMAP.md, API_CONTRACTS.md
 - [x] Codex source files ported, .gitignore, .env.example, requirements.txt, start.sh, stop.sh
+- [x] CLAUDE.md created + session startup/close checklists added to CLAUDE_CONTEXT.md (Day 8)
 
 ## Phase 1 — Backend Foundation (Day 3) ✅ COMPLETE
 - [x] `constants.py`, `bs_calculator.py`, `ibkr_provider.py` market_data_type=1
@@ -42,12 +43,19 @@
 - [x] `SMART_MAX_STRIKES` 4→6, `SMART_MAX_EXPIRIES` 1→2, broad-window retry when <3 qualify
 - [x] `start.sh` `.env` path fix + venv creation fix
 
-## Phase 4 — Market Hours + Analyze Service (Day 6–7)
+## Phase 4 — Market Hours + Analyze Service (Day 6–8)
 - [x] Market hours detection — BS greeks when market closed (KI-024) ✅ Day 6
 - [x] ibkr_closed data source tier — no stale-quote caching ✅ Day 6
 - [x] Frontend: amber banner + "IB Closed" header label ✅ Day 6
-- [ ] Full weekday test — AMD + NVDA + PLTR, all four directions, market open
+- [x] Strategy ranker: explicit builders for all 4 directions (KI-021) ✅ Day 7
+- [x] reqMktData(snapshot=False) replaces reqTickers — modelGreeks fix (KI-027) ✅ Day 7
+- [x] KI-026 VERIFIED Day 9 — live greeks 100% during market hours, usopt lazy connect confirmed ✅
+- [x] pnl_calculator: None guard + itm_put/atm_put/bear_call_spread/sell_call handlers ✅ Day 9
+- [x] sell_call direction-aware sort + SMART_MAX_STRIKES 6→12 → bear_call_spread building ✅ Day 9
+- [ ] KI-035: OI always 0 — genericTickList needs "101" for individual option OI tick
 - [ ] Synthetic swing default warning banner (KI-022)
+- [ ] Create alpaca_provider.py — REST fallback with real greeks (KI-036, Day 10 P1)
+- [ ] Create analyze_service.py — extract from app.py (KI-001/023, Day 10 P2)
 
 ## Phase 5 — Paper Trading Ready (Day 6-7)
 - [ ] Paper trade record + mark-to-market verified end-to-end
@@ -71,3 +79,6 @@
 | v0.4 | Day 4 | Concurrency P1 fixes (KI-016/017/018), ticker override + STA offline detection fixed |
 | v0.5 | Day 5 | KI-019 heartbeat done, STA field mapping fixed, SPY/200SMA from yfinance, direction lock SELL, struct cache drift, broader strike qualification |
 | v0.6 | Day 6 | KI-024 market hours detection — BS greeks when closed, ibkr_closed tier, frontend banner |
+| v0.7 | Day 7 | KI-021 strategy routing all 4 directions, KI-027 reqMktData fix for modelGreeks, Phase 4e BS fallback |
+| v0.7 | Day 8 | Process session — CLAUDE.md created, session startup/close checklists formalized in CLAUDE_CONTEXT.md |
+| v0.8 | Day 9 | KI-026 verified live. KI-030 hv_20 fix. KI-031 pnl_calculator fixed. KI-033 sell_call spread fixed (sort + SMART_MAX). Alpaca researched as REST fallback. |

@@ -9,7 +9,9 @@ def _stock_move_pct(stock_price: float, current_price: float) -> float:
     return ((stock_price / current_price) - 1.0) * 100.0
 
 
-def _fmt(v: float) -> float:
+def _fmt(v):
+    if v is None:
+        return None
     return round(float(v), 2)
 
 
@@ -77,12 +79,35 @@ class PnLCalculator:
             long_strike = float(strategy["long_strike"])
             short_strike = float(strategy["short_strike"])
             net_premium = float(strategy["net_premium"])
-            intrinsic = min(max(0.0, scenario_price - long_strike), short_strike - long_strike)
+            right = strategy.get("right", "C")
+            if right == "P":
+                width = max(0.0, long_strike - short_strike)
+                intrinsic = min(max(0.0, long_strike - scenario_price), width)
+            else:
+                width = max(0.0, short_strike - long_strike)
+                intrinsic = min(max(0.0, scenario_price - long_strike), width)
             return (intrinsic - net_premium) * 100
+
+        if st in {"itm_put", "atm_put"}:
+            strike = float(strategy["strike"])
+            premium = float(strategy["premium"])
+            return (max(0.0, strike - scenario_price) - premium) * 100
 
         if st == "sell_put":
             strike = float(strategy["strike"])
             premium = float(strategy["premium"])
             return (premium - max(0.0, strike - scenario_price)) * 100
+
+        if st == "bear_call_spread":
+            short_strike = float(strategy["short_strike"])
+            long_strike = float(strategy["long_strike"])
+            net_premium = float(strategy["net_premium"])
+            intrinsic = min(max(0.0, scenario_price - short_strike), long_strike - short_strike)
+            return (net_premium - intrinsic) * 100
+
+        if st == "sell_call":
+            strike = float(strategy["strike"])
+            premium = float(strategy["premium"])
+            return (premium - max(0.0, scenario_price - strike)) * 100
 
         return 0.0

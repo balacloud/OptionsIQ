@@ -64,8 +64,8 @@ SELLER_SWEET_MAX_DTE    = 45     # Seller sweet spot upper bound
 # Chain fetch profiles
 # ---------------------------------------------------------------------------
 SMART_MAX_EXPIRIES      = 2      # Smart: 2 expiries — backup if first expiry has no valid strikes
-SMART_MAX_STRIKES       = 6      # Smart: 6 strikes — buffer for qualification filter (some fail per-expiry)
-SMART_MAX_CONTRACTS     = 12     # Smart: 6 strikes × 2 expiries (adjusted from 8)
+SMART_MAX_STRIKES       = 12     # Smart: 12 strikes — ascending/descending sort for sell dirs, buffer for $2.5 increments
+SMART_MAX_CONTRACTS     = 26     # Smart: 12 strikes × 2 expiries + ATM anchors
 SMART_STRIKE_WINDOW     = 0.10   # Smart: fallback ±10% when no direction hint
 
 FULL_MAX_EXPIRIES       = 3      # Full: up to 3 expiries in DTE window
@@ -87,12 +87,14 @@ BUY_CALL_STRIKE_HIGH_PCT = 0.08  # shallowest bound (8% below) — high strike b
 BUY_PUT_STRIKE_LOW_PCT   = 0.08  # 8% above underlying — low strike bound
 BUY_PUT_STRIKE_HIGH_PCT  = 0.20  # 20% above underlying — high strike bound
 
-# sell_call: ATM to OTM — ±6% around underlying
-SELL_CALL_STRIKE_LOW_PCT = 0.02  # 2% below ATM
-SELL_CALL_STRIKE_HIGH_PCT= 0.08  # 8% above ATM (OTM cushion)
+# sell_call: ATM to OTM — extended to 15% above ATM
+# Short leg needs delta ~0.30 (~5% OTM), protection leg needs delta ~0.15 (~12% OTM)
+SELL_CALL_STRIKE_LOW_PCT = 0.02  # 2% below ATM (include slight ITM for short leg)
+SELL_CALL_STRIKE_HIGH_PCT= 0.15  # 15% above ATM (wide enough for protection leg)
 
-# sell_put: ATM to OTM — ±6% around underlying
-SELL_PUT_STRIKE_LOW_PCT  = 0.08  # 8% below ATM (OTM cushion)
+# sell_put: ATM to OTM — extended to 15% below ATM (symmetric with sell_call)
+# Short leg needs delta ~-0.30 (~5% OTM), protection leg needs delta ~-0.15 (~12% OTM)
+SELL_PUT_STRIKE_LOW_PCT  = 0.15  # 15% below ATM (wide enough for protection leg)
 SELL_PUT_STRIKE_HIGH_PCT = 0.02  # 2% above ATM
 
 # Structure cache: reqSecDefOptParams result (strikes/expiries) cached 4h
@@ -124,8 +126,8 @@ PAPER_TRADE_MTM_TTL     = 300     # Mark-to-market refresh: 5 minutes
 # ---------------------------------------------------------------------------
 # IB Worker / timeouts
 # ---------------------------------------------------------------------------
-IB_WORKER_TIMEOUT_SMART = 24      # Timeout for smart profile chain fetch (sec)
-IB_WORKER_TIMEOUT_FULL  = 32      # Timeout for full profile chain fetch (sec)
+IB_WORKER_TIMEOUT_SMART = 40      # Timeout for smart profile chain fetch (sec); 40s covers usopt warm-up retry (15+3+15=33s)
+IB_WORKER_TIMEOUT_FULL  = 50      # Timeout for full profile chain fetch (sec)
 IB_CHAIN_RETRY_ATTEMPTS = 2       # Retry attempts on timeout
 IB_CHAIN_RETRY_BACKOFF  = 0.6     # Backoff between retries (sec)
 IB_CB_FAILURE_THRESHOLD = 2       # Circuit breaker: open after N failures
