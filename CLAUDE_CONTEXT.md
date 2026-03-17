@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 9 (March 11, 2026)
-> **Current Version:** v0.8 (live greeks confirmed, sell_call spread fixed, pnl_calculator fixed, Alpaca planned)
-> **Project Phase:** Phase 4 complete — Alpaca integration + analyze_service.py next
+> **Last Updated:** Day 12 (March 17, 2026)
+> **Current Version:** v0.9.2 (Phase A+D audit fixes complete — system now usable)
+> **Project Phase:** Phase 4b — All critical/high audit fixes shipped. Day 13: API_CONTRACTS sync + sector rotation.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY9_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY9.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY12_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY12.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -62,50 +62,56 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 4 complete | Live greeks confirmed, sell_call spread working |
-| Frontend | Done + Day 4+5+6 fixes | Market closed banner + IB Closed label |
-| IBKR connection | WORKING | Live confirmed: AMD/NVDA, greeks_pct 100%, account U11574928 |
-| Gate logic | Correct (frozen) | gate_engine.py verified correct |
+| Backend | Phase 4b DONE — all critical/high fixes shipped | Usable for live analysis |
+| Frontend | Done + Day 4+5+6+12 fixes | All quality banners working (ibkr_live, ibkr_stale, alpaca, ibkr_closed, mock) |
+| IBKR connection | WORKING | Live confirmed: AMD, greeks_pct 100%, account U11574928 |
+| Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
-| Strategy ranking | Updated Day 9 | sell_call: bear_call_spread building (225/230 AMD). sell_put: naked only |
+| Strategy ranking | Updated Day 9+12 | sell_call: bear_call_spread ✓. sell_put: naked + warning label. |
 | IV store | Correct (frozen) | iv_store.py verified correct |
-| constants.py | DONE (Day 9) | SMART_MAX_STRIKES 6→12, SMART_MAX_CONTRACTS 12→26, sell windows fixed |
+| constants.py | DONE (Day 12) | 19 new constants added (IV abs fallback, DTE signal, SPY regime) |
 | bs_calculator.py | DONE | Black-Scholes greeks fallback |
 | ib_worker.py | DONE (Day 5) | Queue poisoning + heartbeat + RequestTimeout |
 | yfinance_provider.py | DONE | Middle tier, BS greeks fill (NO greeks — computed via BS only) |
-| data_service.py | DONE | Provider cascade + SQLite cache + single circuit breaker |
-| ibkr_provider.py | DONE (Day 9) | reqMktData sort fix + OI field fix (KI-035 pending) |
-| alpaca_provider.py | NOT CREATED | Day 10 P1 — REST fallback with real greeks |
-| analyze_service.py | NOT CREATED | Day 10 P2 — extract from app.py |
-| app.py | Partial refactor | 558 lines. Still needs analyze_service.py split. |
+| data_service.py | DONE (Day 12) | Provider cascade + SQLite WAL + CB + Alpaca tier |
+| ibkr_provider.py | DONE (Day 12) | try-finally cancelMktData. OI via reqMktData confirmed unavailable (platform limit) |
+| alpaca_provider.py | DONE (Day 10) | REST fallback, greeks ✅, NO OI/volume (model limitation) |
+| analyze_service.py | NOT CREATED | Day 13 P2 — extract from app.py |
+| app.py | Hardened | ~600 lines. ACCOUNT_SIZE guard + outer try-except + bare excepts logged. |
 
 ### Backend Files (current state)
 ```
 backend/
-  app.py              558 lines — routes + helpers. Needs analyze_service.py split (P2).
-  constants.py        DONE (Day 9) — SMART_MAX_STRIKES 12, SMART_MAX_CONTRACTS 26,
-                                     SELL_CALL_STRIKE_HIGH_PCT 0.15, SELL_PUT_STRIKE_LOW_PCT 0.15
+  app.py              ~600 lines — HARDENED (Day 12): logger defined, ACCOUNT_SIZE guard,
+                                   outer try-except on analyze, bare excepts named+logged.
+                                   Still needs analyze_service.py split (Day 13 P2).
+  constants.py        DONE (Day 12) — 19 new thresholds: IV abs fallback, DTE signal quality,
+                                      SPY regime per direction, STRIKE_SAFETY_RATIO, SELL_CALL_OTM_PASS_PCT
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
   ib_worker.py        DONE — single thread, submit() queue, expires_at, heartbeat (30s idle)
   yfinance_provider.py DONE — emergency fallback (no greeks — computed via BS)
-  data_service.py     DONE — provider cascade + SQLite cache + AUTHORITATIVE CB + ibkr_closed tier
-  ibkr_provider.py    DONE (Day 9) — direction-aware strike sort (sell_call ascending, sell_put desc)
-                                     OI field: optOpenInterest (was callOpenInterest — wrong field)
-                                     KI-035: genericTickList="" → needs "101" for OI tick 22
-                                     Phase 4e: BS fallback if usopt still no greeks after wait
+  data_service.py     DONE (Day 12) — provider cascade + SQLite WAL + timeout + CB + Alpaca tier
+  ibkr_provider.py    DONE (Day 12) — try-finally cancelMktData (no zombie subs).
+                                     OI via reqMktData CONFIRMED unavailable (platform limitation).
+                                     direction-aware strike sort (sell_call asc, sell_put desc)
+  alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
+                                     alpaca-py SDK, OCC parsing, direction-aware DTE/strike windows
+                                     Tier 4 in cascade (between stale cache and yfinance)
   mock_provider.py    PARTIAL — still partially hardcoded (low priority)
-  gate_engine.py      FROZEN — math correct. Coerce None→0.0 before passing gate_payload.
-  strategy_ranker.py  UPDATED (Day 7+9) — explicit builder per direction:
+  gate_engine.py      DONE (Day 12) — Rule 3 fixed: imports from constants.py (60+ literals replaced).
+                                     Liquidity gate: OI=0+Vol>0 → WARN not BLOCK.
+                                     Still math-frozen — coerce None→0.0 before gate_payload.
+  strategy_ranker.py  UPDATED (Day 12) — sell_put naked put warning added to all 3 strategies.
                                         _rank_sell_call → bear_call_spread (delta 0.30/0.15) ✓
                                         _rank_buy_put   → ITM put + bear put spread + ATM put ✓
-                                        _rank_track_b (sell_put) → naked sell_put (no spread yet)
+                                        _rank_track_b   → naked sell_put + naked warning
   pnl_calculator.py   FIXED (Day 9) — None guard, handlers for itm_put/atm_put/bear_call_spread/sell_call
                                        spread handler direction-aware via right field
   iv_store.py         FROZEN — math correct
 
   # TO CREATE:
-  alpaca_provider.py  Day 10 P1 — REST fallback with real greeks (needs APLACA_SECRET in .env)
-  analyze_service.py  Day 10 P2 — extract _merge_swing, _extract_iv_data, _behavioral_checks
+  marketdata_provider.py  Day 13 — MarketData.app REST provider ($12/mo — pending)
+  analyze_service.py      Day 13 P2 — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ---
@@ -121,9 +127,10 @@ backend/
 ```
 [1] IBKR Live (reqMktData snapshot=False)  ← DEFAULT (greeks confirmed Day 9)
 [2] IBKR Cache (SQLite, TTL 2 min)         ← "Using cached chain" banner
-[2.5] Alpaca indicative/opra (PLANNED)     ← REST fallback WITH greeks — better than yfinance
-[3] yfinance (emergency fallback)          ← NO real greeks (BS computed from HV)
-[4] Mock (dev/CI testing ONLY)             ← NEVER for paper trades
+[2.5] MarketData.app (PLANNED, $12/mo)    ← greeks+IV+OI+volume, 15-min delayed
+[3] Alpaca indicative (DONE, free)         ← greeks+IV but NO OI/volume
+[4] yfinance (emergency fallback)          ← NO real greeks (BS computed from HV)
+[5] Mock (dev/CI testing ONLY)             ← NEVER for paper trades
 ```
 
 ### IBWorker Thread Model
@@ -199,23 +206,27 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY8.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY12.md`
 
-Open (HIGH — Day 10 P0):
-1. **OI always 0 via reqMktData** — `genericTickList=""` doesn't include tick 22. Need `"101"`. Liquidity gate always fails (KI-035)
+Open (HIGH):
+1. **KI-044: API_CONTRACTS.md stale** — verdict, gates, strategies, behavioral_checks all differ from code
 
 Open (MEDIUM):
-2. **NVDA buy_put sparse** — only 3 contracts qualify, DTE gate fails. SMART_MAX_STRIKES increase may help (KI-025)
-3. **analyze_service.py missing** — app.py still 558 lines, target ≤150 (KI-001/KI-023)
-4. **Synthetic swing defaults silent** — no banner when stop/target are fabricated (KI-022/KI-005)
+2. **analyze_service.py missing** — app.py still ~600 lines (KI-001/KI-023)
+3. **Synthetic swing defaults silent** (KI-022/KI-005)
+4. **NVDA buy_put sparse** — only 3 contracts qualify (KI-025)
 
-Open (Planned — Day 10):
-5. **alpaca_provider.py missing** — REST fallback with real greeks (KI-036). Needs APLACA_SECRET in .env.
+Open (LOW):
+5. **Alpaca OI/volume missing** (KI-038)
+6. OHLCV temporal gap validation (KI-034)
+7. fomc_days_away defaults to 30 (KI-008)
+8. API URL hardcoded (KI-013)
 
-Open (Low priority):
-6. OHLCV temporal gap validation at write time (KI-034)
-7. fomc_days_away manual mode defaults to 30 (KI-008)
-8. API URL hardcoded in useOptionsData.js (KI-013)
+Resolved (Day 12):
+- KI-040 logger crash, KI-041 QualityBanner mismatch, KI-042 SQLite WAL, KI-043 subscription leak
+- KI-045 outer try-except, KI-046 bare excepts, KI-047 gate_engine constants, KI-048 missing banners
+- KI-035 OI: CONFIRMED platform limitation — graceful degradation (WARN not BLOCK) is permanent fix
+- sell_put naked warning, ACCOUNT_SIZE startup guard
 
 ---
 
@@ -232,38 +243,42 @@ Open (Low priority):
 | Day 7 | Mar 10, 2026 | Strategy ranker: explicit builders for sell_call (bear call spread) + buy_put (long put + bear put spread) — KI-021 fixed. Root cause of modelGreeks=None found: reqTickers() doesn't fire tickOptionComputation. Replaced with reqMktData(snapshot=False) throughout. Phase 4d extended wait (sleep 3+5). Phase 4e BS fallback if usopt still silent. Confirmed OPRA subscription adequate (no new subscription needed). Stale AMD chain cache cleared (strike mismatch at ~182 vs live ~205). |
 | Day 8 | Mar 11, 2026 | Process session — no code changes. Created CLAUDE.md (session pointer). Added startup + close checklists to CLAUDE_CONTEXT.md. Enforced ordered priming: CLAUDE_CONTEXT → GOLDEN_RULES → ROADMAP → PROJECT_STATUS → KNOWN_ISSUES → API_CONTRACTS. |
 | Day 9 | Mar 11, 2026 | KI-026 live greeks CONFIRMED (100% greeks_pct, ibkr_live, Phase 4e never fired). KI-030 AMD hv_20 corruption fixed (deleted 20 bad ohlcv rows). KI-031 pnl_calculator None crash fixed + 4 strategy type handlers added. KI-033 sell_call bear_call_spread fixed: direction-aware sort + SMART_MAX_STRIKES 6→12 + MAX_CONTRACTS 12→26. OI field fix: optOpenInterest. Alpaca researched: great REST fallback, needs alpaca_provider.py + API secret. |
+| Day 10 | Mar 12, 2026 | KI-035 OI fix applied (genericTickList="101"). alpaca_provider.py CREATED + wired into DataService+app.py. .env syntax fix. Alpaca live-tested: greeks ✅, OI/volume ❌ (model limitation). MarketData.app live-tested: current greeks ✅, historical IV=None (unknown if trial/platform). Perplexity research: 9 providers compared, none under $30/mo has historical IV. Research doc created (docs/Research/). Golden Rule 19 added. |
+| Day 11 | Mar 13, 2026 | KI-037 CONFIRMED (MarketData.app no historical IV — platform limitation). System coherence audit: 47 findings. Behavioral audit: 17 claims, 8 verified, 3 misleading, 5 false. Key findings: liquidity gate permanently broken (OI=0), gate_engine 60+ hardcoded thresholds (Rule 3 violated), 2 missing quality banners, sell_put naked with no warning, DTE buyer sweet spot not enforced, ACCOUNT_SIZE silently defaults. Sector rotation ETF module researched. |
+| Day 12 | Mar 17, 2026 | All Phase A+D critical/high audit fixes shipped during market hours. KI-035 OI confirmed platform limitation — graceful degradation added (WARN not BLOCK). gate_engine Rule 3 fixed (60+ literals → constants.py). SQLite WAL. reqMktData try-finally. Startup guard for ACCOUNT_SIZE. sell_put naked warning. QualityBanner fixed. alpaca+ibkr_stale banners added. System now usable for live analysis. |
 
 ---
 
-## Next Session Priorities (Day 10)
+## Next Session Priorities (Day 13)
 
-### P0 — Fix KI-035: OI always 0 (FIRST THING)
-1. Change `genericTickList=""` → `genericTickList="101"` in ibkr_provider.py reqMktData for options
-2. Test AMD sell_call → verify OI > 0 → liquidity gate should pass for liquid strikes
-3. This unblocks paper trade E2E testing
+### P0 — Phase B: API_CONTRACTS.md sync (KI-044)
+Update spec to match actual code. Mismatches in: verdict structure, gate field names, strategy fields,
+behavioral_checks format, direction_locked. Frontend already matches code — spec is the stale one.
 
-### P1 — Create alpaca_provider.py
-4. User MUST first add `APLACA_SECRET=<secret>` to backend/.env (get from Alpaca dashboard)
-5. Create `backend/alpaca_provider.py`:
-   - REST client for `GET /v1beta1/options/snapshots/{symbol}?feed=indicative`
-   - Parse OCC symbol for strike/expiry/right
-   - Map to same contract dict format as ibkr_provider output
-   - Returns: bid, ask, delta, gamma, theta, vega, IV, OI, volume
-6. Register in DataService cascade between IBKR cache and yfinance (tier 2.5)
-7. Add `ALPACA_FEED=indicative` to .env (switch to `opra` if subscribing)
+### P1 — Sector Rotation Backend
+- `sector_scan_service.py` — STA consumer + quadrant→direction mapping + IV overlay (~150 lines)
+- `GET /api/sectors/scan` (L1) + `GET /api/sectors/analyze/{ticker}` (L2)
+- L3 reuses `POST /api/options/analyze` — zero new code
+- See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 
-### P2 — Create analyze_service.py
-8. Extract `_merge_swing()`, `_extract_iv_data()`, `_behavioral_checks()` from app.py
-9. app.py → routes-only ≤150 lines
+### P2 — analyze_service.py extraction
+Extract `_merge_swing`, `_extract_iv_data`, `_behavioral_checks` from app.py.
+Goal: app.py ≤ 150 lines (Rule 4). Currently ~600 lines.
 
-### P3 — bull_put_spread for sell_put (after OI fix and Alpaca done)
-10. `_rank_track_b` currently builds naked sell_puts — upgrade to bull put spread
-    Short put delta ~0.30 (OTM) + long put delta ~0.15 (protection)
+### P3 — bull_put_spread for sell_put
+strategy_ranker.py `_rank_track_b`: currently naked sell_put only.
+Add spread builder (parallel to existing bear_call_spread logic for sell_call).
 
-### P4 — Paper trade E2E
-11. Once OI gate passes, record AMD or CTRA paper trade
-12. Verify mark-to-market P&L in `GET /api/options/paper-trades`
+### Deferred (low priority)
+- Phase C: Provider consistency (None vs 0, bs_greeks flag)
+- Phase E: Performance (deepcopy overhead, struct_cache LRU)
+- Phase F: Documentation sync
+- DTE buyer sweet spot: enforce 45-90 or accept signal-based? (Claim 3)
+- marketdata_provider.py ($12/mo — only if IBKR OI permanently unavailable)
 
 ### Reference
-- `docs/stable/CONCURRENCY_ARCHITECTURE.md` — all 5 problems resolved + market hours
-- `docs/versioned/KNOWN_ISSUES_DAY9.md` — current issue list
+- `docs/Research/Behavioral_Audit_Day11.md` — behavioral audit (17 claims)
+- `docs/Research/System_Coherence_Audit_Day11.md` — coherence audit (47 items)
+- `docs/Research/Sector_Rotation_ETF_Module_Day11.md` — ETF module research
+- `docs/versioned/KNOWN_ISSUES_DAY12.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY12_SHORT.md` — Day 12 summary

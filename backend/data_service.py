@@ -1,7 +1,7 @@
 """
 OptionsIQ — Data Service
 
-Provider selection: IBKR (via IBWorker) → Persistent cache → yfinance → Mock
+Provider selection: IBKR (via IBWorker) → Persistent cache → Alpaca → yfinance → Mock
 Persistent SQLite chain cache survives Flask restarts (TTL per constants.py).
 Circuit breaker: 2 consecutive IBKR failures → 45s cooldown.
 
@@ -10,6 +10,7 @@ Provider quality labels returned:
   "ibkr_closed" — IBKR connected but market closed; BS-computed greeks, no bid/ask/OI
   "ibkr_cache"  — within TTL window (background refresh triggered)
   "ibkr_stale"  — beyond TTL but IBKR unavailable (background refresh triggered)
+  "alpaca"      — Alpaca REST fallback (15-min delayed, real greeks + OI)
   "yfinance"    — yfinance fallback
   "mock"        — dev/CI only
 """
@@ -46,11 +47,13 @@ class DataService:
         ib_worker=None,
         yf_provider=None,
         mock_provider=None,
+        alpaca_provider=None,
         db_path: str | None = None,
     ) -> None:
         self.ib_worker = ib_worker
         self.yf_provider = yf_provider
         self.mock_provider = mock_provider
+        self.alpaca_provider = alpaca_provider
 
         base = Path(__file__).resolve().parent
         self._db_path = Path(db_path) if db_path else base / "data" / "chain_cache.db"
@@ -69,7 +72,8 @@ class DataService:
     # ─── DB init ─────────────────────────────────────────────────────────────
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path, timeout=5.0)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -169,7 +173,8 @@ class DataService:
             return None
         try:
             return json.loads(row["chain_json"])
-        except Exception:
+        except Exception as exc:
+            logger.warning("Cache JSON decode error for key %s: %s", key, exc)
             return None
 
     def evict_expired_cache(self) -> int:
@@ -296,7 +301,22 @@ class DataService:
             )
             return deepcopy(stale), "ibkr_stale"
 
-        # 4. yfinance
+        # 4. Alpaca (15-min delayed REST, real greeks + OI — better than yfinance)
+        if self.alpaca_provider is not None:
+            try:
+                chain = self.alpaca_provider.get_options_chain(
+                    ticker,
+                    underlying_hint,
+                    direction,
+                    target_price,
+                    profile,
+                    min_dte_val,
+                )
+                return chain, "alpaca"
+            except Exception as exc:
+                logger.warning("Alpaca chain error for %s: %s", ticker, exc)
+
+        # 5. yfinance
         if self.yf_provider is not None:
             try:
                 chain = self.yf_provider.get_options_chain(
@@ -311,7 +331,7 @@ class DataService:
             except Exception as exc:
                 logger.warning("yfinance chain error for %s: %s", ticker, exc)
 
-        # 5. Mock (last resort — never for live paper trades)
+        # 6. Mock (last resort — never for live paper trades)
         if self.mock_provider is not None:
             chain = self.mock_provider.get_options_chain(ticker)
             return chain, "mock"
@@ -358,6 +378,8 @@ class DataService:
             return "mock"
         if data_source in ("ibkr_stale",):
             return "stale"
+        if data_source == "alpaca":
+            return "delayed"
         if data_source == "yfinance":
             return "yfinance"
         if data_source == "ibkr_cache":

@@ -8,6 +8,7 @@ export default function Header({ ticker, data, onIbClick }) {
     ibkr_cache:   'IB Cache',
     ibkr_stale:   'IB Stale',
     ibkr_partial: 'IB Partial',
+    alpaca:       'Alpaca',
     yfinance:     'yfinance',
     mock:         'Mock',
   }[source] || source;

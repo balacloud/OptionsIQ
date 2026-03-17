@@ -18,6 +18,11 @@ HV_LOW_REGIME_PCT       = 15.0   # HV < 15% = special low-vol exception
 HV_IV_PASS_RATIO        = 1.20   # HV/IV < 1.20 = not overpaying for IV
 HV_IV_WARN_RATIO        = 1.30   # HV/IV 1.20–1.30 = borderline
 
+# Absolute IV fallback thresholds (used when IVR history < 30 days)
+IV_ABS_BUYER_PASS_PCT   = 20.0   # Absolute IV < 20% = cheap, good for buyers
+IV_ABS_BUYER_WARN_PCT   = 35.0   # Absolute IV 20–35% = moderate for buyers
+IV_ABS_LOW_HV_PASS_PCT  = 25.0   # In low-HV regime: IV < 25% still acceptable for buyers
+
 # ---------------------------------------------------------------------------
 # Gate thresholds — Theta / Time decay
 # ---------------------------------------------------------------------------
@@ -39,8 +44,32 @@ MIN_PREMIUM_DOLLAR      = 2.00   # Premium < $2.00 = not worth the spread risk
 # Gate thresholds — Strike / Position
 # ---------------------------------------------------------------------------
 STRIKE_NEARNESS_PCT     = 0.05   # ATM = within 5% of underlying price
+STRIKE_SAFETY_RATIO     = 0.995  # sell_put strike must be <= 0.995 × S1 support
+SELL_CALL_OTM_PASS_PCT  = 2.0    # sell_call: strike ≥ 2% OTM for pass
 MAX_LOSS_WARN_PCT       = 0.10   # Max loss > 10% of account = warn
 MAX_LOSS_FAIL_PCT       = 0.20   # Max loss > 20% of account = hard fail
+
+# ---------------------------------------------------------------------------
+# Gate thresholds — DTE / Signal quality
+# ---------------------------------------------------------------------------
+VCP_HIGH_CONF_PCT       = 80.0   # VCP confidence + ADX high → aggressive DTE
+VCP_MED_CONF_PCT        = 60.0   # VCP confidence medium → standard DTE
+ADX_HIGH_THRESH         = 40.0   # ADX >= 40 = strong trend confirmation
+DTE_REC_HIGH_SIGNAL     = 21     # Recommended DTE when VCP+ADX both high
+DTE_REC_MED_SIGNAL      = 45     # Recommended DTE when VCP medium confidence
+DTE_GATE_TOLERANCE      = 5      # DTE gate: pass if within ±5d of recommended
+
+# ---------------------------------------------------------------------------
+# Gate thresholds — Market regime (SPY)
+# ---------------------------------------------------------------------------
+SPY_BULL_5D_WARN        = -0.02  # SPY 5-day < -2% = softening (buy_call warn)
+SPY_BULL_5D_FAIL        = -0.04  # SPY 5-day < -4% = unsupportive (buy_call fail)
+SPY_SELLPUT_5D_WARN     = -0.01  # SPY 5-day < -1% = weakening (sell_put warn)
+SPY_SELLPUT_5D_FAIL     = -0.02  # SPY 5-day < -2% = too risky for put selling
+SPY_SELLCALL_5D_PASS    = -0.01  # SPY 5-day < -1% = favorable for call selling
+SPY_SELLCALL_5D_WARN    = 0.02   # SPY 5-day >= 2% = strong bull, elevated call risk
+SPY_BUYPUT_5D_PASS      = -0.02  # SPY 5-day < -2% = bearish regime (buy_put pass)
+SPY_BUYPUT_5D_WARN      = -0.01  # SPY 5-day < -1% = weakening (buy_put warn)
 
 # ---------------------------------------------------------------------------
 # Gate thresholds — Delta targeting

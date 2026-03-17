@@ -589,37 +589,39 @@ class IBKRProvider:
 
             # Subscribe all contracts — tickOptionComputation fires async
             subs = {}
-            for qc in qual:
-                subs[qc] = self.ib.reqMktData(qc, genericTickList="", snapshot=False,
-                                               regulatorySnapshot=False)
+            out = []
+            try:
+                for qc in qual:
+                    subs[qc] = self.ib.reqMktData(qc, genericTickList="101", snapshot=False,
+                                                   regulatorySnapshot=False)
 
-            # Wait for tickOptionComputation (tick type 13) callbacks to arrive
-            self.ib.sleep(3)
-            out = [_extract(qc, subs[qc]) for qc in qual]
-
-            # ── Phase 4d: extended wait if greeks not yet populated ────────────
-            # usopt warm-up: tickOptionComputation may arrive later on first connect.
-            greeks_ok = sum(1 for c in out if c.get("delta") is not None)
-            if greeks_ok == 0 and out:
-                logger.info(
-                    "get_options_chain: %s — 0%% greeks after 3s, waiting 5s more (usopt warming up)",
-                    symbol,
-                )
-                self.ib.sleep(5)
+                # Wait for tickOptionComputation (tick type 13) callbacks to arrive
+                self.ib.sleep(3)
                 out = [_extract(qc, subs[qc]) for qc in qual]
-                logger.info(
-                    "get_options_chain: %s — after extended wait: %d/%d contracts have greeks",
-                    symbol,
-                    sum(1 for c in out if c.get("delta") is not None),
-                    len(out),
-                )
 
-            # Cancel all streaming subscriptions
-            for qc in qual:
-                try:
-                    self.ib.cancelMktData(qc)
-                except Exception:
-                    pass
+                # ── Phase 4d: extended wait if greeks not yet populated ────────────
+                # usopt warm-up: tickOptionComputation may arrive later on first connect.
+                greeks_ok = sum(1 for c in out if c.get("delta") is not None)
+                if greeks_ok == 0 and out:
+                    logger.info(
+                        "get_options_chain: %s — 0%% greeks after 3s, waiting 5s more (usopt warming up)",
+                        symbol,
+                    )
+                    self.ib.sleep(5)
+                    out = [_extract(qc, subs[qc]) for qc in qual]
+                    logger.info(
+                        "get_options_chain: %s — after extended wait: %d/%d contracts have greeks",
+                        symbol,
+                        sum(1 for c in out if c.get("delta") is not None),
+                        len(out),
+                    )
+            finally:
+                # Always cancel subscriptions — prevents IB Gateway zombie subscription buildup
+                for qc in subs:
+                    try:
+                        self.ib.cancelMktData(qc)
+                    except Exception:
+                        pass
 
             # ── Phase 4e: BS fallback if usopt still providing no greeks ──────
             # If usopt never connected, reqTickers returns contracts with delta=None.

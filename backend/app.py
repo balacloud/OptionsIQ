@@ -15,6 +15,7 @@ from data_service import DataService
 from gate_engine import GateEngine
 from ib_worker import IBWorker
 from iv_store import IVStore
+from alpaca_provider import AlpacaNotAvailableError, AlpacaProvider
 from mock_provider import MockProvider
 from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
@@ -23,9 +24,17 @@ from yfinance_provider import YFinanceProvider
 VERSION = "2.0"
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 
+# Golden Rule 7: ACCOUNT_SIZE must be explicit — no silent defaults.
+if not os.getenv("ACCOUNT_SIZE"):
+    raise RuntimeError(
+        "ACCOUNT_SIZE is not set in .env — add ACCOUNT_SIZE=<your_account_value> "
+        "(Golden Rule 7: user must be conscious of their account size)"
+    )
+
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3050"]}})
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 iv_store = IVStore()
 mock_provider = MockProvider()
@@ -36,10 +45,17 @@ pnl_calculator = PnLCalculator()
 # Phase 2+: IBWorker (single IB() thread) + DataService (cascade + SQLite cache + CB)
 _ib_worker = IBWorker()
 _yf_provider = YFinanceProvider()
+try:
+    _alpaca_provider = AlpacaProvider()
+    logger.info("AlpacaProvider initialised (tier 2.5 fallback)")
+except AlpacaNotAvailableError as _e:
+    _alpaca_provider = None
+    logger.warning("AlpacaProvider unavailable: %s", _e)
 data_svc = DataService(
     ib_worker=_ib_worker,
     yf_provider=_yf_provider,
     mock_provider=mock_provider,
+    alpaca_provider=_alpaca_provider,
 )
 
 
@@ -50,11 +66,12 @@ def _get_live_price(ticker: str) -> float:
     if _ib_worker.is_connected() and _ib_worker.provider:
         try:
             return _ib_worker.submit(_ib_worker.provider.get_underlying_price, ticker, timeout=10.0)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("IBWorker get_underlying_price failed for %s: %s", ticker, exc)
     try:
         return _yf_provider.get_underlying_price(ticker)
-    except Exception:
+    except Exception as exc:
+        logger.warning("yfinance get_underlying_price failed for %s: %s", ticker, exc)
         return 0.0
 
 
@@ -104,6 +121,18 @@ def _i(v, default):
 
 
 def _merge_swing(payload: dict, underlying: float) -> dict:
+    # Golden Rule 14: Never fabricate plausible values for missing swing fields.
+    # vcp_confidence and adx default to None — gate_engine's `or 0.0` pattern handles
+    # None safely: float(None or 0.0) = 0.0, causing DTE gate to fail correctly.
+    synthesized = []
+    vcp_confidence = _f(payload.get("vcp_confidence"), None)
+    adx = _f(payload.get("adx"), None)
+    if vcp_confidence is None:
+        synthesized.append("vcp_confidence")
+    if adx is None:
+        synthesized.append("adx")
+    # Price targets can be synthesized safely — they don't affect gate pass/fail.
+    # Signal quality fields MUST NOT be fabricated (they drive DTE gate logic).
     return {
         "signal": payload.get("swing_signal") or "BUY",
         "entry_pullback": _f(payload.get("entry_pullback"), underlying * 0.97),
@@ -113,8 +142,8 @@ def _merge_swing(payload: dict, underlying: float) -> dict:
         "target2": _f(payload.get("target2"), underlying * 1.15),
         "risk_reward": _f(payload.get("risk_reward"), 3.0),
         "vcp_pivot": _f(payload.get("vcp_pivot"), underlying * 1.01),
-        "vcp_confidence": _f(payload.get("vcp_confidence"), 70),
-        "adx": _f(payload.get("adx"), 35.0),
+        "vcp_confidence": vcp_confidence,
+        "adx": adx,
         "last_close": _f(payload.get("last_close"), underlying),
         "s1_support": _f(payload.get("s1_support"), underlying * 0.95),
         "spy_above_200sma": bool(payload.get("spy_above_200sma") if payload.get("spy_above_200sma") is not None else True),
@@ -122,6 +151,8 @@ def _merge_swing(payload: dict, underlying: float) -> dict:
         "earnings_days_away": _i(payload.get("earnings_days_away"), 45),
         "pattern": payload.get("pattern") or "VCP",
         "source": payload.get("source") or "manual",
+        "swing_data_quality": "partial" if synthesized else "full",
+        "synthesized_fields": synthesized,
     }
 
 
@@ -252,7 +283,20 @@ def health():
 @app.post("/api/options/analyze")
 def analyze_options():
     payload = request.get_json(silent=True) or {}
-    ticker = str(payload.get("ticker", "AME")).upper().strip()
+    ticker_raw = payload.get("ticker", "")
+    if not ticker_raw or not str(ticker_raw).strip():
+        return jsonify({"error": "ticker is required"}), 400
+    ticker = str(ticker_raw).upper().strip()
+    if not ticker.isalpha() or not (1 <= len(ticker) <= 6):
+        return jsonify({"error": f"Invalid ticker: {ticker!r}"}), 400
+    try:
+        return _analyze_options_inner(payload, ticker)
+    except Exception as exc:
+        logger.exception("analyze_options unhandled error for %s", ticker)
+        return jsonify({"error": str(exc)}), 500
+
+
+def _analyze_options_inner(payload: dict, ticker: str):
     direction = str(payload.get("direction", "buy_call")).strip()
     account_size = float(payload.get("account_size", os.getenv("ACCOUNT_SIZE", 25000)))
     risk_pct = float(payload.get("risk_pct", os.getenv("RISK_PCT", 0.01)))
@@ -317,6 +361,7 @@ def analyze_options():
         "volume": float(selected.get("volume", 0.0)),
         "bid": selected.get("bid"),
         "ask": selected.get("ask"),
+        "max_gain_per_lot": float(selected.get("max_gain_per_lot") or -1.0),
         "account_size": account_size,
         "risk_pct": risk_pct,
         "fomc_days_away": _i(payload.get("fomc_days_away"), 30),
@@ -437,12 +482,13 @@ def seed_iv(ticker: str):
         try:
             hist = _ib_worker.submit(_ib_worker.provider.get_historical_iv, symbol, 365, timeout=30.0)
         except Exception as exc:
-            app.logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
+            logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
     if not hist:
         try:
             hist = _yf_provider.get_historical_iv(symbol, 365)
             connected = False
-        except Exception:
+        except Exception as exc:
+            logger.warning("seed-iv yfinance fallback failed for %s: %s", symbol, exc)
             hist = []
     for row in hist:
         iv_store.store_iv(symbol, row["date"], row["iv"], source="ibkr" if connected else "yfinance")
@@ -465,7 +511,8 @@ def sta_fetch(ticker: str):
         patterns = _requests.get(f"{STA_BASE_URL}/api/patterns/{symbol}", timeout=timeout).json()
         context = _requests.get(f"{STA_BASE_URL}/api/context/SPY", timeout=timeout).json()
         earnings = _requests.get(f"{STA_BASE_URL}/api/earnings/{symbol}", timeout=timeout).json()
-    except Exception:
+    except Exception as exc:
+        logger.warning("STA fetch failed for %s: %s", symbol, exc)
         return jsonify({
             "status": "offline",
             "source": "manual",
@@ -504,8 +551,8 @@ def sta_fetch(ticker: str):
             if len(spy_hist) >= 6:
                 five_day_ago = float(spy_hist["Close"].iloc[-6])
                 spy_5day_return = round((latest_close - five_day_ago) / five_day_ago * 100, 2)
-    except Exception:
-        pass  # keep defaults — don't fail sta_fetch for SPY data
+    except Exception as exc:
+        logger.warning("SPY regime fetch failed: %s", exc)  # keep defaults — don't fail sta_fetch
 
     return jsonify({
         "status": "ok",

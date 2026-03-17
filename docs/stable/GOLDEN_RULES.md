@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 9 (March 11, 2026)
+> **Last Updated:** Day 11 (March 13, 2026)
 
 ---
 
@@ -106,6 +106,20 @@ If a function accepts `direction` but ignores it and routes by some other heuris
 ### Rule 17: Never Claim Enforcement You Haven't Implemented.
 If ACCOUNT_SIZE has a default value in code (`25000`), you CANNOT document it as "required — app raises at startup if not set." The documentation must match the actual runtime behavior.
 Before writing "app raises if X is missing," verify the raise exists in the startup path with a code read. If it doesn't exist, either implement it or document the actual behavior (default used, warning logged).
+
+### Rule 19: Research and Decision Sessions Get a Markdown Doc.
+Any session involving external research (API comparison, library evaluation, architecture decisions) MUST produce a `.md` file in `docs/Research/` before the session closes.
+Format: `docs/Research/<Topic>_Day[N].md`
+Include: the question asked, options evaluated, conclusions, and action items.
+This prevents re-doing the same research in future sessions and keeps decision history auditable.
+
+### Rule 20: Behavioral Audit Before Code Fixes.
+Before fixing surface-level bugs from a coherence audit, run a behavioral audit first.
+A behavioral audit asks: "does the system actually do what we claim it does?"
+Use the structured audit prompt with verdict labels:
+`[VERIFIED]`, `[PLAUSIBLE]`, `[MISLEADING]`, `[UNVERIFIED]`, `[HALLUCINATED]`
+This prevents wasting time fixing cosmetic issues while fundamental logic is wrong.
+Audit covers: gate logic claims, strategy builder claims, data flow claims, Golden Rules enforcement.
 
 ### Rule 18: Liquidity Gate Thresholds Must Be Direction-Aware.
 The "strike nearness" sub-check in the liquidity gate (contract within N% of underlying) WILL always fail for ITM buyer strategies by design — that's what ITM means. Applying an ATM nearness filter to a delta-0.68 ITM call is a structural mismatch.

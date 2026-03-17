@@ -36,7 +36,7 @@ function QualityBanner({ data }) {
   const quality = data?.quality;
   const asof    = data?.timestamp;
 
-  if (!source || source === 'ibkr') return null;
+  if (!source || source === 'ibkr_live') return null;
 
   let cls = 'banner-cached', icon = 'i', text = '';
   if (source === 'ibkr_cache') {
@@ -44,8 +44,17 @@ function QualityBanner({ data }) {
     text = `Using cached chain — data from ${mins} min ago. Refreshing in background.`;
     cls = 'banner-cached';
     icon = 'i';
+  } else if (source === 'ibkr_stale') {
+    const mins = asof ? Math.round((Date.now() - new Date(asof + 'Z').getTime()) / 60000) : '?';
+    text = `Stale IBKR cache (${mins} min old) — IBKR currently unavailable. Refreshing in background.`;
+    cls = 'banner-delayed';
+    icon = '!';
   } else if (source === 'ibkr_closed') {
     text = 'Market closed — using estimated greeks (Black-Scholes + 20-day HV). No bid/ask/OI data. Use for directional setup review only.';
+    cls = 'banner-delayed';
+    icon = '!';
+  } else if (source === 'alpaca') {
+    text = 'Using Alpaca fallback — 15-min delayed data. No OI or volume data available. Verify liquidity before trading.';
     cls = 'banner-delayed';
     icon = '!';
   } else if (source === 'yfinance') {
