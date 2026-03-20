@@ -344,7 +344,7 @@ Level 2: Single ETF + IV/OI/spread overlay from IBKR chain.
 ## STA Endpoints Used (Read-Only, No Modifications)
 
 > **Updated Day 5:** STA API uses camelCase top-level fields — no nested `levels` object.
-> `spy_above_200sma` and `spy_5day_return` are NOT in STA — computed from yfinance SPY.
+> **Updated Day 16:** `spy_above_200sma` and `spy_5day_return` computed from STA `/api/stock/SPY` `priceHistory` (Day 16 — replaced yfinance to avoid rate limiting).
 
 | Field | STA Endpoint | Actual Response Key |
 |-------|-------------|---------------------|
@@ -361,5 +361,5 @@ Level 2: Single ETF + IV/OI/spread overlay from IBKR chain.
 | pattern | GET localhost:5001/api/patterns/{ticker} | `pattern` (top-level, may be null) |
 | fomc_days_away | GET localhost:5001/api/context/SPY | `cycles.cards[name="FOMC Proximity"].raw_value` |
 | earnings_days_away | GET localhost:5001/api/earnings/{ticker} | `days_until` (NOT `days_away`) |
-| spy_above_200sma | yfinance SPY (computed in backend) | SPY close > 200-day SMA |
-| spy_5day_return | yfinance SPY (computed in backend) | (close[-1] - close[-6]) / close[-6] × 100 |
+| spy_above_200sma | GET localhost:5001/api/stock/SPY | `priceHistory[-1].close > mean(priceHistory[-200:].close)` |
+| spy_5day_return | GET localhost:5001/api/stock/SPY | `(priceHistory[-1].close - priceHistory[-6].close) / priceHistory[-6].close × 100` |

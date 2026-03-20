@@ -8,11 +8,12 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (chain_cache.db + iv_store.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, optional
 
-## Current Phase (Day 12)
-Phase 4b audit hardening complete. All critical/high bugs fixed. System usable for live analysis.
-KI-035 OI confirmed IBKR platform limitation — graceful degradation (WARN not BLOCK) is permanent.
-gate_engine Rule 3 fixed: imports from constants.py (60+ literals replaced). SQLite WAL added.
-Next: Day 13 = API_CONTRACTS.md sync (P0) + sector rotation backend (P1).
+## Current Phase (Day 16)
+v0.13.0. Phase 6 complete. Sector L2 live tested (6/7 ETFs pass, QQQ still 0 contracts KI-025).
+SPY regime: yfinance replaced with STA /api/stock/SPY priceHistory (rate limit fix).
+Massive.com: no historical IV confirmed — IBKR still required for IVR.
+Bear market gap: buy_put + sell_call code-done but never live tested (KI-059, Rule 13).
+Next: Day 17 = bear market live test (P0) + Phase 7 research (sector bear plays) + API_CONTRACTS sync.
 
 ## Session Protocol (REQUIRED at start of every session)
 1. Read `CLAUDE_CONTEXT.md` — check Current State, Known Issues, Next Session Priorities
@@ -39,9 +40,11 @@ backend/
   pnl_calculator.py   FIXED (Day 9) — None guard + 4 strategy type handlers
   iv_store.py         FROZEN — math correct
 
+  sector_scan_service.py  DONE (Day 15+16) — STA consumer, L1+L2, SPY regime via STA (Day 16)
+
   # TO CREATE:
-  marketdata_provider.py  Day 13 — MarketData.app REST ($12/mo — pending)
-  analyze_service.py      Day 13 P2 — extract _merge_swing, _extract_iv_data, _behavioral_checks
+  marketdata_provider.py  DEFERRED — MarketData.app no historical IV (confirmed), low priority
+  analyze_service.py      P3 — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ## IBWorker Threading Rules (CRITICAL)
@@ -77,7 +80,9 @@ STA /api/stock/{ticker}: `currentPrice` → last_close + entry_momentum
 STA /api/patterns/{ticker}: `patterns.vcp.confidence` → vcp_confidence, `patterns.vcp.pivot_price` → vcp_pivot
 STA /api/earnings/{ticker}: `days_until` → earnings_days_away (NOT days_away)
 STA /api/context/SPY: `cycles.cards[FOMC].raw_value` → fomc_days_away
-yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
+STA /api/stock/SPY: `priceHistory[-1].close > mean(priceHistory[-200:].close)` → spy_above_200sma
+                    `(priceHistory[-1].close - priceHistory[-6].close) / priceHistory[-6].close × 100` → spy_5day_return
+NOTE: yfinance SPY for spy regime REMOVED Day 16 (rate limiting). Now uses STA exclusively.
 
 ## Direction-Aware Chain Fetch (implemented Day 3)
 ```
@@ -119,17 +124,17 @@ Fallback: if direction window yields <3 strikes, supplement from ±15% broad win
 
 DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 DTE.
 
-## Day 13 Priorities
-1. **P0:** API_CONTRACTS.md sync — update spec to match code (5 mismatches, KI-044)
-2. **P1:** Sector rotation backend — sector_scan_service.py + 2 endpoints
-3. **P2:** analyze_service.py extraction (app.py ≤ 150 lines)
-4. **P3:** bull_put_spread for sell_put direction
+## Day 17 Priorities
+1. **P0:** Bear market live test — buy_put + sell_call with real bearish setup (KI-059, Rule 13)
+2. **P1:** Phase 7 research — sector bear plays (Lagging + high IVR → bear_call_spread conditions)
+3. **P2:** API_CONTRACTS.md full sync — clean duplicate rows, sync all schemas (KI-044)
+4. **P3:** analyze_service.py extraction (app.py ≤ 150 lines)
 
-## Frontend Status (Day 2 + Day 4+5+6+12 fixes)
-- App.jsx: ticker override fixed, QualityBanner fixed (ibkr_live), alpaca+ibkr_stale banners added
-- Header.jsx: alpaca added to sourceLabel map
-- strategy_ranker.py: sell_put naked warning on all strategy cards
-- All other components: stable
+## Frontend Status (Day 16)
+- Tab switcher: Analyze | Sectors (App.jsx)
+- Analyze tab: full gate analysis, strategies, P&L table, behavioral checks, swing import, paper trade
+- Sectors tab: SectorRotation.jsx + ETFCard.jsx + useSectorData.js — L1 scan + L2 detail + L3 deep dive
+- All quality banners: ibkr_live/cache/stale/closed/alpaca/yfinance/mock
 
 ## Git Status
 - Local repo only — no remote origin configured yet
@@ -139,11 +144,11 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
-- `docs/versioned/KNOWN_ISSUES_DAY12.md`
-- `docs/status/PROJECT_STATUS_DAY12_SHORT.md`
+- `docs/versioned/KNOWN_ISSUES_DAY16.md`
+- `docs/status/PROJECT_STATUS_DAY16_SHORT.md`
 - `docs/Research/System_Coherence_Audit_Day11.md`
-- `docs/Research/Behavioral_Audit_Day11.md`
 - `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
+- `docs/Research/Sector_Behavioral_Audit_Day15.md`
 
 ## Memory Index
 - [feedback_test_before_plan.md](feedback_test_before_plan.md) — Always test APIs with live calls before making claims or planning

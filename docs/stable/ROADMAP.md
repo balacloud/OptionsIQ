@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 15 (March 20, 2026)
-> **Current Version:** v0.12.0
+> **Last Updated:** Day 16 (March 20, 2026)
+> **Current Version:** v0.13.0
 
 ---
 
@@ -89,14 +89,23 @@ OptionsIQ consumes `GET localhost:5001/api/sectors/rotation` — zero RS computa
 - [x] ETF constants in constants.py (tickers, gate overrides, FOMC, dividend) ✅ Day 13
 - [x] Frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js + tab switcher ✅ Day 14
 - [x] L2 pipeline fix: get_chain tuple, IVR wiring, SPY regime, scan cache, behavioral audit ✅ Day 15
-- [ ] L2 IV overlay live test with IBKR during market hours — Day 16
+- [x] L2 IV overlay live test with IBKR during market hours ✅ Day 16 (6/7 ETFs pass)
+- [x] SPY regime: yfinance → STA /api/stock/SPY priceHistory ✅ Day 16 (rate limit fix)
 - [ ] ETF-specific gate overrides in gate_engine (premium $0.50, spread 0.10%)
 See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 
-## Phase 7 — Bear Market Sector Strategies (requires multi-LLM research)
-Currently the sector module is bullish-only (Weakening=WATCH, Lagging=SKIP).
-This phase adds bearish plays so the system profits in both directions.
-- [ ] Multi-LLM research audit: bear call spreads on Lagging ETFs, conditions (IVR>50, RS<95, momentum<-2)
+## Phase 7 — Bear Market Workflows (P0 for Day 17)
+The system currently earns in bull + neutral markets only. Bear directions (buy_put, sell_call) are
+code-complete but untested. Phase 7 closes this gap across both single-stock and sector modules.
+
+### 7a — Single Stock Bear Directions (KI-059)
+- [ ] Live test buy_put: bearish stock, gate track B fires, ITM put + bear put spread strategy returns
+- [ ] Live test sell_call: bear_call_spread builds, gate fires for high-IV seller track
+- [ ] Fix any bugs found (KI-06x)
+
+### 7b — Sector Bear Market Strategies (requires multi-LLM research first)
+Currently: Lagging = SKIP. In a bear market this leaves money on the table.
+- [ ] Multi-LLM research: Lagging ETF + high IVR → bear_call_spread conditions (IVR>50, RS<95, momentum<-2)
 - [ ] Research: SPY/QQQ puts as macro hedge when >80% sectors Weakening/Lagging
 - [ ] Research: ETF mean-reversion timing — how long do ETFs stay in Lagging before bouncing?
 - [ ] Implement bearish quadrant→direction mapping (Lagging + high IVR → bear_call_spread)
@@ -129,3 +138,4 @@ This phase adds bearish plays so the system profits in both directions.
 | v0.10.0 | Day 13 | Sector Rotation ETF module: multi-LLM research (3 models, 7 questions, 3 corrections). sector_scan_service.py (L1+L2). 15 ETFs live-tested. Research-verified: Weakening=WAIT, Lagging=SKIP, Risk-Off=QQQ calls. |
 | v0.11.0 | Day 14 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors). Filter bar, L2 detail panel, deep dive → analyze flow. |
 | v0.12.0 | Day 15 | Sector L2 pipeline fixed: get_chain tuple unpack, IVR/HV wiring, SPY regime, scan cache. Behavioral audit (21 claims, 0 BROKEN after fixes). Golden Rule 21. |
+| v0.13.0 | Day 16 | L2 live test PASSED (6/7 ETFs). SPY regime: yfinance → STA priceHistory. Massive.com: no historical IV confirmed. Bear market gap identified (buy_put + sell_call untested, Lagging = no bear plays). User manual written. |

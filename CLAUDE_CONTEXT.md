@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 15 (March 20, 2026)
-> **Current Version:** v0.12.0 (Sector L2 pipeline fixed + behavioral audit)
-> **Project Phase:** Phase 6 — Sector rotation fully functional. Day 16: live test with IBKR.
+> **Last Updated:** Day 16 (March 20, 2026)
+> **Current Version:** v0.13.0 (Sector L2 live tested + SPY regime fix + bear market gap identified)
+> **Project Phase:** Phase 6 complete. Phase 7 (bear market workflows) is next.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY15_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY15.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY16_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY16.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -62,9 +62,9 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 6 — Sector L1+L2 fully wired | sector_scan_service.py: get_chain tuple fix, IVR/HV wiring, SPY regime, scan cache |
+| Backend | Phase 6 complete + SPY regime fix | SPY regime now via STA (yfinance replaced). L2 live tested: 6/7 ETFs pass. |
 | Frontend | Done + Day 15 audit fixes | Null spread guard, timestamp fix, quality banner ibkr_stale, deep dive auto-trigger |
-| IBKR connection | WORKING | Live confirmed: AMD, greeks_pct 100%, account U11574928 |
+| IBKR connection | WORKING | Live confirmed: AMD, XLE, XLK, IWM, TQQQ greeks live. account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
 | Strategy ranking | Updated Day 9+12 | sell_call: bear_call_spread ✓. sell_put: naked + warning label. |
@@ -214,28 +214,26 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 Full list: `docs/versioned/KNOWN_ISSUES_DAY15.md`
 
 Open (HIGH):
-1. **KI-044: API_CONTRACTS.md stale** — verdict, gates, strategies, behavioral_checks all differ from code
+1. **KI-044: API_CONTRACTS.md stale** — verdict, gates, strategies, behavioral_checks schema all differ from code. Duplicate yfinance rows on lines 366-367.
 
 Open (MEDIUM):
-2. **analyze_service.py missing** — app.py still ~600 lines (KI-001/KI-023)
-3. **Synthetic swing defaults silent** (KI-022/KI-005)
-4. **NVDA buy_put sparse** — only 3 contracts qualify (KI-025)
+2. **KI-059: buy_put + sell_call not live tested** — code done (Day 7/12) but no real bearish setup tested end-to-end (Rule 13 — all 4 directions must be tested)
+3. **analyze_service.py missing** — app.py still ~600 lines (KI-001/KI-023)
+4. **Synthetic swing defaults silent** (KI-022/KI-005)
+5. **QQQ 0 contracts** — large-cap sparse strikes (KI-025)
 
 Open (LOW):
-5. **Alpaca OI/volume missing** (KI-038)
-6. OHLCV temporal gap validation (KI-034)
-7. fomc_days_away defaults to 30 (KI-008)
-8. API URL hardcoded (KI-013)
+6. **KI-058: Duplicate yfinance rows** in API_CONTRACTS.md lines 366-367
+7. **Alpaca OI/volume missing** (KI-038)
+8. OHLCV temporal gap validation (KI-034)
+9. fomc_days_away defaults to 30 (KI-008)
+10. API URL hardcoded (KI-013/KI-050)
+
+Resolved (Day 16):
+- KI-SPY-REGIME: yfinance rate limit → replaced with STA /api/stock/SPY priceHistory (HIGH)
 
 Resolved (Day 15):
-- KI-051 get_chain tuple not unpacked — L2 pipeline completely broken (CRITICAL)
-- KI-052 IVR/HV dead code — iv_store never wired to sector L2
-- KI-053 impliedVol vs iv field name mismatch
-- KI-054 Timestamp +00:00Z invalid ISO
-- KI-055 Null spread renders green (misleading)
-- KI-056 Deep dive no auto-trigger
-- KI-057 rs_ratio/rs_momentum default 0 vs None
-- Golden Rule 21 added (Think Like a Quant Trader)
+- KI-051 through KI-057 — sector L2 pipeline, audit fixes
 
 Resolved (Day 12):
 - KI-040 logger crash, KI-041 QualityBanner mismatch, KI-042 SQLite WAL, KI-043 subscription leak
@@ -264,32 +262,40 @@ Resolved (Day 12):
 | Day 13 | Mar 19, 2026 | Sector Rotation ETF module: multi-LLM research (Gemini+GPT-4o+Perplexity), 7 questions audited, 3 design corrections (Weakening→WAIT, Lagging→SKIP, Risk-Off→QQQ calls). sector_scan_service.py created (L1 scan + L2 analyze). ETF constants added. L1 tested live with STA: 15 ETFs, correct quadrant→direction mapping, catalyst warnings working. |
 | Day 14 | Mar 19, 2026 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors) in App.jsx. Filter bar (All/Analyze/Watch/Skip), L2 detail panel, cap-size signal banner, deep dive → analyze flow. Build passes clean. |
 | Day 15 | Mar 20, 2026 | Sector L2 pipeline completely fixed. Coherence audit: C1-C2 (bull_call_spread), C3 (scan cache), H1-H4, M1-M7, L1-L5. Quant audit: Q1 (IVR wiring), Q2 (liquidity), Q3 (SPY regime), Q4 (cache safety), Q5 (0→None). Behavioral audit: 21 claims — 3 BROKEN/3 FALSE found+fixed. get_chain tuple fix (showstopper). Golden Rule 21 added. |
+| Day 16 | Mar 20, 2026 | P0 live test PASSED (6/7 ETFs): XLE/XLU/XLK/MDY/IWM/TQQQ all return live IV/IVR. QQQ still 0 contracts (KI-025). IVR direction adjustment confirmed (buy_call→bull_call_spread). L3 deep dive confirmed (XLE BLOCK, live greeks). SPY regime: yfinance → STA priceHistory (rate limit fix). Massive.com: no historical IV = IBKR still required. User manual written. Bear market gap identified (buy_put + sell_call not live tested, Lagging sector = no bear plays). |
 
 ---
 
-## Next Session Priorities (Day 16)
+## Next Session Priorities (Day 17)
 
-### P0 — Live Test (market hours)
-- Start STA + IBKR + backend + frontend
-- Test Sectors tab end-to-end: scan → L2 detail → deep dive → full gate analysis
-- Verify L2 IV overlay populates (IV, IVR, suggested_dte from live chain)
-- Verify SPY regime warning renders when SPY 5d <= -2%
+### P0 — Bear Market Live Test
+The system earns money in bull (buy_call ✅) and neutral (sell_put ✅) markets.
+Bear directions (buy_put, sell_call) are code-complete but NEVER live-tested (KI-059, Rule 13).
+- Find a stock in confirmed downtrend or at resistance
+- Run buy_put: verify gate track B fires correctly, ITM put strategy returns, P&L math works
+- Run sell_call: verify bear_call_spread builds, gates fire for high-IV seller track
+- Document any bugs found as KI-06x
 
-### P1 — API_CONTRACTS.md sync (KI-044)
-Sector endpoints added but full spec still stale (Day 5). Sync all endpoints.
+### P1 — Phase 7: Sector Bear Market Strategies
+Sector scanner currently: Lagging = SKIP (no plays). In a bear market this leaves money on the table.
+Need multi-LLM research before implementing (Rule 20):
+- When does Lagging ETF + high IVR → bear_call_spread? (conditions: IVR>50, RS<95, momentum declining)
+- SPY/QQQ macro put hedge: when >80% sectors are Weakening/Lagging, add broad market hedge suggestion
+- Regime detector: "broad selloff" banner
+See: `docs/stable/ROADMAP.md` Phase 7
 
-### P2 — analyze_service.py extraction
-app.py still ~620 lines. Rule 4 target: ≤ 150 lines.
+### P2 — API_CONTRACTS.md full sync (KI-044)
+Clean duplicate yfinance rows (lines 366-367). Sync verdict/gates/strategies/behavioral_checks schemas.
+
+### P3 — analyze_service.py extraction (KI-001/023)
+app.py ~600 lines. Rule 4 target: ≤150 lines.
 
 ### Deferred
 - bull_put_spread for sell_put (strategy_ranker.py)
+- ETF-specific gate overrides (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK)
 - Phase C/E/F audit items
-- ETF-specific gate overrides in gate_engine (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK)
-- TQQQ filter dead branch cleanup (Claim 9 from behavioral audit)
 
 ### Reference
-- `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim behavioral audit
-- `docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md` — multi-LLM research + audit
-- `docs/Research/Sector_Rotation_ETF_Module_Day11.md` — module design (updated Day 13)
-- `docs/versioned/KNOWN_ISSUES_DAY15.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY15_SHORT.md` — Day 15 summary
+- `docs/versioned/KNOWN_ISSUES_DAY16.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY16_SHORT.md` — Day 16 summary
+- `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim sector audit

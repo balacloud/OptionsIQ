@@ -131,21 +131,26 @@ def _spy_regime():
     """
     Q3: SPY regime check — RS momentum is lagging (weeks), SPY 5-day is leading (days).
     Returns dict with spy_above_200sma, spy_5day_return, regime_warning (or None).
-    Uses yfinance — fast, no IBKR dependency. Cached with scan data (60s TTL).
+    Uses STA /api/stock/SPY (priceHistory) — already fetched for sector scan, no yfinance rate limit.
     """
     try:
-        import yfinance as yf
-        spy_hist = yf.Ticker("SPY").history(period="1y", interval="1d")
-        if spy_hist.empty or len(spy_hist) < 200:
+        url = f"{STA_BASE_URL}/api/stock/SPY"
+        resp = requests.get(url, timeout=STA_TIMEOUT_SEC)
+        resp.raise_for_status()
+        data = resp.json()
+
+        hist = data.get("priceHistory", [])
+        if len(hist) < 200:
             return {"spy_above_200sma": None, "spy_5day_return": None, "regime_warning": None}
 
-        latest = float(spy_hist["Close"].iloc[-1])
-        sma200 = float(spy_hist["Close"].iloc[-200:].mean())
+        closes = [h["close"] for h in hist]
+        latest = closes[-1]
+        sma200 = sum(closes[-200:]) / 200
         above_200 = latest > sma200
 
         spy_5d = None
-        if len(spy_hist) >= 6:
-            five_ago = float(spy_hist["Close"].iloc[-6])
+        if len(closes) >= 6:
+            five_ago = closes[-6]
             spy_5d = round((latest - five_ago) / five_ago * 100, 2)
 
         # Regime warning thresholds (from constants.py SPY gates)
