@@ -620,7 +620,7 @@ def sectors_analyze(ticker: str):
     ticker = ticker.upper().strip()
     if ticker not in ETF_TICKERS:
         return jsonify({"error": f"{ticker} is not in the sector ETF universe"}), 400
-    result = analyze_sector_etf(ticker, data_service=data_svc)
+    result = analyze_sector_etf(ticker, data_service=data_svc, ib_worker=_ib_worker, iv_store=iv_store)
     if result.get("error"):
         return jsonify(result), 503
     return jsonify(result)

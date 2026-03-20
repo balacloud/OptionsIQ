@@ -93,10 +93,22 @@ export default function App() {
   const [ibModal, setIbModal]   = useState(false);
 
   // Deep dive from sector tab → switch to analyze tab with ETF pre-filled
+  // Map bull_call_spread → buy_call for L3 gate_engine (only knows 4 core directions)
+  const SECTOR_DIR_TO_CORE = {
+    buy_call: 'buy_call',
+    bull_call_spread: 'buy_call',
+    sell_call: 'sell_call',
+    buy_put: 'buy_put',
+    sell_put: 'sell_put',
+  };
   const handleSectorDeepDive = (etf) => {
-    setTicker(etf.etf);
-    if (etf.suggested_direction) setDirection(etf.suggested_direction);
+    const deepTicker = etf.etf;
+    const coreDir = SECTOR_DIR_TO_CORE[etf.suggested_direction] || 'buy_call';
+    setTicker(deepTicker);
+    setDirection(coreDir);
     setActiveTab('analyze');
+    // Auto-trigger L3 analysis — use values directly (React state is async)
+    analyze({ direction: coreDir, ...swing, ticker: deepTicker }).catch(() => {});
   };
 
   const lockedBySignal = useMemo(() => {

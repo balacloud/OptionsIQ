@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 14 (March 19, 2026)
-> **Current Version:** v0.11.0 (Sector Rotation Frontend — tab switcher + ETF grid live)
-> **Project Phase:** Phase 6 — Sector rotation frontend shipped. Day 15: live test with IBKR.
+> **Last Updated:** Day 15 (March 20, 2026)
+> **Current Version:** v0.12.0 (Sector L2 pipeline fixed + behavioral audit)
+> **Project Phase:** Phase 6 — Sector rotation fully functional. Day 16: live test with IBKR.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY14_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY14.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY15_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY15.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -62,8 +62,8 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 6 — Sector rotation L1+L2 live | sector_scan_service.py + 2 endpoints |
-| Frontend | Done + Day 14 sector tab | Tab switcher (Analyze/Sectors), ETF grid, L2 detail panel, deep dive flow |
+| Backend | Phase 6 — Sector L1+L2 fully wired | sector_scan_service.py: get_chain tuple fix, IVR/HV wiring, SPY regime, scan cache |
+| Frontend | Done + Day 15 audit fixes | Null spread guard, timestamp fix, quality banner ibkr_stale, deep dive auto-trigger |
 | IBKR connection | WORKING | Live confirmed: AMD, greeks_pct 100%, account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
@@ -109,8 +109,9 @@ backend/
                                        spread handler direction-aware via right field
   iv_store.py         FROZEN — math correct
 
-  sector_scan_service.py  DONE (Day 13) — STA consumer + quadrant→direction + catalyst warnings.
-                                       L1 scan (all 15 ETFs) + L2 analyze (single ETF + IV overlay).
+  sector_scan_service.py  DONE (Day 15) — STA consumer + quadrant→direction + catalyst warnings.
+                                       L1 scan (15 ETFs + SPY regime) + L2 analyze (IV/IVR/HV/liquidity).
+                                       Day 15: get_chain tuple fix, IVR wiring, scan cache, deep copy.
                                        Research-verified: Weakening=WAIT, Lagging=SKIP, Risk-Off→QQQ calls.
 
   # TO CREATE:
@@ -210,7 +211,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY14.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY15.md`
 
 Open (HIGH):
 1. **KI-044: API_CONTRACTS.md stale** — verdict, gates, strategies, behavioral_checks all differ from code
@@ -225,6 +226,16 @@ Open (LOW):
 6. OHLCV temporal gap validation (KI-034)
 7. fomc_days_away defaults to 30 (KI-008)
 8. API URL hardcoded (KI-013)
+
+Resolved (Day 15):
+- KI-051 get_chain tuple not unpacked — L2 pipeline completely broken (CRITICAL)
+- KI-052 IVR/HV dead code — iv_store never wired to sector L2
+- KI-053 impliedVol vs iv field name mismatch
+- KI-054 Timestamp +00:00Z invalid ISO
+- KI-055 Null spread renders green (misleading)
+- KI-056 Deep dive no auto-trigger
+- KI-057 rs_ratio/rs_momentum default 0 vs None
+- Golden Rule 21 added (Think Like a Quant Trader)
 
 Resolved (Day 12):
 - KI-040 logger crash, KI-041 QualityBanner mismatch, KI-042 SQLite WAL, KI-043 subscription leak
@@ -252,18 +263,20 @@ Resolved (Day 12):
 | Day 12 | Mar 17, 2026 | All Phase A+D critical/high audit fixes shipped during market hours. KI-035 OI confirmed platform limitation — graceful degradation added (WARN not BLOCK). gate_engine Rule 3 fixed (60+ literals → constants.py). SQLite WAL. reqMktData try-finally. Startup guard for ACCOUNT_SIZE. sell_put naked warning. QualityBanner fixed. alpaca+ibkr_stale banners added. System now usable for live analysis. |
 | Day 13 | Mar 19, 2026 | Sector Rotation ETF module: multi-LLM research (Gemini+GPT-4o+Perplexity), 7 questions audited, 3 design corrections (Weakening→WAIT, Lagging→SKIP, Risk-Off→QQQ calls). sector_scan_service.py created (L1 scan + L2 analyze). ETF constants added. L1 tested live with STA: 15 ETFs, correct quadrant→direction mapping, catalyst warnings working. |
 | Day 14 | Mar 19, 2026 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors) in App.jsx. Filter bar (All/Analyze/Watch/Skip), L2 detail panel, cap-size signal banner, deep dive → analyze flow. Build passes clean. |
+| Day 15 | Mar 20, 2026 | Sector L2 pipeline completely fixed. Coherence audit: C1-C2 (bull_call_spread), C3 (scan cache), H1-H4, M1-M7, L1-L5. Quant audit: Q1 (IVR wiring), Q2 (liquidity), Q3 (SPY regime), Q4 (cache safety), Q5 (0→None). Behavioral audit: 21 claims — 3 BROKEN/3 FALSE found+fixed. get_chain tuple fix (showstopper). Golden Rule 21 added. |
 
 ---
 
-## Next Session Priorities (Day 15)
+## Next Session Priorities (Day 16)
 
 ### P0 — Live Test (market hours)
 - Start STA + IBKR + backend + frontend
 - Test Sectors tab end-to-end: scan → L2 detail → deep dive → full gate analysis
 - Verify L2 IV overlay populates (IV, IVR, suggested_dte from live chain)
+- Verify SPY regime warning renders when SPY 5d <= -2%
 
-### P1 — Phase B: API_CONTRACTS.md sync (KI-044)
-Update spec to match actual code + add new sector endpoints.
+### P1 — API_CONTRACTS.md sync (KI-044)
+Sector endpoints added but full spec still stale (Day 5). Sync all endpoints.
 
 ### P2 — analyze_service.py extraction
 app.py still ~620 lines. Rule 4 target: ≤ 150 lines.
@@ -272,9 +285,11 @@ app.py still ~620 lines. Rule 4 target: ≤ 150 lines.
 - bull_put_spread for sell_put (strategy_ranker.py)
 - Phase C/E/F audit items
 - ETF-specific gate overrides in gate_engine (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK)
+- TQQQ filter dead branch cleanup (Claim 9 from behavioral audit)
 
 ### Reference
+- `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim behavioral audit
 - `docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md` — multi-LLM research + audit
 - `docs/Research/Sector_Rotation_ETF_Module_Day11.md` — module design (updated Day 13)
-- `docs/versioned/KNOWN_ISSUES_DAY14.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY14_SHORT.md` — Day 14 summary
+- `docs/versioned/KNOWN_ISSUES_DAY15.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY15_SHORT.md` — Day 15 summary

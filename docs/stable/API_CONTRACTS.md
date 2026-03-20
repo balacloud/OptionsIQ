@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 5 (March 10, 2026)
+> **Last Updated:** Day 15 (March 20, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -258,6 +258,86 @@ Returns all recorded paper trades with mark-to-market P&L.
 Seeds IV history for a ticker from IBKR (or mock fallback).
 
 **Response:** `{"seeded_days": 231, "earliest_date": "2025-03-05", "latest_date": "2026-03-05"}`
+
+---
+
+## GET /api/sectors/scan
+
+Level 1: All sector ETFs with quadrant, direction, action. Consumes STA `/api/sectors/rotation`.
+
+**Response:**
+```json
+{
+  "sectors": [
+    {
+      "etf": "XLK",
+      "name": "Technology",
+      "rank": 1,
+      "rs_ratio": 105.2,
+      "rs_momentum": 1.3,
+      "quadrant": "Leading",
+      "price": 215.40,
+      "week_change": 2.1,
+      "month_change": 5.8,
+      "suggested_direction": "buy_call",
+      "action": "ANALYZE",
+      "catalyst_warnings": []
+    }
+  ],
+  "sector_count": 16,
+  "size_signal": "Risk-On",
+  "size_bias": "Cyclicals favored (XLI, XLY, XLB)",
+  "spy_regime": {
+    "spy_above_200sma": true,
+    "spy_5day_return": 0.85,
+    "regime_warning": null
+  },
+  "timestamp": "2026-03-20T15:30:00+00:00",
+  "sta_status": "ok"
+}
+```
+
+**Error (STA offline):** 503 `{"error": "STA not reachable at ..."}`
+
+---
+
+## GET /api/sectors/analyze/{ticker}
+
+Level 2: Single ETF + IV/OI/spread overlay from IBKR chain.
+
+**Path param:** `ticker` — must be in ETF_TICKERS (15 tickers + TQQQ)
+
+**Response:**
+```json
+{
+  "etf": "XLK",
+  "name": "Technology",
+  "quadrant": "Leading",
+  "price": 215.40,
+  "rs_ratio": 105.2,
+  "rs_momentum": 1.3,
+  "suggested_direction": "bull_call_spread",
+  "action": "ANALYZE",
+  "iv_current": 22.5,
+  "iv_percentile": 45,
+  "hv_20": 18.3,
+  "suggested_dte": 30,
+  "atm_bid": 3.20,
+  "atm_ask": 3.45,
+  "atm_spread_pct": 7.69,
+  "atm_oi": 12500,
+  "atm_volume": 3200,
+  "catalyst_warnings": [],
+  "data_source": "ibkr_live",
+  "level": 2,
+  "note": "L3 deep dive: POST /api/options/analyze with ticker and suggested_direction"
+}
+```
+
+**Error (invalid ticker):** 400 `{"error": "XYZ is not in the sector ETF universe"}`
+**Error (STA offline):** 503 `{"error": "STA not reachable at ..."}`
+
+**Dependencies:** `data_service` (chain fetch), `iv_store` (IVR + HV20). IVR requires seeded IV history (≥30 days).
 
 ---
 

@@ -31,10 +31,22 @@ function ETFDetailPanel({ detail, loading, onClose, onDeepDive }) {
         <button className="etf-detail-close" onClick={onClose}>✕</button>
       </div>
 
+      {/* H3: Golden Rule 8 — quality banner when data tier < live */}
+      {detail.data_source && detail.data_source !== 'ibkr_live' && (
+        <div className="etf-detail-quality">
+          {detail.data_source === 'ibkr_cache' && 'Cached IBKR data — IV may be stale.'}
+          {detail.data_source === 'ibkr_stale' && 'Stale IBKR cache — IBKR currently unavailable.'}
+          {detail.data_source === 'ibkr_closed' && 'Market closed — estimated greeks (BS + HV). IV approximate.'}
+          {detail.data_source === 'alpaca' && 'Alpaca fallback — 15-min delay. No OI/volume.'}
+          {detail.data_source === 'yfinance' && 'yfinance fallback — estimated greeks only.'}
+          {detail.data_source === 'mock' && 'MOCK DATA — do not trade.'}
+        </div>
+      )}
+
       <div className="etf-detail-grid">
         <div className="etf-detail-item">
           <span className="etf-detail-label">Price</span>
-          <span className="etf-detail-value monospace">${fmt(detail.price, 2)}</span>
+          <span className="etf-detail-value monospace">{detail.price != null ? `$${fmt(detail.price, 2)}` : '—'}</span>
         </div>
         <div className="etf-detail-item">
           <span className="etf-detail-label">RS Ratio</span>
@@ -65,6 +77,37 @@ function ETFDetailPanel({ detail, loading, onClose, onDeepDive }) {
           <span className="etf-detail-value">{detail.suggested_direction || 'None'}</span>
         </div>
       </div>
+
+      {/* Q2: ATM Liquidity — trader must know if they can get in/out */}
+      {(detail.atm_bid != null || detail.atm_oi != null) && (
+        <div className="etf-detail-liquidity">
+          <div className="etf-detail-liq-title">ATM Liquidity</div>
+          <div className="etf-detail-grid">
+            <div className="etf-detail-item">
+              <span className="etf-detail-label">Bid / Ask</span>
+              <span className="etf-detail-value monospace">
+                {detail.atm_bid != null ? `$${fmt(detail.atm_bid, 2)}` : '—'}
+                {' / '}
+                {detail.atm_ask != null ? `$${fmt(detail.atm_ask, 2)}` : '—'}
+              </span>
+            </div>
+            <div className="etf-detail-item">
+              <span className="etf-detail-label">Spread</span>
+              <span className={`etf-detail-value monospace ${detail.atm_spread_pct == null ? 'text-dim' : detail.atm_spread_pct > 5 ? 'text-red' : detail.atm_spread_pct > 2 ? 'text-amber' : 'text-green'}`}>
+                {detail.atm_spread_pct != null ? `${detail.atm_spread_pct}%` : '—'}
+              </span>
+            </div>
+            <div className="etf-detail-item">
+              <span className="etf-detail-label">Open Interest</span>
+              <span className="etf-detail-value monospace">{detail.atm_oi != null ? detail.atm_oi.toLocaleString() : '—'}</span>
+            </div>
+            <div className="etf-detail-item">
+              <span className="etf-detail-label">Volume</span>
+              <span className="etf-detail-value monospace">{detail.atm_volume != null ? detail.atm_volume.toLocaleString() : '—'}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {detail.catalyst_warnings && detail.catalyst_warnings.length > 0 && (
         <div className="etf-detail-warnings">
@@ -115,6 +158,17 @@ export default function SectorRotation({ sectorData, loading, detailLoading, err
         </div>
       )}
 
+      {/* Q3: SPY regime warning — leading indicator vs lagging RS momentum */}
+      {sectorData?.spy_regime?.regime_warning && (
+        <div className="sector-regime-warning">
+          <span className="banner-icon">!</span>
+          <span>{sectorData.spy_regime.regime_warning}</span>
+          {sectorData.spy_regime.spy_5day_return != null && (
+            <span className="text-dim"> (SPY 5d: {sectorData.spy_regime.spy_5day_return}%)</span>
+          )}
+        </div>
+      )}
+
       {/* Filter bar + refresh */}
       <div className="sector-toolbar">
         <div className="sector-filters">
@@ -137,7 +191,7 @@ export default function SectorRotation({ sectorData, loading, detailLoading, err
 
       {loading && !sectorData && (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>
-          Scanning 15 ETFs...
+          Scanning sector ETFs...
         </div>
       )}
 
@@ -174,7 +228,7 @@ export default function SectorRotation({ sectorData, loading, detailLoading, err
         <div className="sector-footer">
           STA: {sectorData.sta_status === 'ok' ? '● Connected' : '○ Offline'}
           {sectorData.timestamp && (
-            <span className="text-dim"> · {new Date(sectorData.timestamp + 'Z').toLocaleTimeString()}</span>
+            <span className="text-dim"> · {new Date(sectorData.timestamp).toLocaleTimeString()}</span>
           )}
         </div>
       )}

@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 14 (March 19, 2026)
-> **Current Version:** v0.11.0
+> **Last Updated:** Day 15 (March 20, 2026)
+> **Current Version:** v0.12.0
 
 ---
 
@@ -88,9 +88,20 @@ OptionsIQ consumes `GET localhost:5001/api/sectors/rotation` — zero RS computa
 - [x] TQQQ rules: max 45 DTE, no covered calls, decay warning ✅ Day 13
 - [x] ETF constants in constants.py (tickers, gate overrides, FOMC, dividend) ✅ Day 13
 - [x] Frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js + tab switcher ✅ Day 14
-- [ ] L2 IV overlay test with IBKR during market hours — Day 15
+- [x] L2 pipeline fix: get_chain tuple, IVR wiring, SPY regime, scan cache, behavioral audit ✅ Day 15
+- [ ] L2 IV overlay live test with IBKR during market hours — Day 16
 - [ ] ETF-specific gate overrides in gate_engine (premium $0.50, spread 0.10%)
 See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
+
+## Phase 7 — Bear Market Sector Strategies (requires multi-LLM research)
+Currently the sector module is bullish-only (Weakening=WATCH, Lagging=SKIP).
+This phase adds bearish plays so the system profits in both directions.
+- [ ] Multi-LLM research audit: bear call spreads on Lagging ETFs, conditions (IVR>50, RS<95, momentum<-2)
+- [ ] Research: SPY/QQQ puts as macro hedge when >80% sectors Weakening/Lagging
+- [ ] Research: ETF mean-reversion timing — how long do ETFs stay in Lagging before bouncing?
+- [ ] Implement bearish quadrant→direction mapping (Lagging + high IVR → bear_call_spread)
+- [ ] Add regime detector: "broad selloff" banner when most sectors are Weakening/Lagging
+- [ ] Frontend: bearish cards with red action buttons in Sectors tab
 
 ## Post-v1.0 (Backlog)
 - [ ] Real-time chain refresh, P&L history chart, multi-ticker watchlist, CSV export
@@ -117,3 +128,4 @@ See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 | v0.9.2 | Day 12 | All Phase A+D audit fixes shipped. gate_engine Rule 3 fixed (60+ literals → constants.py). KI-035 OI platform limitation confirmed + graceful degradation. SQLite WAL. reqMktData try-finally. ACCOUNT_SIZE guard. sell_put naked warning. System usable for live analysis. |
 | v0.10.0 | Day 13 | Sector Rotation ETF module: multi-LLM research (3 models, 7 questions, 3 corrections). sector_scan_service.py (L1+L2). 15 ETFs live-tested. Research-verified: Weakening=WAIT, Lagging=SKIP, Risk-Off=QQQ calls. |
 | v0.11.0 | Day 14 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors). Filter bar, L2 detail panel, deep dive → analyze flow. |
+| v0.12.0 | Day 15 | Sector L2 pipeline fixed: get_chain tuple unpack, IVR/HV wiring, SPY regime, scan cache. Behavioral audit (21 claims, 0 BROKEN after fixes). Golden Rule 21. |

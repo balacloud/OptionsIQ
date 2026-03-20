@@ -12,9 +12,11 @@ Design: docs/Research/Sector_Rotation_ETF_Module_Day11.md
 Research: docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md
 """
 
+import copy
 import logging
+import time
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from constants import (
     STA_BASE_URL, STA_TIMEOUT_SEC,
@@ -28,6 +30,10 @@ from constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Module-level scan cache (C3 fix: avoid N+1 STA calls from L2)
+_scan_cache = {"data": None, "ts": 0}
+_SCAN_CACHE_TTL = 60  # seconds — L1 data is STA-sourced, 1 min freshness is fine
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +127,46 @@ def _catalyst_warnings(ticker):
     return warnings
 
 
+def _spy_regime():
+    """
+    Q3: SPY regime check — RS momentum is lagging (weeks), SPY 5-day is leading (days).
+    Returns dict with spy_above_200sma, spy_5day_return, regime_warning (or None).
+    Uses yfinance — fast, no IBKR dependency. Cached with scan data (60s TTL).
+    """
+    try:
+        import yfinance as yf
+        spy_hist = yf.Ticker("SPY").history(period="1y", interval="1d")
+        if spy_hist.empty or len(spy_hist) < 200:
+            return {"spy_above_200sma": None, "spy_5day_return": None, "regime_warning": None}
+
+        latest = float(spy_hist["Close"].iloc[-1])
+        sma200 = float(spy_hist["Close"].iloc[-200:].mean())
+        above_200 = latest > sma200
+
+        spy_5d = None
+        if len(spy_hist) >= 6:
+            five_ago = float(spy_hist["Close"].iloc[-6])
+            spy_5d = round((latest - five_ago) / five_ago * 100, 2)
+
+        # Regime warning thresholds (from constants.py SPY gates)
+        warning = None
+        if spy_5d is not None and spy_5d <= -2.0:
+            warning = f"SPY down {spy_5d}% this week — bullish sector calls carry elevated risk."
+        elif not above_200:
+            warning = "SPY below 200-day SMA — broad market in downtrend. Reduce bullish exposure."
+
+        return {
+            "spy_above_200sma": above_200,
+            "spy_5day_return": spy_5d,
+            "regime_warning": warning,
+        }
+    except Exception as exc:
+        logger.warning("SPY regime check failed: %s", exc)
+        return {"spy_above_200sma": None, "spy_5day_return": None, "regime_warning": None}
+
+
 # ---------------------------------------------------------------------------
-# Level 1: Quick Scan (< 2 sec — STA data only)
+# Level 1: Quick Scan (< 2 sec — STA data + SPY regime)
 # ---------------------------------------------------------------------------
 def scan_sectors():
     """
@@ -159,15 +203,15 @@ def scan_sectors():
             "etf": etf,
             "name": s.get("name", ""),
             "rank": s.get("rank", 99),
-            "rs_ratio": s.get("rsRatio", 0),
-            "rs_momentum": s.get("rsMomentum", 0),
+            "rs_ratio": s.get("rsRatio"),
+            "rs_momentum": s.get("rsMomentum"),
             "quadrant": quadrant,
-            "price": s.get("price", 0),
-            "week_change": s.get("weekChange", 0),
-            "month_change": s.get("monthChange", 0),
+            "price": s.get("price"),
+            "week_change": s.get("weekChange"),
+            "month_change": s.get("monthChange"),
             "suggested_direction": direction,
             "action": action,
-            "catalyst_warnings": catalyst if catalyst else None,
+            "catalyst_warnings": catalyst,
         })
 
     # Add cap-size ETFs (QQQ, IWM, MDY) from size_rotation
@@ -196,12 +240,12 @@ def scan_sectors():
             "rs_ratio": rs,
             "rs_momentum": mom,
             "quadrant": quad,
-            "price": sr.get("price", 0),
-            "week_change": sr.get("weekChange", 0),
-            "month_change": sr.get("monthChange", 0),
+            "price": sr.get("price"),
+            "week_change": sr.get("weekChange"),
+            "month_change": sr.get("monthChange"),
             "suggested_direction": direction,
             "action": action,
-            "catalyst_warnings": catalyst if catalyst else None,
+            "catalyst_warnings": catalyst,
         })
 
     # TQQQ: always include with special rules
@@ -219,69 +263,134 @@ def scan_sectors():
             tqqq["action"] = "SKIP"
         sectors.append(tqqq)
 
-    return {
+    # Q3: SPY regime — leading indicator vs lagging RS momentum
+    regime = _spy_regime()
+
+    result = {
         "sectors": sectors,
         "sector_count": len(sectors),
         "size_signal": size_signal,
         "size_bias": _size_bias_label(size_signal),
-        "timestamp": datetime.utcnow().isoformat(),
+        "spy_regime": regime,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "sta_status": "ok",
     }
+
+    # Cache for L2 reuse (C3 fix)
+    _scan_cache["data"] = result
+    _scan_cache["ts"] = time.monotonic()
+
+    return result
 
 
 # ---------------------------------------------------------------------------
 # Level 2: Standard Analysis (single ETF — adds IV/OI/spread from IBKR)
 # ---------------------------------------------------------------------------
-def analyze_sector_etf(ticker, data_service=None, ib_worker=None):
+def analyze_sector_etf(ticker, data_service=None, ib_worker=None, iv_store=None):
     """
     Level 2 analysis for a single sector ETF.
     Adds IV overlay, bid-ask spread, suggested DTE, catalyst warnings.
 
     data_service: DataService instance (for chain fetch)
-    ib_worker: IBWorker instance (for IVR/HV)
+    ib_worker: IBWorker instance (for IVR/HV — currently reserved for future IV history seeding)
+    iv_store: IVStore instance (for IVR percentile + HV20 computation)
     """
     ticker = ticker.upper().strip()
     if ticker not in ETF_TICKERS:
         return {"error": f"{ticker} is not in the sector ETF universe"}
 
-    # Start with L1 scan to get quadrant data
-    scan = scan_sectors()
-    if scan.get("error"):
-        return scan
+    # Use cached L1 scan if fresh, otherwise fetch (C3 fix: no N+1 STA calls)
+    # Q4: deep copy prevents L2 mutations from poisoning cached data
+    if _scan_cache["data"] and (time.monotonic() - _scan_cache["ts"]) < _SCAN_CACHE_TTL:
+        scan = copy.deepcopy(_scan_cache["data"])
+    else:
+        scan = scan_sectors()
+        if scan.get("error"):
+            return scan
 
     etf_data = next((s for s in scan["sectors"] if s["etf"] == ticker), None)
     if not etf_data:
         return {"error": f"{ticker} not found in STA rotation data"}
 
-    # Fetch IV data (reuse existing iv_store / data_service if available)
+    # ── Chain fetch + IV/liquidity extraction ──
     iv_current = None
     ivr = None
     hv_20 = None
+    data_source = None
+    atm_bid = None
+    atm_ask = None
+    atm_spread_pct = None
+    atm_oi = None
+    atm_volume = None
 
     if data_service:
         try:
-            direction = etf_data.get("suggested_direction") or "buy_call"
-            chain = data_service.get_chain(ticker, direction=direction)
-            if chain and chain.get("contracts"):
-                # Get ATM IV from first contract
-                for c in chain["contracts"]:
-                    if c.get("iv") and c["iv"] > 0:
-                        iv_current = round(c["iv"] * 100, 1)
-                        break
+            raw_dir = etf_data.get("suggested_direction") or "buy_call"
+            # bull_call_spread is a display hint — data layer only knows 4 core directions
+            direction = "buy_call" if raw_dir == "bull_call_spread" else raw_dir
+            chain, data_source = data_service.get_chain(ticker, direction=direction)
+            if chain:
+                contracts = chain.get("contracts", [])
+                underlying = chain.get("underlying_price") or etf_data.get("price")
+
+                if contracts and underlying:
+                    # Find ATM contract (closest strike to underlying)
+                    atm = min(contracts, key=lambda c: abs(c.get("strike", 0) - underlying))
+
+                    # Q1: IV from ATM contract (field is "impliedVol", not "iv")
+                    raw_iv = atm.get("impliedVol")
+                    if raw_iv and raw_iv > 0:
+                        iv_current = round(raw_iv * 100, 1)
+
+                    # Q2: Liquidity from ATM contract
+                    atm_bid = atm.get("bid")
+                    atm_ask = atm.get("ask")
+                    if atm_bid and atm_ask and atm_ask > 0:
+                        mid = (atm_bid + atm_ask) / 2
+                        if mid > 0:
+                            atm_spread_pct = round((atm_ask - atm_bid) / mid * 100, 2)
+                    atm_oi = atm.get("openInterest")
+                    atm_volume = atm.get("volume")
+
         except Exception as exc:
             logger.warning("L2 chain fetch failed for %s: %s", ticker, exc)
 
-    # Build L2 response
+    # Q1: IVR + HV20 from iv_store (requires seeded IV history — honest None if < 30 days)
+    if iv_store and iv_current is not None:
+        try:
+            ivr = iv_store.compute_ivr_pct(ticker, iv_current)
+        except Exception:
+            logger.warning("IVR computation failed for %s", ticker)
+    if iv_store:
+        try:
+            hv_20 = iv_store.compute_hv(ticker, 20)
+        except Exception:
+            logger.warning("HV20 computation failed for %s", ticker)
+
+    # Q1: Feed IVR into DTE model (research-verified tastylive 2-tier)
     dte = suggested_dte(ivr, ticker)
+
+    # Q1: Re-evaluate direction with IVR (Leading + IVR>50 → bull_call_spread)
+    quadrant = etf_data.get("quadrant", "Lagging")
+    direction_with_ivr = quadrant_to_direction(quadrant, ivr=ivr)
+
     catalyst = _catalyst_warnings(ticker)
 
     return {
         **etf_data,
+        "suggested_direction": direction_with_ivr,  # override L1 direction with IVR-aware version
         "iv_current": iv_current,
         "iv_percentile": ivr,
-        "hv_20": hv_20,
+        "hv_20": round(hv_20, 1) if hv_20 is not None else None,
         "suggested_dte": dte,
-        "catalyst_warnings": catalyst if catalyst else None,
+        # Q2: Liquidity data — trader must know if they can get in/out
+        "atm_bid": atm_bid,
+        "atm_ask": atm_ask,
+        "atm_spread_pct": atm_spread_pct,
+        "atm_oi": atm_oi,
+        "atm_volume": atm_volume,
+        "catalyst_warnings": catalyst,
+        "data_source": data_source,
         "level": 2,
         "note": "L3 deep dive: POST /api/options/analyze with ticker and suggested_direction",
     }

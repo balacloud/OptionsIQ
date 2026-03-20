@@ -16,6 +16,7 @@ const DIR_LABELS = {
   bull_call_spread: 'Bull Call Spread',
   sell_call:        'Sell Call',
   buy_put:          'Buy Put',
+  sell_put:         'Sell Put',
 };
 
 function fmt(v, decimals = 1) {
@@ -46,7 +47,7 @@ export default function ETFCard({ etf, onAnalyze, onDeepDive }) {
       <div className="etf-metrics">
         <div className="etf-metric">
           <span className="etf-metric-label">Price</span>
-          <span className="etf-metric-value monospace">${fmt(etf.price, 2)}</span>
+          <span className="etf-metric-value monospace">{etf.price != null ? `$${fmt(etf.price, 2)}` : '—'}</span>
         </div>
         <div className="etf-metric">
           <span className="etf-metric-label">RS Ratio</span>

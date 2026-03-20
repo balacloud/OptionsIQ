@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 11 (March 13, 2026)
+> **Last Updated:** Day 15 (March 20, 2026)
 
 ---
 
@@ -120,6 +120,15 @@ Use the structured audit prompt with verdict labels:
 `[VERIFIED]`, `[PLAUSIBLE]`, `[MISLEADING]`, `[UNVERIFIED]`, `[HALLUCINATED]`
 This prevents wasting time fixing cosmetic issues while fundamental logic is wrong.
 Audit covers: gate logic claims, strategy builder claims, data flow claims, Golden Rules enforcement.
+
+### Rule 21: Think Like a Quant Trader, Not a Developer.
+Every code review and audit must pass the **quant filter**: "Would this cost me money?"
+- A developer asks: "Does it compile? Does it crash?" A quant asks: "Is the DTE wrong? Is IVR actually flowing? Can the trader get in and out?"
+- Dead code paths that look correct but never execute (e.g., IVR-based DTE when IVR is always `None`) are **critical bugs** — they silently degrade every recommendation.
+- Every data field shown to the trader must trace back to a real computation. If a field shows "—" because the pipeline never populates it, that's not a display bug — it's a missing feature disguised as working code.
+- Liquidity (bid-ask spread, OI) must be surfaced before any "Analyze" recommendation. Directing a trader toward an illiquid chain without warning is a system failure.
+- Market regime (SPY trend, VIX level) must gate bullish recommendations. RS momentum is a lagging indicator — it takes weeks to rotate. The market can crash 10% before quadrants catch up.
+- **Audit priority order**: P&L impact first, data integrity second, UX third, code style last.
 
 ### Rule 18: Liquidity Gate Thresholds Must Be Direction-Aware.
 The "strike nearness" sub-check in the liquidity gate (contract within N% of underlying) WILL always fail for ITM buyer strategies by design — that's what ITM means. Applying an ATM nearness filter to a delta-0.68 ITM call is a structural mismatch.
