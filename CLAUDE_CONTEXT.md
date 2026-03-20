@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 12 (March 17, 2026)
-> **Current Version:** v0.9.2 (Phase A+D audit fixes complete — system now usable)
-> **Project Phase:** Phase 4b — All critical/high audit fixes shipped. Day 13: API_CONTRACTS sync + sector rotation.
+> **Last Updated:** Day 13 (March 19, 2026)
+> **Current Version:** v0.10.0 (Sector Rotation ETF Module — backend L1+L2 live)
+> **Project Phase:** Phase 6 — Sector rotation backend shipped. Day 14: frontend tab.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY12_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY12.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY13_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY13.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -62,14 +62,14 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 4b DONE — all critical/high fixes shipped | Usable for live analysis |
+| Backend | Phase 6 — Sector rotation L1+L2 live | sector_scan_service.py + 2 endpoints |
 | Frontend | Done + Day 4+5+6+12 fixes | All quality banners working (ibkr_live, ibkr_stale, alpaca, ibkr_closed, mock) |
 | IBKR connection | WORKING | Live confirmed: AMD, greeks_pct 100%, account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
 | Strategy ranking | Updated Day 9+12 | sell_call: bear_call_spread ✓. sell_put: naked + warning label. |
 | IV store | Correct (frozen) | iv_store.py verified correct |
-| constants.py | DONE (Day 12) | 19 new constants added (IV abs fallback, DTE signal, SPY regime) |
+| constants.py | DONE (Day 13) | ETF module constants added: ETF_TICKERS, gate overrides, FOMC/dividend/TQQQ |
 | bs_calculator.py | DONE | Black-Scholes greeks fallback |
 | ib_worker.py | DONE (Day 5) | Queue poisoning + heartbeat + RequestTimeout |
 | yfinance_provider.py | DONE | Middle tier, BS greeks fill (NO greeks — computed via BS only) |
@@ -109,9 +109,13 @@ backend/
                                        spread handler direction-aware via right field
   iv_store.py         FROZEN — math correct
 
+  sector_scan_service.py  DONE (Day 13) — STA consumer + quadrant→direction + catalyst warnings.
+                                       L1 scan (all 15 ETFs) + L2 analyze (single ETF + IV overlay).
+                                       Research-verified: Weakening=WAIT, Lagging=SKIP, Risk-Off→QQQ calls.
+
   # TO CREATE:
-  marketdata_provider.py  Day 13 — MarketData.app REST provider ($12/mo — pending)
-  analyze_service.py      Day 13 P2 — extract _merge_swing, _extract_iv_data, _behavioral_checks
+  marketdata_provider.py  — MarketData.app REST provider ($12/mo — pending)
+  analyze_service.py      — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ---
@@ -246,39 +250,35 @@ Resolved (Day 12):
 | Day 10 | Mar 12, 2026 | KI-035 OI fix applied (genericTickList="101"). alpaca_provider.py CREATED + wired into DataService+app.py. .env syntax fix. Alpaca live-tested: greeks ✅, OI/volume ❌ (model limitation). MarketData.app live-tested: current greeks ✅, historical IV=None (unknown if trial/platform). Perplexity research: 9 providers compared, none under $30/mo has historical IV. Research doc created (docs/Research/). Golden Rule 19 added. |
 | Day 11 | Mar 13, 2026 | KI-037 CONFIRMED (MarketData.app no historical IV — platform limitation). System coherence audit: 47 findings. Behavioral audit: 17 claims, 8 verified, 3 misleading, 5 false. Key findings: liquidity gate permanently broken (OI=0), gate_engine 60+ hardcoded thresholds (Rule 3 violated), 2 missing quality banners, sell_put naked with no warning, DTE buyer sweet spot not enforced, ACCOUNT_SIZE silently defaults. Sector rotation ETF module researched. |
 | Day 12 | Mar 17, 2026 | All Phase A+D critical/high audit fixes shipped during market hours. KI-035 OI confirmed platform limitation — graceful degradation added (WARN not BLOCK). gate_engine Rule 3 fixed (60+ literals → constants.py). SQLite WAL. reqMktData try-finally. Startup guard for ACCOUNT_SIZE. sell_put naked warning. QualityBanner fixed. alpaca+ibkr_stale banners added. System now usable for live analysis. |
+| Day 13 | Mar 19, 2026 | Sector Rotation ETF module: multi-LLM research (Gemini+GPT-4o+Perplexity), 7 questions audited, 3 design corrections (Weakening→WAIT, Lagging→SKIP, Risk-Off→QQQ calls). sector_scan_service.py created (L1 scan + L2 analyze). ETF constants added. L1 tested live with STA: 15 ETFs, correct quadrant→direction mapping, catalyst warnings working. |
 
 ---
 
-## Next Session Priorities (Day 13)
+## Next Session Priorities (Day 14)
 
-### P0 — Phase B: API_CONTRACTS.md sync (KI-044)
-Update spec to match actual code. Mismatches in: verdict structure, gate field names, strategy fields,
-behavioral_checks format, direction_locked. Frontend already matches code — spec is the stale one.
+### P0 — Sector Rotation Frontend
+- `SectorRotation.jsx` — new tab with L1 scan grid
+- `ETFCard.jsx` — sector card with quadrant badge + action button
+- `CapSizeStrip.jsx` — QQQ/MDY/IWM strip with risk signal
+- Integration: L1 scan → click ETF → L2 → "Deep Dive" → L3 (existing analyze)
 
-### P1 — Sector Rotation Backend
-- `sector_scan_service.py` — STA consumer + quadrant→direction mapping + IV overlay (~150 lines)
-- `GET /api/sectors/scan` (L1) + `GET /api/sectors/analyze/{ticker}` (L2)
-- L3 reuses `POST /api/options/analyze` — zero new code
-- See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
+### P1 — L2 IV overlay (market hours)
+- Test `/api/sectors/analyze/XLE` with IBKR connected
+- Verify IV, IVR, suggested_dte populate correctly from live chain data
 
-### P2 — analyze_service.py extraction
-Extract `_merge_swing`, `_extract_iv_data`, `_behavioral_checks` from app.py.
-Goal: app.py ≤ 150 lines (Rule 4). Currently ~600 lines.
+### P2 — Phase B: API_CONTRACTS.md sync (KI-044)
+Update spec to match actual code + add new sector endpoints.
 
-### P3 — bull_put_spread for sell_put
-strategy_ranker.py `_rank_track_b`: currently naked sell_put only.
-Add spread builder (parallel to existing bear_call_spread logic for sell_call).
+### P3 — analyze_service.py extraction
+app.py still ~620 lines. Rule 4 target: ≤ 150 lines.
 
-### Deferred (low priority)
-- Phase C: Provider consistency (None vs 0, bs_greeks flag)
-- Phase E: Performance (deepcopy overhead, struct_cache LRU)
-- Phase F: Documentation sync
-- DTE buyer sweet spot: enforce 45-90 or accept signal-based? (Claim 3)
-- marketdata_provider.py ($12/mo — only if IBKR OI permanently unavailable)
+### Deferred
+- bull_put_spread for sell_put (strategy_ranker.py)
+- Phase C/E/F audit items
+- ETF-specific gate overrides in gate_engine (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK)
 
 ### Reference
-- `docs/Research/Behavioral_Audit_Day11.md` — behavioral audit (17 claims)
-- `docs/Research/System_Coherence_Audit_Day11.md` — coherence audit (47 items)
-- `docs/Research/Sector_Rotation_ETF_Module_Day11.md` — ETF module research
-- `docs/versioned/KNOWN_ISSUES_DAY12.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY12_SHORT.md` — Day 12 summary
+- `docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md` — multi-LLM research + audit
+- `docs/Research/Sector_Rotation_ETF_Module_Day11.md` — module design (updated Day 13)
+- `docs/versioned/KNOWN_ISSUES_DAY13.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY13_SHORT.md` — Day 13 summary

@@ -10,7 +10,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from constants import STA_BASE_URL
+from constants import STA_BASE_URL, ETF_TICKERS
+from sector_scan_service import scan_sectors, analyze_sector_etf
 from data_service import DataService
 from gate_engine import GateEngine
 from ib_worker import IBWorker
@@ -599,6 +600,30 @@ def integrate_schema():
         "spy_5day_return": "float", "earnings_days_away": "int", "pattern": "str",
     }
     return jsonify(schema)
+
+
+# ---------------------------------------------------------------------------
+# Sector Rotation ETF endpoints (Day 13)
+# ---------------------------------------------------------------------------
+@app.get("/api/sectors/scan")
+def sectors_scan():
+    """Level 1: All sector ETFs with quadrant, direction, action. < 2 sec (STA cached)."""
+    result = scan_sectors()
+    if result.get("error"):
+        return jsonify(result), 503
+    return jsonify(result)
+
+
+@app.get("/api/sectors/analyze/<ticker>")
+def sectors_analyze(ticker: str):
+    """Level 2: Single ETF + IV/OI/spread overlay. 10-15 sec (IBKR)."""
+    ticker = ticker.upper().strip()
+    if ticker not in ETF_TICKERS:
+        return jsonify({"error": f"{ticker} is not in the sector ETF universe"}), 400
+    result = analyze_sector_etf(ticker, data_service=data_svc)
+    if result.get("error"):
+        return jsonify(result), 503
+    return jsonify(result)
 
 
 if __name__ == "__main__":

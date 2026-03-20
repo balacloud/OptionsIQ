@@ -224,3 +224,49 @@ CALL_DIRECTIONS     = {DIRECTION_BUY_CALL, DIRECTION_SELL_CALL}
 PUT_DIRECTIONS      = {DIRECTION_BUY_PUT, DIRECTION_SELL_PUT}
 TRACK_A_DIRECTIONS  = {DIRECTION_BUY_CALL, DIRECTION_SELL_CALL}
 TRACK_B_DIRECTIONS  = {DIRECTION_BUY_PUT, DIRECTION_SELL_PUT}
+
+# ---------------------------------------------------------------------------
+# Sector Rotation ETF Module (Day 13 — research-verified)
+# Source: docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md
+# ---------------------------------------------------------------------------
+ETF_TICKERS = {
+    "XLK", "XLF", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB",
+    "XLU", "XLRE", "XLC",   # 11 SPDR sector ETFs
+    "QQQ", "IWM", "MDY",    # Cap-size ETFs
+    "TQQQ",                  # 3x leveraged (special rules)
+}
+
+# ETF-specific gate overrides (research: ETFs 10-100x more liquid than stocks)
+ETF_MIN_PREMIUM_DOLLAR  = 0.50   # (stock = 2.00). XLU/XLP ATM < $2 at 45 DTE.
+ETF_SPREAD_BLOCK_PCT    = 0.10   # (stock = 15%). ETF ATM spreads $0.01-0.05.
+ETF_MIN_OPEN_INTEREST   = 500    # (stock = 1000). ETFs always exceed this.
+
+# TQQQ special rules (VERIFIED: Seeking Alpha, Market Chameleon)
+TQQQ_MAX_DTE            = 45     # Volatility decay accelerates beyond 45 days
+# TQQQ decay formula: 3 × σ² per day (VERIFIED)
+# No covered calls (VERIFIED: caps gains during 50%+ rallies)
+# Bear call spreads at 7-14 DTE OK (VERIFIED: Market Chameleon)
+
+# DTE by IVR (VERIFIED: tastylive "How IV Impacts the Selection of DTE", Aug 2024)
+ETF_DTE_LOW_IVR         = 60     # IVR < 30 → 60 DTE
+ETF_DTE_HIGH_IVR        = 30     # IVR >= 30 → 30 DTE
+ETF_DTE_DEFAULT         = 45     # Fallback when IVR unavailable
+
+# FOMC sensitivity (VERIFIED: QuantSeeker "Which Sectors Move on Fed Days")
+FOMC_HIGH_SENSITIVITY   = {"XLF", "XLRE"}    # Biggest movers on Fed days
+FOMC_LOW_SENSITIVITY    = {"XLU", "XLP"}      # Barely move on Fed days
+FOMC_WARN_DAYS          = 3                    # WARN (not BLOCK) within 3 days
+
+# Dividend risk (VERIFIED: Webull, Schwab, Fidelity, CBOE)
+HIGH_DIVIDEND_ETFS      = {"XLU", "XLRE", "XLF"}  # Yield > 1.4%
+DIVIDEND_WARN_DAYS      = 3                         # Short calls: WARN 3 days before ex-date
+
+# Sector classifications (VERIFIED: ryanoconnellfinance.com)
+CYCLICAL_SECTORS        = {"XLI", "XLY", "XLB", "XLF"}   # Risk-On favored
+DEFENSIVE_SECTORS       = {"XLU", "XLV", "XLP"}           # Risk-Off favored
+
+# Quadrant → action mapping (research-corrected Day 13)
+# Leading/Improving = ANALYZE, Weakening = WATCH, Lagging = SKIP
+QUADRANT_ANALYZE        = {"Leading", "Improving"}
+QUADRANT_WATCH          = {"Weakening"}
+QUADRANT_SKIP           = {"Lagging"}

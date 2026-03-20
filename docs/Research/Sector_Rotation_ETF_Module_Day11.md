@@ -192,29 +192,47 @@ STA (port 5001)                    OptionsIQ (port 5051)
 | suggested_direction | str | Computed: quadrant → direction mapping |
 | action | str | "ANALYZE" / "SKIP" / "WATCH" |
 
-**Direction mapping logic:**
+**Direction mapping logic (UPDATED Day 13 — research-verified):**
 ```python
-def quadrant_to_direction(quadrant, rs_momentum, size_signal):
+def quadrant_to_direction(quadrant, ivr):
+    """
+    Research-verified mapping (3-model consensus):
+    - Leading/Improving = bullish (VERIFIED by all models + RRG theory)
+    - Weakening = WAIT (CORRECTED: RS>100 = still outperforming, not bearish)
+    - Lagging = SKIP (CORRECTED: ETFs mean-revert, puts don't work)
+    """
     if quadrant == "Leading":
-        return "buy_call"
+        return "buy_call" if ivr < 50 else "bull_call_spread"
     elif quadrant == "Improving":
-        return "buy_call"  # longer DTE
+        return "bull_call_spread"  # defined risk, 60 DTE (unconfirmed turnaround)
     elif quadrant == "Weakening":
-        return "sell_call"
+        return None   # WAIT — not sell_call (still RS>100, research consensus)
     elif quadrant == "Lagging":
-        if rs_momentum < -5:
-            return "buy_put"  # strong breakdown only
-        return None  # skip
+        return None   # SKIP — no buy_put (ETFs mean-revert too fast)
 ```
 
-**Action logic:**
+**Action logic (UPDATED Day 13):**
 ```python
-if direction is not None and quadrant in ("Leading", "Improving"):
+if quadrant == "Leading":
     action = "ANALYZE"
-elif quadrant == "Weakening" and size_signal == "Risk-Off":
-    action = "ANALYZE"  # sell premium in fading sectors during risk-off
-else:
+elif quadrant == "Improving":
+    action = "ANALYZE"
+elif quadrant == "Weakening":
+    action = "WATCH"   # show card but don't suggest a trade
+else:  # Lagging
     action = "SKIP"
+```
+
+**Cap-size signal (DOWNGRADED Day 13 — advisory only, not a gate):**
+```python
+# Research consensus: cap-size rotation is a portfolio allocation tool,
+# NOT validated as an options entry signal. Display as label only.
+size_bias = None  # advisory label, does not affect direction or gating
+if size_signal == "Risk-On":
+    size_bias = "Cyclicals favored (XLI, XLY, XLB)"
+elif size_signal == "Risk-Off":
+    size_bias = "Defensives favored (XLU, XLV, XLP) + QQQ"
+    # NOTE: Risk-Off → QQQ CALLS not puts (research-corrected)
 ```
 
 ### Level 2 — Standard Analysis (10-15 sec per ETF)
@@ -234,18 +252,24 @@ else:
 | suggested_dte | int | IVR-based (tastylive rules) | Yes |
 | catalyst_warning | str | Sector-specific (FOMC, OPEC, earnings) | Yes |
 
-**DTE selection (from verified tastylive research):**
+**DTE selection (UPDATED Day 13 — tastylive 2-tier verified):**
 ```python
+# tastylive article "How IV Impacts the Selection of DTE" (Aug 2024):
+#   IVR < 30 → 60 DTE,  IVR >= 30 → 30 DTE
+# The 3-tier (30/45/60) was our interpolation — tastylive only tested 2 tiers.
+# We use 45 DTE as the default/fallback.
 if iv_percentile < 30:
     suggested_dte = 60
-elif iv_percentile < 70:
-    suggested_dte = 45
 else:
     suggested_dte = 30
 
-# TQQQ override
+# Default when IVR unavailable
+if iv_percentile is None:
+    suggested_dte = 45
+
+# TQQQ override (VERIFIED: volatility decay accelerates beyond 45 days)
 if etf == "TQQQ":
-    suggested_dte = min(suggested_dte, 45)  # never > 45 DTE
+    suggested_dte = min(suggested_dte, 45)
 ```
 
 ### Level 3 — Full Analysis (existing endpoint)
@@ -320,3 +344,38 @@ No external research needed. STA provides rotation data. IBKR provides options d
 | Level 3 new code? | ✅ No — reuses existing analyze endpoint |
 | Need external data API? | ✅ No — IBKR + STA covers everything |
 | RS recalc frequency? | Weekly (STA caches per trading day) |
+
+---
+
+## Multi-LLM Research Results (Day 13)
+
+Full research: `docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md`
+Models consulted: Gemini 1.5 Pro, GPT-4o, Perplexity (web search)
+
+### Key Design Changes from Research
+
+| # | Original | Corrected | Evidence |
+|---|----------|-----------|----------|
+| 1 | Weakening → sell_call | **WAIT** (no position) | All 3 models: RS>100 still outperforming |
+| 2 | Lagging → buy_put if mom<-5 | **SKIP** (no position) | All 3: ETFs mean-revert, -5 is arbitrary |
+| 3 | Risk-Off → QQQ puts | **QQQ calls + defensive calls** | All 3: Risk-Off = large caps winning |
+| 4 | 3-tier DTE (30/45/60) | **2-tier** (30/60) + 45 default | Tastylive only tested 2 tiers |
+| 5 | Cap-size → direction override | **Advisory label only** | No literature validates as options signal |
+| 6 | Premium min $2.00 for ETFs | **$0.50** for ETFs | XLU/XLP ATM < $2.00 at 45 DTE |
+| 7 | SPY regime blocks all buy_call | **Sector momentum override** | All 3: defeats purpose of rotation |
+| 8 | No dividend gate | **WARN 3d before ex-date** (short only) | Webull, Schwab, Fidelity, CBOE |
+| 9 | No FOMC sector sensitivity | **Per-sector WARN** (XLF/XLRE) | QuantSeeker sector-FOMC study |
+
+### ETF-Specific Gate Thresholds (new constants needed)
+
+```python
+# constants.py additions for ETF module
+ETF_TICKERS = {"XLK", "XLF", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB",
+               "XLU", "XLRE", "XLC", "QQQ", "IWM", "MDY", "TQQQ"}
+ETF_MIN_PREMIUM_DOLLAR = 0.50       # (stock = 2.00)
+ETF_SPREAD_BLOCK_PCT = 0.10         # (stock = 15%)
+ETF_MIN_OPEN_INTEREST = 500         # (stock = 1000, ETFs always exceed)
+TQQQ_MAX_DTE = 45
+FOMC_SENSITIVE = {"XLF", "XLRE"}    # WARN only, not BLOCK
+HIGH_DIVIDEND = {"XLU", "XLRE", "XLF"}  # dividend ex-date WARN for short calls
+```

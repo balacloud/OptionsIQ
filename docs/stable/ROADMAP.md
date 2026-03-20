@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 12 (March 17, 2026)
-> **Current Version:** v0.9.2
+> **Last Updated:** Day 13 (March 19, 2026)
+> **Current Version:** v0.10.0
 
 ---
 
@@ -80,12 +80,16 @@ STA already provides: RS Ratio, quadrants, cap-size rotation, sector→ETF mappi
 OptionsIQ consumes `GET localhost:5001/api/sectors/rotation` — zero RS computation needed.
 - [x] Research: RS methodology, strategy-per-quadrant, ETF liquidity ✅ Day 11
 - [x] RS formula verified against STA source ✅ Day 11 (6-mo closes, midpoint normalize, 10-day delta)
-- [ ] ~~`sector_rotation.py`~~ NOT NEEDED — STA provides all rotation data
-- [ ] `sector_scan_service.py` — STA consumer + quadrant→direction mapping + IV overlay (~150 lines)
-- [ ] Backend: `GET /api/sectors/scan` (L1) + `GET /api/sectors/analyze/{ticker}` (L2)
-- [ ] Level 3 reuses existing `POST /api/options/analyze` (zero new code)
-- [ ] TQQQ rules: max 45 DTE, no covered calls, bear call spreads only
-- [ ] Frontend: SectorRotation.jsx + ETFCard.jsx + CapSizeStrip.jsx
+- [x] Multi-LLM research audit (Gemini+GPT-4o+Perplexity): 7 questions, 3 design corrections ✅ Day 13
+- [x] ~~`sector_rotation.py`~~ NOT NEEDED — STA provides all rotation data ✅
+- [x] `sector_scan_service.py` — STA consumer + research-verified quadrant→direction + catalyst warnings ✅ Day 13
+- [x] Backend: `GET /api/sectors/scan` (L1) + `GET /api/sectors/analyze/{ticker}` (L2) ✅ Day 13
+- [x] Level 3 reuses existing `POST /api/options/analyze` (zero new code) ✅
+- [x] TQQQ rules: max 45 DTE, no covered calls, decay warning ✅ Day 13
+- [x] ETF constants in constants.py (tickers, gate overrides, FOMC, dividend) ✅ Day 13
+- [ ] Frontend: SectorRotation.jsx + ETFCard.jsx + CapSizeStrip.jsx — Day 14
+- [ ] L2 IV overlay test with IBKR during market hours — Day 14
+- [ ] ETF-specific gate overrides in gate_engine (premium $0.50, spread 0.10%)
 See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 
 ## Post-v1.0 (Backlog)
@@ -111,3 +115,4 @@ See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 | v0.9 | Day 10 | KI-035 OI fix applied. alpaca_provider.py created + wired. MarketData.app tested (hist IV=None). Provider research doc. Golden Rule 19. |
 | v0.9.1 | Day 11 | KI-037 confirmed (MarketData.app no historical IV — platform limitation). System coherence audit: 47 findings (6 critical, 8 high). Audit doc created. |
 | v0.9.2 | Day 12 | All Phase A+D audit fixes shipped. gate_engine Rule 3 fixed (60+ literals → constants.py). KI-035 OI platform limitation confirmed + graceful degradation. SQLite WAL. reqMktData try-finally. ACCOUNT_SIZE guard. sell_put naked warning. System usable for live analysis. |
+| v0.10.0 | Day 13 | Sector Rotation ETF module: multi-LLM research (3 models, 7 questions, 3 corrections). sector_scan_service.py (L1+L2). 15 ETFs live-tested. Research-verified: Weakening=WAIT, Lagging=SKIP, Risk-Off=QQQ calls. |
