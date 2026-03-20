@@ -8,7 +8,9 @@ import BehavioralChecks from './components/BehavioralChecks';
 import TopThreeCards from './components/TopThreeCards';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
+import SectorRotation from './components/SectorRotation';
 import useOptionsData from './hooks/useOptionsData';
+import useSectorData from './hooks/useSectorData';
 import './index.css';
 
 const emptySwing = {
@@ -83,10 +85,19 @@ function QualityBanner({ data }) {
 
 export default function App() {
   const { data, loading, error, analyze } = useOptionsData();
+  const sectorHook = useSectorData();
+  const [activeTab, setActiveTab] = useState('analyze'); // 'analyze' | 'sectors'
   const [ticker, setTicker]     = useState('');
   const [direction, setDirection] = useState('buy_call');
   const [swing, setSwing]       = useState(emptySwing);
   const [ibModal, setIbModal]   = useState(false);
+
+  // Deep dive from sector tab → switch to analyze tab with ETF pre-filled
+  const handleSectorDeepDive = (etf) => {
+    setTicker(etf.etf);
+    if (etf.suggested_direction) setDirection(etf.suggested_direction);
+    setActiveTab('analyze');
+  };
 
   const lockedBySignal = useMemo(() => {
     if (swing.swing_signal === 'BUY')  return ['sell_call', 'buy_put'];
@@ -129,73 +140,107 @@ export default function App() {
     <div className="app-shell">
       <QualityBanner data={data} />
 
-      <div className="app-layout">
-        {/* ── Left Panel: controls + verdict ── */}
-        <aside className="left-panel">
-          <Header
-            ticker={ticker}
-            data={data}
-            onIbClick={() => setIbModal(true)}
-          />
-
-          {/* Ticker + Analyze */}
-          <div className="card card-sm">
-            <div className="ticker-bar">
-              <input
-                className="ticker-input"
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                placeholder="AMD"
-                maxLength={8}
-              />
-              <button className="analyze-btn" onClick={onAnalyze} disabled={loading}>
-                {loading ? 'Analyzing...' : 'Analyze'}
-              </button>
-            </div>
-            {data?.underlying_price && (
-              <div style={{ marginTop: 10 }}>
-                <div className="underlying-label">{data.ticker} underlying</div>
-                <div className="underlying-price">${data.underlying_price.toFixed(2)}</div>
-              </div>
-            )}
-          </div>
-
-          {/* Direction */}
-          <div className="card card-sm">
-            <div className="section-title">Direction</div>
-            <DirectionSelector
-              direction={direction}
-              setDirection={setDirection}
-              swingSignal={swing.swing_signal}
-              locked={lockedBySignal}
-            />
-          </div>
-
-          {/* Master Verdict */}
-          <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
-
-          {/* Swing Import — collapsible */}
-          <SwingImportStrip swing={swing} setSwing={setSwing} ticker={ticker} />
-        </aside>
-
-        {/* ── Right Panel: results ── */}
-        <main className="right-panel">
-          {error && <div className="error-bar">{error}</div>}
-
-          <GatesGrid gates={data?.gates || []} />
-          <TopThreeCards
-            strategies={data?.top_strategies || []}
-            gates={data?.gates || []}
-            pnlTable={data?.pnl_table}
-          />
-          <PnLTable
-            table={data?.pnl_table}
-            gateFailed={(data?.gates || []).some((g) => g.id === 'pivot_confirm' && g.status === 'fail')}
-          />
-          <BehavioralChecks checks={data?.behavioral_checks || []} />
-          <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
-        </main>
+      {/* ── Tab Bar ── */}
+      <div className="tab-bar">
+        <button
+          className={`tab-btn ${activeTab === 'analyze' ? 'active' : ''}`}
+          onClick={() => setActiveTab('analyze')}
+        >
+          Analyze
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'sectors' ? 'active' : ''}`}
+          onClick={() => setActiveTab('sectors')}
+        >
+          Sectors
+        </button>
       </div>
+
+      {/* ── Analyze Tab ── */}
+      {activeTab === 'analyze' && (
+        <div className="app-layout">
+          {/* ── Left Panel: controls + verdict ── */}
+          <aside className="left-panel">
+            <Header
+              ticker={ticker}
+              data={data}
+              onIbClick={() => setIbModal(true)}
+            />
+
+            {/* Ticker + Analyze */}
+            <div className="card card-sm">
+              <div className="ticker-bar">
+                <input
+                  className="ticker-input"
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  placeholder="AMD"
+                  maxLength={8}
+                />
+                <button className="analyze-btn" onClick={onAnalyze} disabled={loading}>
+                  {loading ? 'Analyzing...' : 'Analyze'}
+                </button>
+              </div>
+              {data?.underlying_price && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="underlying-label">{data.ticker} underlying</div>
+                  <div className="underlying-price">${data.underlying_price.toFixed(2)}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Direction */}
+            <div className="card card-sm">
+              <div className="section-title">Direction</div>
+              <DirectionSelector
+                direction={direction}
+                setDirection={setDirection}
+                swingSignal={swing.swing_signal}
+                locked={lockedBySignal}
+              />
+            </div>
+
+            {/* Master Verdict */}
+            <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
+
+            {/* Swing Import — collapsible */}
+            <SwingImportStrip swing={swing} setSwing={setSwing} ticker={ticker} />
+          </aside>
+
+          {/* ── Right Panel: results ── */}
+          <main className="right-panel">
+            {error && <div className="error-bar">{error}</div>}
+
+            <GatesGrid gates={data?.gates || []} />
+            <TopThreeCards
+              strategies={data?.top_strategies || []}
+              gates={data?.gates || []}
+              pnlTable={data?.pnl_table}
+            />
+            <PnLTable
+              table={data?.pnl_table}
+              gateFailed={(data?.gates || []).some((g) => g.id === 'pivot_confirm' && g.status === 'fail')}
+            />
+            <BehavioralChecks checks={data?.behavioral_checks || []} />
+            <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
+          </main>
+        </div>
+      )}
+
+      {/* ── Sectors Tab ── */}
+      {activeTab === 'sectors' && (
+        <SectorRotation
+          sectorData={sectorHook.sectors}
+          loading={sectorHook.loading}
+          detailLoading={sectorHook.detailLoading}
+          error={sectorHook.error}
+          etfDetail={sectorHook.etfDetail}
+          onScan={sectorHook.scanSectors}
+          onAnalyzeETF={(ticker) => sectorHook.analyzeETF(ticker).catch(() => {})}
+          onClearDetail={sectorHook.clearDetail}
+          onDeepDive={handleSectorDeepDive}
+        />
+      )}
 
       {/* IB Gateway modal */}
       {ibModal && (

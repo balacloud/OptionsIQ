@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 13 (March 19, 2026)
-> **Current Version:** v0.10.0 (Sector Rotation ETF Module — backend L1+L2 live)
-> **Project Phase:** Phase 6 — Sector rotation backend shipped. Day 14: frontend tab.
+> **Last Updated:** Day 14 (March 19, 2026)
+> **Current Version:** v0.11.0 (Sector Rotation Frontend — tab switcher + ETF grid live)
+> **Project Phase:** Phase 6 — Sector rotation frontend shipped. Day 15: live test with IBKR.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY13_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY13.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY14_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY14.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -63,7 +63,7 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | Area | Status | Notes |
 |------|--------|-------|
 | Backend | Phase 6 — Sector rotation L1+L2 live | sector_scan_service.py + 2 endpoints |
-| Frontend | Done + Day 4+5+6+12 fixes | All quality banners working (ibkr_live, ibkr_stale, alpaca, ibkr_closed, mock) |
+| Frontend | Done + Day 14 sector tab | Tab switcher (Analyze/Sectors), ETF grid, L2 detail panel, deep dive flow |
 | IBKR connection | WORKING | Live confirmed: AMD, greeks_pct 100%, account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
@@ -210,7 +210,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY12.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY14.md`
 
 Open (HIGH):
 1. **KI-044: API_CONTRACTS.md stale** — verdict, gates, strategies, behavioral_checks all differ from code
@@ -251,25 +251,21 @@ Resolved (Day 12):
 | Day 11 | Mar 13, 2026 | KI-037 CONFIRMED (MarketData.app no historical IV — platform limitation). System coherence audit: 47 findings. Behavioral audit: 17 claims, 8 verified, 3 misleading, 5 false. Key findings: liquidity gate permanently broken (OI=0), gate_engine 60+ hardcoded thresholds (Rule 3 violated), 2 missing quality banners, sell_put naked with no warning, DTE buyer sweet spot not enforced, ACCOUNT_SIZE silently defaults. Sector rotation ETF module researched. |
 | Day 12 | Mar 17, 2026 | All Phase A+D critical/high audit fixes shipped during market hours. KI-035 OI confirmed platform limitation — graceful degradation added (WARN not BLOCK). gate_engine Rule 3 fixed (60+ literals → constants.py). SQLite WAL. reqMktData try-finally. Startup guard for ACCOUNT_SIZE. sell_put naked warning. QualityBanner fixed. alpaca+ibkr_stale banners added. System now usable for live analysis. |
 | Day 13 | Mar 19, 2026 | Sector Rotation ETF module: multi-LLM research (Gemini+GPT-4o+Perplexity), 7 questions audited, 3 design corrections (Weakening→WAIT, Lagging→SKIP, Risk-Off→QQQ calls). sector_scan_service.py created (L1 scan + L2 analyze). ETF constants added. L1 tested live with STA: 15 ETFs, correct quadrant→direction mapping, catalyst warnings working. |
+| Day 14 | Mar 19, 2026 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors) in App.jsx. Filter bar (All/Analyze/Watch/Skip), L2 detail panel, cap-size signal banner, deep dive → analyze flow. Build passes clean. |
 
 ---
 
-## Next Session Priorities (Day 14)
+## Next Session Priorities (Day 15)
 
-### P0 — Sector Rotation Frontend
-- `SectorRotation.jsx` — new tab with L1 scan grid
-- `ETFCard.jsx` — sector card with quadrant badge + action button
-- `CapSizeStrip.jsx` — QQQ/MDY/IWM strip with risk signal
-- Integration: L1 scan → click ETF → L2 → "Deep Dive" → L3 (existing analyze)
+### P0 — Live Test (market hours)
+- Start STA + IBKR + backend + frontend
+- Test Sectors tab end-to-end: scan → L2 detail → deep dive → full gate analysis
+- Verify L2 IV overlay populates (IV, IVR, suggested_dte from live chain)
 
-### P1 — L2 IV overlay (market hours)
-- Test `/api/sectors/analyze/XLE` with IBKR connected
-- Verify IV, IVR, suggested_dte populate correctly from live chain data
-
-### P2 — Phase B: API_CONTRACTS.md sync (KI-044)
+### P1 — Phase B: API_CONTRACTS.md sync (KI-044)
 Update spec to match actual code + add new sector endpoints.
 
-### P3 — analyze_service.py extraction
+### P2 — analyze_service.py extraction
 app.py still ~620 lines. Rule 4 target: ≤ 150 lines.
 
 ### Deferred
@@ -280,5 +276,5 @@ app.py still ~620 lines. Rule 4 target: ≤ 150 lines.
 ### Reference
 - `docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md` — multi-LLM research + audit
 - `docs/Research/Sector_Rotation_ETF_Module_Day11.md` — module design (updated Day 13)
-- `docs/versioned/KNOWN_ISSUES_DAY13.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY13_SHORT.md` — Day 13 summary
+- `docs/versioned/KNOWN_ISSUES_DAY14.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY14_SHORT.md` — Day 14 summary

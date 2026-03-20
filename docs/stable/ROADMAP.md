@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 13 (March 19, 2026)
-> **Current Version:** v0.10.0
+> **Last Updated:** Day 14 (March 19, 2026)
+> **Current Version:** v0.11.0
 
 ---
 
@@ -87,8 +87,8 @@ OptionsIQ consumes `GET localhost:5001/api/sectors/rotation` — zero RS computa
 - [x] Level 3 reuses existing `POST /api/options/analyze` (zero new code) ✅
 - [x] TQQQ rules: max 45 DTE, no covered calls, decay warning ✅ Day 13
 - [x] ETF constants in constants.py (tickers, gate overrides, FOMC, dividend) ✅ Day 13
-- [ ] Frontend: SectorRotation.jsx + ETFCard.jsx + CapSizeStrip.jsx — Day 14
-- [ ] L2 IV overlay test with IBKR during market hours — Day 14
+- [x] Frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js + tab switcher ✅ Day 14
+- [ ] L2 IV overlay test with IBKR during market hours — Day 15
 - [ ] ETF-specific gate overrides in gate_engine (premium $0.50, spread 0.10%)
 See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 
@@ -116,3 +116,4 @@ See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 | v0.9.1 | Day 11 | KI-037 confirmed (MarketData.app no historical IV — platform limitation). System coherence audit: 47 findings (6 critical, 8 high). Audit doc created. |
 | v0.9.2 | Day 12 | All Phase A+D audit fixes shipped. gate_engine Rule 3 fixed (60+ literals → constants.py). KI-035 OI platform limitation confirmed + graceful degradation. SQLite WAL. reqMktData try-finally. ACCOUNT_SIZE guard. sell_put naked warning. System usable for live analysis. |
 | v0.10.0 | Day 13 | Sector Rotation ETF module: multi-LLM research (3 models, 7 questions, 3 corrections). sector_scan_service.py (L1+L2). 15 ETFs live-tested. Research-verified: Weakening=WAIT, Lagging=SKIP, Risk-Off=QQQ calls. |
+| v0.11.0 | Day 14 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors). Filter bar, L2 detail panel, deep dive → analyze flow. |
