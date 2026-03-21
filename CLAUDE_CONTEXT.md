@@ -298,4 +298,5 @@ app.py ~600 lines. Rule 4 target: ≤150 lines.
 ### Reference
 - `docs/versioned/KNOWN_ISSUES_DAY16.md` — current issue list
 - `docs/status/PROJECT_STATUS_DAY16_SHORT.md` — Day 16 summary
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
 - `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim sector audit
