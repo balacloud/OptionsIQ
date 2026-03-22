@@ -379,6 +379,7 @@ Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction cover
 | Day 11 Behavioral | Mar 13, 2026 | 1 | 17 claims | 3 FALSE | 5 MISLEADING | Behavioral claims only |
 | Day 15 Sector Behavioral | Mar 20, 2026 | 1,3,7 | 21 claims | 0 | 0 after fixes | Sector module specific |
 | Day 16 Quant Spot Check | Mar 20, 2026 | 3,7 | 2 findings | 0 | 1 (KI-059) | IVR adj confirmed, bear untested |
+| Day 17 Full Audit | Mar 22, 2026 | 1-8 | 10 checks | 0 | 2 found+fixed | KI-060 SPY None masking fixed, KI-061 IVR formula verified. Post-fix: 0C/2H remaining (KI-059, KI-044) |
 
 ---
 

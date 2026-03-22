@@ -1,6 +1,6 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 16 (March 20, 2026)
-> **Current Version:** v0.13.0 (Sector L2 live tested + SPY regime fix + bear market gap identified)
+> **Last Updated:** Day 17 (March 22, 2026)
+> **Current Version:** v0.13.1 (Audit + KI-060/KI-061 fixed)
 > **Project Phase:** Phase 6 complete. Phase 7 (bear market workflows) is next.
 
 ---
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY16_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY16.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY17_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY17.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -211,23 +211,27 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY15.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY17.md`
 
 Open (HIGH):
-1. **KI-044: API_CONTRACTS.md stale** — verdict, gates, strategies, behavioral_checks schema all differ from code. Duplicate yfinance rows on lines 366-367.
+1. **KI-059: buy_put + sell_call not live tested** — needs market hours + IB Gateway (Rule 13)
+2. **KI-044: API_CONTRACTS.md stale** — full spec sync still not done
 
 Open (MEDIUM):
-2. **KI-059: buy_put + sell_call not live tested** — code done (Day 7/12) but no real bearish setup tested end-to-end (Rule 13 — all 4 directions must be tested)
-3. **analyze_service.py missing** — app.py still ~600 lines (KI-001/KI-023)
+3. **analyze_service.py missing** — app.py 631 lines (KI-001/KI-023)
 4. **Synthetic swing defaults silent** (KI-022/KI-005)
 5. **QQQ 0 contracts** — large-cap sparse strikes (KI-025)
 
 Open (LOW):
-6. **KI-058: Duplicate yfinance rows** in API_CONTRACTS.md lines 366-367
-7. **Alpaca OI/volume missing** (KI-038)
-8. OHLCV temporal gap validation (KI-034)
-9. fomc_days_away defaults to 30 (KI-008)
-10. API URL hardcoded (KI-013/KI-050)
+6. **Alpaca OI/volume missing** (KI-038)
+7. OHLCV temporal gap validation (KI-034)
+8. fomc_days_away defaults to 30 (KI-008)
+9. API URL hardcoded (KI-013/KI-050)
+10. account_size hardcoded in PaperTradeBanner.jsx (KI-049)
+
+Resolved (Day 17):
+- KI-060: spy_5day_return None → 0.0 silent masking in all 4 gate tracks (HIGH)
+- KI-061: iv_store.py IVR formula verified correct — percentile-based (HIGH)
 
 Resolved (Day 16):
 - KI-SPY-REGIME: yfinance rate limit → replaced with STA /api/stock/SPY priceHistory (HIGH)
@@ -263,10 +267,11 @@ Resolved (Day 12):
 | Day 14 | Mar 19, 2026 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors) in App.jsx. Filter bar (All/Analyze/Watch/Skip), L2 detail panel, cap-size signal banner, deep dive → analyze flow. Build passes clean. |
 | Day 15 | Mar 20, 2026 | Sector L2 pipeline completely fixed. Coherence audit: C1-C2 (bull_call_spread), C3 (scan cache), H1-H4, M1-M7, L1-L5. Quant audit: Q1 (IVR wiring), Q2 (liquidity), Q3 (SPY regime), Q4 (cache safety), Q5 (0→None). Behavioral audit: 21 claims — 3 BROKEN/3 FALSE found+fixed. get_chain tuple fix (showstopper). Golden Rule 21 added. |
 | Day 16 | Mar 20, 2026 | P0 live test PASSED (6/7 ETFs): XLE/XLU/XLK/MDY/IWM/TQQQ all return live IV/IVR. QQQ still 0 contracts (KI-025). IVR direction adjustment confirmed (buy_call→bull_call_spread). L3 deep dive confirmed (XLE BLOCK, live greeks). SPY regime: yfinance → STA priceHistory (rate limit fix). Massive.com: no historical IV = IBKR still required. User manual written. Bear market gap identified (buy_put + sell_call not live tested, Lagging sector = no bear plays). |
+| Day 17 | Mar 22, 2026 | First full audit using MASTER_AUDIT_FRAMEWORK (8 categories). All 8 claims VERIFIED. Threading SAFE. Zero bare excepts. KI-060 FIXED: spy_5day_return None→0.0 silent masking in all 4 gate tracks — now returns non-blocking warn. KI-061 CLOSED: iv_store IVR formula verified correct (percentile). Audit health: 0 CRITICAL, 2 HIGH (KI-059 bear untested, KI-044 API docs). No market hours today. |
 
 ---
 
-## Next Session Priorities (Day 17)
+## Next Session Priorities (Day 18)
 
 ### P0 — Bear Market Live Test
 The system earns money in bull (buy_call ✅) and neutral (sell_put ✅) markets.

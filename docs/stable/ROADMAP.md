@@ -139,3 +139,4 @@ Currently: Lagging = SKIP. In a bear market this leaves money on the table.
 | v0.11.0 | Day 14 | Sector Rotation frontend: SectorRotation.jsx + ETFCard.jsx + useSectorData.js. Tab switcher (Analyze/Sectors). Filter bar, L2 detail panel, deep dive → analyze flow. |
 | v0.12.0 | Day 15 | Sector L2 pipeline fixed: get_chain tuple unpack, IVR/HV wiring, SPY regime, scan cache. Behavioral audit (21 claims, 0 BROKEN after fixes). Golden Rule 21. |
 | v0.13.0 | Day 16 | L2 live test PASSED (6/7 ETFs). SPY regime: yfinance → STA priceHistory. Massive.com: no historical IV confirmed. Bear market gap identified (buy_put + sell_call untested, Lagging = no bear plays). User manual written. |
+| v0.13.1 | Day 17 | First full audit (MASTER_AUDIT_FRAMEWORK, 8 categories). KI-060: SPY gate None→0.0 masking fixed in all 4 directions. KI-061: IVR formula verified correct. All 8 behavioral claims VERIFIED. Threading SAFE. Zero bare excepts. |
