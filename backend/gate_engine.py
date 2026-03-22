@@ -213,15 +213,20 @@ class GateEngine:
         liq = self._liquidity_gate(p)
         out.append(liq)
 
-        spy_above = bool(p.get("spy_above_200sma", False))
-        spy_5d = float(p.get("spy_5day_return", 0.0) or 0.0)
-        if spy_above and spy_5d > SPY_BULL_5D_WARN:
-            s, r = "pass", "Risk-on regime supportive"
-        elif spy_above and SPY_BULL_5D_FAIL <= spy_5d <= SPY_BULL_5D_WARN:
-            s, r = "warn", "Market softening; tighten entries"
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            s, r = "warn", "SPY regime unavailable — verify STA connection"
+            out.append(_gate("market_regime", "Market Regime", s, "SPY regime unavailable", "above 200SMA required", r, False))
         else:
-            s, r = "fail", "Market regime unsupportive"
-        out.append(_gate("market_regime", "Market Regime", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"above 200SMA and 5d>{SPY_BULL_5D_WARN:.0%}", r, s == "fail"))
+            spy_above = bool(p.get("spy_above_200sma", False))
+            spy_5d = float(spy_5d_raw)
+            if spy_above and spy_5d > SPY_BULL_5D_WARN:
+                s, r = "pass", "Risk-on regime supportive"
+            elif spy_above and SPY_BULL_5D_FAIL <= spy_5d <= SPY_BULL_5D_WARN:
+                s, r = "warn", "Market softening; tighten entries"
+            else:
+                s, r = "fail", "Market regime unsupportive"
+            out.append(_gate("market_regime", "Market Regime", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"above 200SMA and 5d>{SPY_BULL_5D_WARN:.0%}", r, s == "fail"))
 
         pivot = float(p.get("vcp_pivot", 0.0) or 0.0)
         close = float(p.get("last_close", 0.0) or 0.0)
@@ -293,15 +298,20 @@ class GateEngine:
 
         out.append(self._liquidity_gate(p))
 
-        spy_above = bool(p.get("spy_above_200sma", False))
-        spy_5d = float(p.get("spy_5day_return", 0.0) or 0.0)
-        if spy_above and spy_5d > SPY_SELLPUT_5D_WARN:
-            s, r = "pass", "Market stable enough for put selling"
-        elif SPY_SELLPUT_5D_FAIL <= spy_5d <= SPY_SELLPUT_5D_WARN:
-            s, r = "warn", "Regime weakening for premium selling"
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            s, r = "warn", "SPY regime unavailable — verify STA connection"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, "SPY regime unavailable", "above 200SMA and stable 5d required", r, False))
         else:
-            s, r = "fail", "Downside regime too risky for put selling"
-        out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"above 200SMA and 5d>{SPY_SELLPUT_5D_WARN:.0%}", r, s == "fail"))
+            spy_above = bool(p.get("spy_above_200sma", False))
+            spy_5d = float(spy_5d_raw)
+            if spy_above and spy_5d > SPY_SELLPUT_5D_WARN:
+                s, r = "pass", "Market stable enough for put selling"
+            elif SPY_SELLPUT_5D_FAIL <= spy_5d <= SPY_SELLPUT_5D_WARN:
+                s, r = "warn", "Regime weakening for premium selling"
+            else:
+                s, r = "fail", "Downside regime too risky for put selling"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"above 200SMA and 5d>{SPY_SELLPUT_5D_WARN:.0%}", r, s == "fail"))
 
         premium = float(p.get("premium", 0.0) or 0.0)
         lots = max(1.0, float(p.get("lots", 1.0) or 1.0))
@@ -377,15 +387,20 @@ class GateEngine:
         out.append(self._liquidity_gate(p))
 
         # Gate 6: Market regime — call sellers want flat or bearish market
-        spy_above = bool(p.get("spy_above_200sma", False))
-        spy_5d = float(p.get("spy_5day_return", 0.0) or 0.0)
-        if not spy_above or spy_5d < SPY_SELLCALL_5D_PASS:
-            s, r = "pass", "Market flat/weak — favorable for call selling"
-        elif spy_above and spy_5d < SPY_SELLCALL_5D_WARN:
-            s, r = "warn", "Market bullish but contained — monitor closely"
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            s, r = "warn", "SPY regime unavailable — verify STA connection"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, "SPY regime unavailable", "flat/weak market required", r, False))
         else:
-            s, r = "fail", "Strong bull market — elevated call assignment risk"
-        out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"flat/weak (5d<{SPY_SELLCALL_5D_PASS:.0%}) pass; strong bull (5d>={SPY_SELLCALL_5D_WARN:.0%}) fail", r, s == "fail"))
+            spy_above = bool(p.get("spy_above_200sma", False))
+            spy_5d = float(spy_5d_raw)
+            if not spy_above or spy_5d < SPY_SELLCALL_5D_PASS:
+                s, r = "pass", "Market flat/weak — favorable for call selling"
+            elif spy_above and spy_5d < SPY_SELLCALL_5D_WARN:
+                s, r = "warn", "Market bullish but contained — monitor closely"
+            else:
+                s, r = "fail", "Strong bull market — elevated call assignment risk"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"flat/weak (5d<{SPY_SELLCALL_5D_PASS:.0%}) pass; strong bull (5d>={SPY_SELLCALL_5D_WARN:.0%}) fail", r, s == "fail"))
 
         # Gate 7: Risk defined — spread (defined max loss) is better than naked
         max_gain = float(p.get("max_gain_per_lot", -1.0) or -1.0)
@@ -493,15 +508,20 @@ class GateEngine:
         out.append(self._liquidity_gate(p))
 
         # Gate 7: Market Regime — bearish (want SPY weak for put buying)
-        spy_above = bool(p.get("spy_above_200sma", False))
-        spy_5d = float(p.get("spy_5day_return", 0.0) or 0.0)
-        if not spy_above and spy_5d < SPY_BUYPUT_5D_PASS:
-            s, r = "pass", "Bearish regime — supportive for put buying"
-        elif spy_5d < SPY_BUYPUT_5D_WARN:
-            s, r = "warn", "Market weakening — reasonable for defensive puts"
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            s, r = "warn", "SPY regime unavailable — verify STA connection"
+            out.append(_gate("market_regime", "Market Regime", s, "SPY regime unavailable", "below 200SMA and weak 5d required", r, False))
         else:
-            s, r = "fail", "Market regime not supportive for put buying"
-        out.append(_gate("market_regime", "Market Regime", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"below 200SMA and 5d<{SPY_BUYPUT_5D_PASS:.0%} pass", r, s == "fail"))
+            spy_above = bool(p.get("spy_above_200sma", False))
+            spy_5d = float(spy_5d_raw)
+            if not spy_above and spy_5d < SPY_BUYPUT_5D_PASS:
+                s, r = "pass", "Bearish regime — supportive for put buying"
+            elif spy_5d < SPY_BUYPUT_5D_WARN:
+                s, r = "warn", "Market weakening — reasonable for defensive puts"
+            else:
+                s, r = "fail", "Market regime not supportive for put buying"
+            out.append(_gate("market_regime", "Market Regime", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"below 200SMA and 5d<{SPY_BUYPUT_5D_PASS:.0%} pass", r, s == "fail"))
 
         # Gate 8: Breakdown Confirm — bearish equivalent of pivot_confirm
         # For puts: want price to have broken below S1 support
