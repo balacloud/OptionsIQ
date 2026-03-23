@@ -1,6 +1,6 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 16 (March 20, 2026)
-> **Version:** v1.0
+> **Last Updated:** Day 18 (March 23, 2026)
+> **Version:** v1.1
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
 > **Time estimate:** 30-45 mins per full audit. Run all 8 categories or specify one by name.
 
@@ -137,7 +137,7 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 
 ```
 [ ] IVR calculation: iv_store.get_ivr() → percentile formula correct?
-    Formula: count(hist_iv < current_iv) / len(hist_iv) * 100
+    Formula: count(hist_iv ≤ current_iv) / len(hist_iv) * 100
     NOT: (current_iv - min) / (max - min) * 100  ← that's IV percentile by range, not rank
 
 [ ] IVR threshold interpretation:

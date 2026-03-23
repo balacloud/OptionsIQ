@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 16 (March 20, 2026)
-> **Current Version:** v0.13.0
+> **Last Updated:** Day 18 (March 23, 2026)
+> **Current Version:** v0.13.1
 
 ---
 
@@ -112,10 +112,22 @@ Currently: Lagging = SKIP. In a bear market this leaves money on the table.
 - [ ] Add regime detector: "broad selloff" banner when most sectors are Weakening/Lagging
 - [ ] Frontend: bearish cards with red action buttons in Sectors tab
 
+## Phase 8 — Options Explainer Page ("Learn" Tab)
+Interactive education page — no backend, pure frontend with mock data.
+- [ ] "Learn" tab added to App.jsx (alongside Analyze | Sectors)
+- [ ] 4-panel layout: buy_call, sell_call, buy_put, sell_put with single ticker example
+- [ ] P&L profile charts per direction (mock data)
+- [ ] Strike zone visualization (ITM/ATM/OTM number line)
+- [ ] Interactive: stock price slider → P&L update, IVR toggle → gate behavior
+- [ ] Covers: when to buy vs sell premium, IVR connection, theta decay, spread risk capping
+- [ ] Links back to Analyze tab ("this is what OptionsIQ does when you pick buy_call")
+
 ## Post-v1.0 (Backlog)
 - [ ] Real-time chain refresh, P&L history chart, multi-ticker watchlist, CSV export
 - [ ] Persistent structure cache in SQLite
 - [ ] Request deduplication for simultaneous analyze calls (P4 from concurrency arch)
+- [ ] MCP server: expose gate_engine, sector_scan, paper_trade as MCP tools for conversational analysis
+- [ ] audit_quick.sh: automate mechanical grep-based audit checks (Category 2, 4, 5, 8 partials)
 
 ---
 
@@ -140,3 +152,4 @@ Currently: Lagging = SKIP. In a bear market this leaves money on the table.
 | v0.12.0 | Day 15 | Sector L2 pipeline fixed: get_chain tuple unpack, IVR/HV wiring, SPY regime, scan cache. Behavioral audit (21 claims, 0 BROKEN after fixes). Golden Rule 21. |
 | v0.13.0 | Day 16 | L2 live test PASSED (6/7 ETFs). SPY regime: yfinance → STA priceHistory. Massive.com: no historical IV confirmed. Bear market gap identified (buy_put + sell_call untested, Lagging = no bear plays). User manual written. |
 | v0.13.1 | Day 17 | First full audit (MASTER_AUDIT_FRAMEWORK, 8 categories). KI-060: SPY gate None→0.0 masking fixed in all 4 directions. KI-061: IVR formula verified correct. All 8 behavioral claims VERIFIED. Threading SAFE. Zero bare excepts. |
+| v0.13.1 | Day 18 | Review + planning session (no code changes). Audit framework reviewed (5 improvements, Cat 3 IVR typo fixed). Options Explainer "Learn" tab designed (Phase 8). |

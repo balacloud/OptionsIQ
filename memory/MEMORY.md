@@ -8,12 +8,12 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (chain_cache.db + iv_store.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, optional
 
-## Current Phase (Day 17)
-v0.13.1. First full audit (MASTER_AUDIT_FRAMEWORK, 8 categories). All 8 claims VERIFIED. Threading SAFE.
-KI-060 FIXED: SPY regime None→0.0 masking in all 4 gate tracks — now returns non-blocking warn.
-KI-061 CLOSED: iv_store IVR formula verified correct (percentile: count(hist_iv≤iv)/total×100).
-Audit health: 0 CRITICAL, 2 HIGH (KI-059 bear untested — needs market hours, KI-044 API docs stale).
-Next: Day 18 = bear market live test P0 (IB Gateway + market hours) + API_CONTRACTS sync.
+## Current Phase (Day 18)
+v0.13.1. Day 18 was review + planning (no code changes).
+Audit framework reviewed: 5 improvements (regression gate, IVR typo fixed, Cat 9 smoke test, delta tracking, automation).
+Options Explainer "Learn" tab designed as Phase 8 (interactive education, frontend-only, mock data).
+Audit health unchanged: 0 CRITICAL, 2 HIGH (KI-059 bear untested, KI-044 API docs stale).
+Next: Day 19 = bear market live test P0 (IB Gateway + market hours) + API_CONTRACTS sync.
 
 ## Session Protocol (REQUIRED at start of every session)
 1. Read `CLAUDE_CONTEXT.md` — check Current State, Known Issues, Next Session Priorities
@@ -125,14 +125,15 @@ Fallback: if direction window yields <3 strikes, supplement from ±15% broad win
 
 DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 DTE.
 
-## Day 18 Priorities
+## Day 19 Priorities
 1. **P0:** Bear market live test — buy_put + sell_call with real bearish setup (KI-059, Rule 13) — needs IB Gateway + market hours
-2. **P1:** API_CONTRACTS.md full sync (KI-044)
+2. **P1:** API_CONTRACTS.md full sync (KI-044) — can be done offline
 3. **P2:** Phase 7 research — sector bear plays (multi-LLM research required before coding)
 4. **P3:** analyze_service.py extraction (app.py ≤ 150 lines)
+5. **P4:** Options Explainer "Learn" tab (Phase 8 — frontend only, mock data)
 
-## Frontend Status (Day 16)
-- Tab switcher: Analyze | Sectors (App.jsx)
+## Frontend Status (Day 18)
+- Tab switcher: Analyze | Sectors (App.jsx) — "Learn" tab planned (Phase 8)
 - Analyze tab: full gate analysis, strategies, P&L table, behavioral checks, swing import, paper trade
 - Sectors tab: SectorRotation.jsx + ETFCard.jsx + useSectorData.js — L1 scan + L2 detail + L3 deep dive
 - All quality banners: ibkr_live/cache/stale/closed/alpaca/yfinance/mock
@@ -145,8 +146,8 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
-- `docs/versioned/KNOWN_ISSUES_DAY17.md`
-- `docs/status/PROJECT_STATUS_DAY17_SHORT.md`
+- `docs/versioned/KNOWN_ISSUES_DAY18.md`
+- `docs/status/PROJECT_STATUS_DAY18_SHORT.md`
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
 - `docs/Research/System_Coherence_Audit_Day11.md`
 - `docs/Research/Sector_Rotation_ETF_Module_Day11.md`

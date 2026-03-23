@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 17 (March 22, 2026)
-> **Current Version:** v0.13.1 (Audit + KI-060/KI-061 fixed)
-> **Project Phase:** Phase 6 complete. Phase 7 (bear market workflows) is next.
+> **Last Updated:** Day 18 (March 23, 2026)
+> **Current Version:** v0.13.1 (no code changes Day 18)
+> **Project Phase:** Phase 6 complete. Phase 7 (bear market workflows) is next. Phase 8 (Options Explainer) planned.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY17_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY17.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY18_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY18.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -268,12 +268,13 @@ Resolved (Day 12):
 | Day 15 | Mar 20, 2026 | Sector L2 pipeline completely fixed. Coherence audit: C1-C2 (bull_call_spread), C3 (scan cache), H1-H4, M1-M7, L1-L5. Quant audit: Q1 (IVR wiring), Q2 (liquidity), Q3 (SPY regime), Q4 (cache safety), Q5 (0→None). Behavioral audit: 21 claims — 3 BROKEN/3 FALSE found+fixed. get_chain tuple fix (showstopper). Golden Rule 21 added. |
 | Day 16 | Mar 20, 2026 | P0 live test PASSED (6/7 ETFs): XLE/XLU/XLK/MDY/IWM/TQQQ all return live IV/IVR. QQQ still 0 contracts (KI-025). IVR direction adjustment confirmed (buy_call→bull_call_spread). L3 deep dive confirmed (XLE BLOCK, live greeks). SPY regime: yfinance → STA priceHistory (rate limit fix). Massive.com: no historical IV = IBKR still required. User manual written. Bear market gap identified (buy_put + sell_call not live tested, Lagging sector = no bear plays). |
 | Day 17 | Mar 22, 2026 | First full audit using MASTER_AUDIT_FRAMEWORK (8 categories). All 8 claims VERIFIED. Threading SAFE. Zero bare excepts. KI-060 FIXED: spy_5day_return None→0.0 silent masking in all 4 gate tracks — now returns non-blocking warn. KI-061 CLOSED: iv_store IVR formula verified correct (percentile). Audit health: 0 CRITICAL, 2 HIGH (KI-059 bear untested, KI-044 API docs). No market hours today. |
+| Day 18 | Mar 23, 2026 | Review + planning session (no code changes). Audit framework reviewed: 5 improvements identified (regression gate, Cat 3 IVR typo fixed, Cat 9 smoke test proposed, delta tracking, automation). Options Explainer "Learn" tab concept designed (Phase 8). MCP servers discussed. Audit health unchanged: 0C/2H. |
 
 ---
 
-## Next Session Priorities (Day 18)
+## Next Session Priorities (Day 19)
 
-### P0 — Bear Market Live Test
+### P0 — Bear Market Live Test (KI-059)
 The system earns money in bull (buy_call ✅) and neutral (sell_put ✅) markets.
 Bear directions (buy_put, sell_call) are code-complete but NEVER live-tested (KI-059, Rule 13).
 - Find a stock in confirmed downtrend or at resistance
@@ -281,7 +282,10 @@ Bear directions (buy_put, sell_call) are code-complete but NEVER live-tested (KI
 - Run sell_call: verify bear_call_spread builds, gates fire for high-IV seller track
 - Document any bugs found as KI-06x
 
-### P1 — Phase 7: Sector Bear Market Strategies
+### P1 — API_CONTRACTS.md full sync (KI-044)
+Sync verdict/gates/strategies/behavioral_checks schemas. Can be done offline.
+
+### P2 — Phase 7: Sector Bear Market Strategies
 Sector scanner currently: Lagging = SKIP (no plays). In a bear market this leaves money on the table.
 Need multi-LLM research before implementing (Rule 20):
 - When does Lagging ETF + high IVR → bear_call_spread? (conditions: IVR>50, RS<95, momentum declining)
@@ -289,19 +293,22 @@ Need multi-LLM research before implementing (Rule 20):
 - Regime detector: "broad selloff" banner
 See: `docs/stable/ROADMAP.md` Phase 7
 
-### P2 — API_CONTRACTS.md full sync (KI-044)
-Clean duplicate yfinance rows (lines 366-367). Sync verdict/gates/strategies/behavioral_checks schemas.
-
 ### P3 — analyze_service.py extraction (KI-001/023)
-app.py ~600 lines. Rule 4 target: ≤150 lines.
+app.py ~631 lines. Rule 4 target: ≤150 lines.
+
+### P4 — Options Explainer Page (Phase 8)
+"Learn" tab — interactive education page with mock data. Explains buy_call/sell_call/buy_put/sell_put
+visually with one ticker example. Covers ATM/ITM/OTM, IVR connection, strike zones, P&L profiles.
+Frontend-only (~300 lines React, no backend changes). See Day 18 status doc for full design concept.
 
 ### Deferred
 - bull_put_spread for sell_put (strategy_ranker.py)
 - ETF-specific gate overrides (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK)
 - Phase C/E/F audit items
+- Audit framework improvements: regression gate, Cat 9 smoke test, delta tracking, audit_quick.sh
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY16.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY16_SHORT.md` — Day 16 summary
+- `docs/versioned/KNOWN_ISSUES_DAY18.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY18_SHORT.md` — Day 18 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
 - `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim sector audit
