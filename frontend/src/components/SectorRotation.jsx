@@ -109,6 +109,12 @@ function ETFDetailPanel({ detail, loading, onClose, onDeepDive }) {
         </div>
       )}
 
+      {detail.ivr_bear_warning && (
+        <div className="etf-detail-warnings">
+          <div className="etf-warning etf-warning-bear">⚠ {detail.ivr_bear_warning}</div>
+        </div>
+      )}
+
       {detail.catalyst_warnings && detail.catalyst_warnings.length > 0 && (
         <div className="etf-detail-warnings">
           {detail.catalyst_warnings.map((w, i) => (
@@ -166,6 +172,15 @@ export default function SectorRotation({ sectorData, loading, detailLoading, err
           {sectorData.spy_regime.spy_5day_return != null && (
             <span className="text-dim"> (SPY 5d: {sectorData.spy_regime.spy_5day_return}%)</span>
           )}
+        </div>
+      )}
+
+      {/* Phase 7b: Broad selloff banner */}
+      {sectorData?.market_regime === 'BROAD_SELLOFF' && (
+        <div className="sector-selloff-banner">
+          <span className="banner-icon">!</span>
+          <span>Broad Selloff — majority of sectors weakening/lagging while SPY is below 200 SMA.
+            Consider defined-risk bear spreads over directional calls. Reduce bullish exposure.</span>
         </div>
       )}
 

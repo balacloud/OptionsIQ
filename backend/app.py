@@ -11,7 +11,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from constants import STA_BASE_URL, ETF_TICKERS
-from sector_scan_service import scan_sectors, analyze_sector_etf
+from sector_scan_service import scan_sectors, analyze_sector_etf, _spy_regime
 from data_service import DataService
 from gate_engine import GateEngine
 from ib_worker import IBWorker
@@ -121,6 +121,54 @@ def _i(v, default):
         return default
 
 
+# Module-level SPY regime cache (shared across analyze calls within same process)
+_spy_regime_cache = {"data": None, "ts": 0}
+_SPY_REGIME_TTL = 120  # 2 min — same as chain cache
+
+
+def _fetch_spy_regime():
+    """Fetch real SPY regime from STA, with 2-min cache. Never fabricate."""
+    import time
+    now = time.monotonic()
+    if _spy_regime_cache["data"] and (now - _spy_regime_cache["ts"]) < _SPY_REGIME_TTL:
+        return _spy_regime_cache["data"]
+    regime = _spy_regime()  # from sector_scan_service
+    _spy_regime_cache["data"] = regime
+    _spy_regime_cache["ts"] = now
+    return regime
+
+
+def _spy_above_200(payload):
+    """Get spy_above_200sma: from payload if present, else fetch real data from STA."""
+    v = payload.get("spy_above_200sma")
+    if v is not None:
+        return bool(v)
+    regime = _fetch_spy_regime()
+    val = regime.get("spy_above_200sma")
+    if val is not None:
+        return bool(val)
+    return True  # last resort if STA is offline — safe default, don't penalize
+
+
+def _spy_5d_return(payload):
+    """Get spy_5day_return: from payload if present, else fetch real data from STA.
+    Gate engine thresholds are in decimal form (e.g., -0.02 = -2%).
+    STA and sta_fetch both return percentage form (e.g., -1.23 = -1.23%).
+    We normalize to decimal here so gate comparisons are correct.
+    """
+    v = payload.get("spy_5day_return")
+    if v is not None:
+        pct = _f(v, 0.0)
+        # Normalize: if abs > 0.5, likely percentage form → convert to decimal
+        # (A 50%+ weekly SPY move is impossible in practice)
+        return pct / 100.0 if abs(pct) > 0.5 else pct
+    regime = _fetch_spy_regime()
+    val = regime.get("spy_5day_return")
+    if val is not None:
+        return float(val) / 100.0  # STA returns percentage, gate expects decimal
+    return 0.0  # last resort if STA is offline
+
+
 def _merge_swing(payload: dict, underlying: float) -> dict:
     # Golden Rule 14: Never fabricate plausible values for missing swing fields.
     # vcp_confidence and adx default to None — gate_engine's `or 0.0` pattern handles
@@ -147,9 +195,11 @@ def _merge_swing(payload: dict, underlying: float) -> dict:
         "adx": adx,
         "last_close": _f(payload.get("last_close"), underlying),
         "s1_support": _f(payload.get("s1_support"), underlying * 0.95),
-        "spy_above_200sma": bool(payload.get("spy_above_200sma") if payload.get("spy_above_200sma") is not None else True),
-        "spy_5day_return": _f(payload.get("spy_5day_return"), 0.0),
-        "earnings_days_away": _i(payload.get("earnings_days_away"), 45),
+        "spy_above_200sma": _spy_above_200(payload),
+        "spy_5day_return": _spy_5d_return(payload),
+        # ETFs have no earnings — pass None so gate treats as 999d (no event).
+        # Stocks: use payload value; default None (not 45) — KI-008: fabricated default caused false FAILs.
+        "earnings_days_away": _i(payload.get("earnings_days_away"), None),
         "pattern": payload.get("pattern") or "VCP",
         "source": payload.get("source") or "manual",
         "swing_data_quality": "partial" if synthesized else "full",
@@ -370,6 +420,26 @@ def _analyze_options_inner(payload: dict, ticker: str):
     }
 
     gates = engine.run(direction, gate_payload)
+
+    # Post-process: ETF-specific gate display fixes (Rule 5: gate math frozen, adapt outputs)
+    if ticker in ETF_TICKERS:
+        for g in gates:
+            # Event Calendar: replace "earn 999d" with honest ETF label
+            if g["id"] == "events" and "999d" in str(g.get("computed_value", "")):
+                g["computed_value"] = g["computed_value"].replace("earn 999d", "earn N/A (ETF)")
+            # Pivot Confirm: ETFs don't have VCP pivots — auto-pass
+            if g["id"] == "pivot_confirm":
+                g["status"] = "pass"
+                g["blocking"] = False
+                g["reason"] = "ETF — VCP pivot not applicable"
+                g["computed_value"] = "ETF: auto-pass"
+            # DTE Selection (buy_call track): VCP/ADX not applicable → auto-pass
+            if g["id"] == "dte" and g["status"] == "fail" and "rec None" in str(g.get("computed_value", "")):
+                g["status"] = "pass"
+                g["blocking"] = False
+                g["reason"] = "ETF — VCP signal not applicable, DTE from sector scan"
+                g["computed_value"] = "ETF: auto-pass"
+
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")
 

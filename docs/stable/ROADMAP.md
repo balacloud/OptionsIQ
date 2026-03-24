@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 18 (March 23, 2026)
-> **Current Version:** v0.13.1
+> **Last Updated:** Day 19 (March 24, 2026)
+> **Current Version:** v0.14.0
 
 ---
 
@@ -103,14 +103,21 @@ code-complete but untested. Phase 7 closes this gap across both single-stock and
 - [ ] Live test sell_call: bear_call_spread builds, gate fires for high-IV seller track
 - [ ] Fix any bugs found (KI-06x)
 
-### 7b — Sector Bear Market Strategies (requires multi-LLM research first)
-Currently: Lagging = SKIP. In a bear market this leaves money on the table.
-- [ ] Multi-LLM research: Lagging ETF + high IVR → bear_call_spread conditions (IVR>50, RS<95, momentum<-2)
-- [ ] Research: SPY/QQQ puts as macro hedge when >80% sectors Weakening/Lagging
-- [ ] Research: ETF mean-reversion timing — how long do ETFs stay in Lagging before bouncing?
-- [ ] Implement bearish quadrant→direction mapping (Lagging + high IVR → bear_call_spread)
-- [ ] Add regime detector: "broad selloff" banner when most sectors are Weakening/Lagging
-- [ ] Frontend: bearish cards with red action buttons in Sectors tab
+### 7b — Sector Bear Market Strategies ✅ COMPLETE (Day 19)
+- [x] Research: Lagging ETF → bear_call_spread conditions (RS<98, momentum<-0.5) ✅ Day 19
+- [x] Research: Dropped Weakening→sell_call (defensive sectors get bid up in selloffs) ✅ Day 19
+- [x] Implement bearish quadrant→direction mapping (Lagging + bear thresholds → bear_call_spread) ✅ Day 19
+- [x] Add regime detector: "BROAD_SELLOFF" banner (>50% Weakening/Lagging + SPY<200SMA) ✅ Day 19
+- [x] Frontend: bear badges (red), selloff banner, IVR bear warning ✅ Day 19
+- [x] IVR as L2 soft warning (not L1 hard gate — L1 never has IVR) ✅ Day 19
+- [x] ETF gate post-processing: events/pivot/DTE auto-pass for ETFs ✅ Day 19
+- [x] Bug fixes: KI-062/063/065/066 + L2 None→buy_call ✅ Day 19
+- See: `docs/Research/Sector_Bear_Market_Day19.md`
+
+### 7c — Weakening → sell_call for Cyclical Sectors (deferred, needs research)
+- [ ] Research: distinguish cyclical (XLI, XLY, XLB) vs defensive (XLU, XLP) sectors
+- [ ] Research: conditions for selling calls on weakening cyclicals (avoid defensive inflows)
+- [ ] Backtesting: validate sell_call on Weakening ETFs doesn't get squeezed by rotation
 
 ## Phase 8 — Options Explainer Page ("Learn" Tab)
 Interactive education page — no backend, pure frontend with mock data.
@@ -153,3 +160,4 @@ Interactive education page — no backend, pure frontend with mock data.
 | v0.13.0 | Day 16 | L2 live test PASSED (6/7 ETFs). SPY regime: yfinance → STA priceHistory. Massive.com: no historical IV confirmed. Bear market gap identified (buy_put + sell_call untested, Lagging = no bear plays). User manual written. |
 | v0.13.1 | Day 17 | First full audit (MASTER_AUDIT_FRAMEWORK, 8 categories). KI-060: SPY gate None→0.0 masking fixed in all 4 directions. KI-061: IVR formula verified correct. All 8 behavioral claims VERIFIED. Threading SAFE. Zero bare excepts. |
 | v0.13.1 | Day 18 | Review + planning session (no code changes). Audit framework reviewed (5 improvements, Cat 3 IVR typo fixed). Options Explainer "Learn" tab designed (Phase 8). |
+| v0.14.0 | Day 19 | Phase 7b: Sector Bear Market Strategies. Lagging→bear_call_spread, broad selloff detection, ETF gate auto-pass (events/pivot/DTE). 5 bugs fixed (KI-062/063/065/066 + L2 direction). Research doc created. |

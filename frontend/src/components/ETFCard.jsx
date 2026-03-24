@@ -12,12 +12,15 @@ const ACTION_LABELS = {
 };
 
 const DIR_LABELS = {
-  buy_call:         'Buy Call',
-  bull_call_spread: 'Bull Call Spread',
-  sell_call:        'Sell Call',
-  buy_put:          'Buy Put',
-  sell_put:         'Sell Put',
+  buy_call:          'Buy Call',
+  bull_call_spread:  'Bull Call Spread',
+  sell_call:         'Sell Call',
+  bear_call_spread:  'Bear Call Spread',
+  buy_put:           'Buy Put',
+  sell_put:          'Sell Put',
 };
+
+const BEAR_DIRECTIONS = new Set(['bear_call_spread', 'sell_call', 'buy_put']);
 
 function fmt(v, decimals = 1) {
   if (v == null) return '—';
@@ -72,7 +75,7 @@ export default function ETFCard({ etf, onAnalyze, onDeepDive }) {
       {dirLabel && (
         <div className="etf-direction">
           <span className="etf-direction-label">Direction:</span>
-          <span className={`etf-direction-value badge-${color}`}>{dirLabel}</span>
+          <span className={`etf-direction-value ${BEAR_DIRECTIONS.has(etf.suggested_direction) ? 'badge-bear' : `badge-${color}`}`}>{dirLabel}</span>
         </div>
       )}
 

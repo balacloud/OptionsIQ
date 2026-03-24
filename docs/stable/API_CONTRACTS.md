@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 15 (March 20, 2026)
+> **Last Updated:** Day 19 (March 24, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -292,6 +292,7 @@ Level 1: All sector ETFs with quadrant, direction, action. Consumes STA `/api/se
     "spy_5day_return": 0.85,
     "regime_warning": null
   },
+  "market_regime": "NORMAL",
   "timestamp": "2026-03-20T15:30:00+00:00",
   "sta_status": "ok"
 }
@@ -328,6 +329,7 @@ Level 2: Single ETF + IV/OI/spread overlay from IBKR chain.
   "atm_oi": 12500,
   "atm_volume": 3200,
   "catalyst_warnings": [],
+  "ivr_bear_warning": null,
   "data_source": "ibkr_live",
   "level": 2,
   "note": "L3 deep dive: POST /api/options/analyze with ticker and suggested_direction"

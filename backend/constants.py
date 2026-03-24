@@ -270,3 +270,24 @@ DEFENSIVE_SECTORS       = {"XLU", "XLV", "XLP"}           # Risk-Off favored
 QUADRANT_ANALYZE        = {"Leading", "Improving"}
 QUADRANT_WATCH          = {"Weakening"}
 QUADRANT_SKIP           = {"Lagging"}
+
+# ---------------------------------------------------------------------------
+# Phase 7b — Sector Bear Market Thresholds (Day 19)
+# Source: docs/Research/Sector_Bear_Market_Day19.md
+# ---------------------------------------------------------------------------
+# Lagging ETF → bear_call_spread when RS meaningfully below SPY + declining momentum
+RS_LAGGING_BEAR_RS              = 98.0    # RS below 98 = underperforming SPY by 2+ points
+RS_LAGGING_BEAR_MOM             = -0.5    # Momentum still declining (not bottoming)
+# Broad market regime detection
+BROAD_SELLOFF_SECTOR_PCT        = 0.50    # >50% sectors Weakening+Lagging = broad selloff
+# IVR soft warning threshold for bear spreads (L2 only — advisory, not a gate)
+IVR_BEAR_SPREAD_WARN            = 40      # IVR below 40% = premium may be thin for credit spreads
+# Display hint → core direction mapping for chain fetches
+DIRECTION_TO_CHAIN_DIR = {
+    "buy_call": "buy_call",
+    "sell_call": "sell_call",
+    "buy_put": "buy_put",
+    "sell_put": "sell_put",
+    "bull_call_spread": "buy_call",     # bull spread uses call buyer chain window
+    "bear_call_spread": "sell_call",    # bear spread uses call seller chain window
+}

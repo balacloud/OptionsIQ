@@ -27,6 +27,9 @@ from constants import (
     CYCLICAL_SECTORS, DEFENSIVE_SECTORS,
     QUADRANT_ANALYZE, QUADRANT_WATCH, QUADRANT_SKIP,
     IVR_BUYER_PASS_PCT,
+    RS_LAGGING_BEAR_RS, RS_LAGGING_BEAR_MOM,
+    BROAD_SELLOFF_SECTOR_PCT, IVR_BEAR_SPREAD_WARN,
+    DIRECTION_TO_CHAIN_DIR,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,15 +40,17 @@ _SCAN_CACHE_TTL = 60  # seconds — L1 data is STA-sourced, 1 min freshness is f
 
 
 # ---------------------------------------------------------------------------
-# Quadrant → direction mapping (research-verified Day 13)
+# Quadrant → direction mapping (research-verified Day 13, Phase 7b Day 19)
 # ---------------------------------------------------------------------------
-def quadrant_to_direction(quadrant, ivr=None):
+def quadrant_to_direction(quadrant, ivr=None, rs_ratio=None, rs_momentum=None):
     """
-    Research-verified mapping (3-model consensus):
-    - Leading  → buy_call (bull_call_spread if IVR > 50)
+    Research-verified mapping (3-model consensus Day 13 + Phase 7b Day 19):
+    - Leading   → buy_call (bull_call_spread if IVR > 50)
     - Improving → bull_call_spread (defined risk, 60 DTE)
     - Weakening → None (WAIT — still RS>100, not bearish)
-    - Lagging   → None (SKIP — ETFs mean-revert too fast for puts)
+    - Lagging   → bear_call_spread if RS < 98 AND momentum < -0.5
+                   (defined risk credit spread on sustained underperformance)
+                   Otherwise None (SKIP — may be bottoming or mean-reverting)
     """
     if quadrant == "Leading":
         if ivr is not None and ivr >= 50:
@@ -53,7 +58,15 @@ def quadrant_to_direction(quadrant, ivr=None):
         return "buy_call"
     elif quadrant == "Improving":
         return "bull_call_spread"
-    # Weakening and Lagging: no position
+    elif quadrant == "Lagging":
+        # Phase 7b: bear_call_spread for sustained underperformers
+        # RS < 98 = underperforming SPY by 2+ points (not borderline)
+        # mom < -0.5 = still declining (not bottoming)
+        if (rs_ratio is not None and rs_ratio < RS_LAGGING_BEAR_RS
+                and rs_momentum is not None and rs_momentum < RS_LAGGING_BEAR_MOM):
+            return "bear_call_spread"
+        return None
+    # Weakening: no position (still RS>100, not bearish)
     return None
 
 
@@ -171,6 +184,25 @@ def _spy_regime():
 
 
 # ---------------------------------------------------------------------------
+# Broad market regime detection (Phase 7b — Day 19)
+# ---------------------------------------------------------------------------
+def _detect_regime(sectors, spy_regime):
+    """
+    Detect broad selloff: >50% sectors Weakening/Lagging AND SPY below 200 SMA.
+    Returns "BROAD_SELLOFF" or "NORMAL".
+    """
+    total = len(sectors)
+    if total == 0:
+        return "NORMAL"
+    weak_lag = sum(1 for s in sectors if s.get("quadrant") in ("Weakening", "Lagging"))
+    pct = weak_lag / total
+    above_200 = spy_regime.get("spy_above_200sma", True) if spy_regime else True
+    if pct >= BROAD_SELLOFF_SECTOR_PCT and not above_200:
+        return "BROAD_SELLOFF"
+    return "NORMAL"
+
+
+# ---------------------------------------------------------------------------
 # Level 1: Quick Scan (< 2 sec — STA data + SPY regime)
 # ---------------------------------------------------------------------------
 def scan_sectors():
@@ -200,16 +232,19 @@ def scan_sectors():
     for s in sectors_raw:
         etf = s.get("etf", "")
         quadrant = s.get("quadrant", "Lagging")
-        direction = quadrant_to_direction(quadrant)
-        action = quadrant_to_action(quadrant)
+        rs = s.get("rsRatio")
+        mom = s.get("rsMomentum")
+        direction = quadrant_to_direction(quadrant, rs_ratio=rs, rs_momentum=mom)
+        # If a direction is suggested (including bear), action = ANALYZE
+        action = "ANALYZE" if direction is not None else quadrant_to_action(quadrant)
         catalyst = _catalyst_warnings(etf)
 
         sectors.append({
             "etf": etf,
             "name": s.get("name", ""),
             "rank": s.get("rank", 99),
-            "rs_ratio": s.get("rsRatio"),
-            "rs_momentum": s.get("rsMomentum"),
+            "rs_ratio": rs,
+            "rs_momentum": mom,
             "quadrant": quadrant,
             "price": s.get("price"),
             "week_change": s.get("weekChange"),
@@ -234,8 +269,8 @@ def scan_sectors():
         else:
             quad = "Lagging"
 
-        direction = quadrant_to_direction(quad)
-        action = quadrant_to_action(quad)
+        direction = quadrant_to_direction(quad, rs_ratio=rs, rs_momentum=mom)
+        action = "ANALYZE" if direction is not None else quadrant_to_action(quad)
         catalyst = _catalyst_warnings(etf)
 
         sectors.append({
@@ -262,8 +297,10 @@ def scan_sectors():
             "name": "3x Nasdaq (TQQQ)",
             "catalyst_warnings": _catalyst_warnings("TQQQ"),
         }
-        # TQQQ: only buy_call or sell_call (no naked puts on 3x leverage)
-        if tqqq["suggested_direction"] not in ("buy_call", "sell_call", "bull_call_spread", None):
+        # TQQQ: buy_call, sell_call, bull/bear_call_spread OK; no naked puts on 3x leverage
+        if tqqq["suggested_direction"] not in (
+            "buy_call", "sell_call", "bull_call_spread", "bear_call_spread", None
+        ):
             tqqq["suggested_direction"] = None
             tqqq["action"] = "SKIP"
         sectors.append(tqqq)
@@ -271,12 +308,16 @@ def scan_sectors():
     # Q3: SPY regime — leading indicator vs lagging RS momentum
     regime = _spy_regime()
 
+    # Phase 7b: broad selloff detection
+    market_regime = _detect_regime(sectors, regime)
+
     result = {
         "sectors": sectors,
         "sector_count": len(sectors),
         "size_signal": size_signal,
         "size_bias": _size_bias_label(size_signal),
         "spy_regime": regime,
+        "market_regime": market_regime,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "sta_status": "ok",
     }
@@ -330,10 +371,12 @@ def analyze_sector_etf(ticker, data_service=None, ib_worker=None, iv_store=None)
 
     if data_service:
         try:
-            raw_dir = etf_data.get("suggested_direction") or "buy_call"
-            # bull_call_spread is a display hint — data layer only knows 4 core directions
-            direction = "buy_call" if raw_dir == "bull_call_spread" else raw_dir
-            chain, data_source = data_service.get_chain(ticker, direction=direction)
+            raw_dir = etf_data.get("suggested_direction")
+            # Map display hints to core directions; skip chain fetch if None (SKIP/WATCH)
+            chain_dir = DIRECTION_TO_CHAIN_DIR.get(raw_dir) if raw_dir else None
+            chain = None
+            if chain_dir:
+                chain, data_source = data_service.get_chain(ticker, direction=chain_dir)
             if chain:
                 contracts = chain.get("contracts", [])
                 underlying = chain.get("underlying_price") or etf_data.get("price")
@@ -375,11 +418,26 @@ def analyze_sector_etf(ticker, data_service=None, ib_worker=None, iv_store=None)
     # Q1: Feed IVR into DTE model (research-verified tastylive 2-tier)
     dte = suggested_dte(ivr, ticker)
 
-    # Q1: Re-evaluate direction with IVR (Leading + IVR>50 → bull_call_spread)
+    # Q1: Re-evaluate direction with IVR + RS context (Phase 7b: also feeds bear logic)
     quadrant = etf_data.get("quadrant", "Lagging")
-    direction_with_ivr = quadrant_to_direction(quadrant, ivr=ivr)
+    rs_ratio = etf_data.get("rs_ratio")
+    rs_momentum = etf_data.get("rs_momentum")
+    direction_with_ivr = quadrant_to_direction(
+        quadrant, ivr=ivr, rs_ratio=rs_ratio, rs_momentum=rs_momentum,
+    )
+
+    # Phase 7b: IVR soft warning for bear credit spreads
+    ivr_bear_warning = None
+    if direction_with_ivr == "bear_call_spread" and ivr is not None and ivr < IVR_BEAR_SPREAD_WARN:
+        ivr_bear_warning = (
+            f"IV rank {ivr:.0f}% is below {IVR_BEAR_SPREAD_WARN}% — "
+            "premium may be thin for bear call spread. Wait for volatility to expand."
+        )
 
     catalyst = _catalyst_warnings(ticker)
+
+    # Map bear_call_spread to sell_call for L3 deep dive note
+    l3_dir = DIRECTION_TO_CHAIN_DIR.get(direction_with_ivr, direction_with_ivr)
 
     return {
         **etf_data,
@@ -394,8 +452,10 @@ def analyze_sector_etf(ticker, data_service=None, ib_worker=None, iv_store=None)
         "atm_spread_pct": atm_spread_pct,
         "atm_oi": atm_oi,
         "atm_volume": atm_volume,
+        "ivr_bear_warning": ivr_bear_warning,
         "catalyst_warnings": catalyst,
         "data_source": data_source,
         "level": 2,
-        "note": "L3 deep dive: POST /api/options/analyze with ticker and suggested_direction",
+        "note": f"L3 deep dive: POST /api/options/analyze with ticker={ticker} and direction={l3_dir}"
+            if l3_dir else "No direction suggested — L3 deep dive not applicable",
     }

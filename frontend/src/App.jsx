@@ -97,6 +97,7 @@ export default function App() {
   const SECTOR_DIR_TO_CORE = {
     buy_call: 'buy_call',
     bull_call_spread: 'buy_call',
+    bear_call_spread: 'sell_call',
     sell_call: 'sell_call',
     buy_put: 'buy_put',
     sell_put: 'sell_put',
