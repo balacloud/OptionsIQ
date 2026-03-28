@@ -92,8 +92,20 @@ class StrategyRanker:
 
         # Short leg: delta ~0.30 (slightly OTM) — highest credit
         short_30 = self._closest_delta(otm_calls, 0.30)
-        # Protection leg: delta ~0.15 (further OTM)
-        protection_15 = self._closest_delta(otm_calls, 0.15)
+        short_30_strike = _f(short_30.get("strike"), 0.0)
+        # Protection leg: delta ~0.15 — must be a DIFFERENT (higher) strike than the short leg.
+        # If the chain is narrow and all delta targets cluster to the same strike,
+        # fall back to: short = 2nd-highest OTM, protection = highest OTM.
+        above_short30 = [c for c in otm_calls if _f(c.get("strike"), 0.0) > short_30_strike]
+        if above_short30:
+            protection_15 = self._closest_delta(above_short30, 0.15)
+        elif len(otm_calls) >= 2:
+            sorted_otm = sorted(otm_calls, key=lambda c: _f(c.get("strike"), 0.0))
+            short_30 = sorted_otm[-2]   # lower of the two highest strikes → sold leg
+            protection_15 = sorted_otm[-1]  # highest strike → bought protection
+            short_30_strike = _f(short_30.get("strike"), 0.0)
+        else:
+            protection_15 = short_30  # forces same-strike guard below to skip spread
         # Higher short leg: delta ~0.20 — less credit but higher PoP
         short_20 = self._closest_delta(otm_calls, 0.20)
 

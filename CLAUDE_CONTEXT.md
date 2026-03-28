@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 19 (March 24, 2026)
-> **Current Version:** v0.14.0
-> **Project Phase:** Phase 7b complete (sector bear strategies). Phase 7a (single-stock bear) next. Phase 8 (Options Explainer) planned.
+> **Last Updated:** Day 20 (March 28, 2026)
+> **Current Version:** v0.14.1
+> **Project Phase:** Phase 7b complete + sector options pipeline unblocked. Single-stock bear test (KI-059) next Monday. Phase 8 (Options Explainer) planned.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY19_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY19.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY20_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY20.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -62,8 +62,8 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 7b complete | Sector bear strategies: bear_call_spread, broad selloff detection, ETF gate post-processing. SPY regime via STA with 2-min cache. |
-| Frontend | Done + Day 19 bear UI | Bear badges, selloff banner, IVR bear warning, Deep Dive direction fix |
+| Backend | Phase 7b complete + pipeline fixes | Sector options pipeline unblocked: ETF liquidity gate BLOCK→WARN, narrow-chain bear_call_spread fallback. app.py + strategy_ranker.py updated. |
+| Frontend | Done + Day 19 bear UI | Bear badges, selloff banner, IVR bear warning, Deep Dive direction fix. UI smoke test pending (Monday). |
 | IBKR connection | WORKING | Live confirmed: AMD, XLE, XLK, IWM, TQQQ greeks live. account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
@@ -77,7 +77,7 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | ibkr_provider.py | DONE (Day 12) | try-finally cancelMktData. OI via reqMktData confirmed unavailable (platform limit) |
 | alpaca_provider.py | DONE (Day 10) | REST fallback, greeks ✅, NO OI/volume (model limitation) |
 | analyze_service.py | NOT CREATED | Day 13 P2 — extract from app.py |
-| app.py | Hardened | ~650 lines. SPY regime helpers, earnings None fix, ETF gate post-processing (events/pivot/DTE). |
+| app.py | Hardened + Day 20 | ~660 lines. SPY regime helpers, earnings None fix, ETF gate post-processing (events/pivot/DTE/liquidity). |
 
 ### Backend Files (current state)
 ```
@@ -101,7 +101,9 @@ backend/
   gate_engine.py      DONE (Day 12) — Rule 3 fixed: imports from constants.py (60+ literals replaced).
                                      Liquidity gate: OI=0+Vol>0 → WARN not BLOCK.
                                      Still math-frozen — coerce None→0.0 before gate_payload.
-  strategy_ranker.py  UPDATED (Day 12) — sell_put naked put warning added to all 3 strategies.
+  strategy_ranker.py  UPDATED (Day 20) — narrow-chain fallback: when all delta targets cluster to same strike,
+                                        uses 2nd-highest OTM as short + highest OTM as protection.
+                                        sell_put naked put warning added to all 3 strategies.
                                         _rank_sell_call → bear_call_spread (delta 0.30/0.15) ✓
                                         _rank_buy_put   → ITM put + bear put spread + ATM put ✓
                                         _rank_track_b   → naked sell_put + naked warning
@@ -211,17 +213,18 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY19.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY20.md`
 
 Open (HIGH):
-1. **KI-059: single-stock buy_put + sell_call not live tested** — sector bear ✅, individual stocks still need market hours (Rule 13)
+1. **KI-059: single-stock buy_put + sell_call not live tested** — sector bear ETFs ✅ (XLK/XLY/XLF). Individual stocks still need market-hours test (Monday).
 
 Open (MEDIUM):
-2. **KI-064: IVR mismatch L2 vs L3** — L2 percentile vs L3 average aggregation
-3. **KI-044: API_CONTRACTS.md partially stale** — market_regime added, full sync still pending
-4. **analyze_service.py missing** — app.py ~650 lines (KI-001/KI-023)
-5. **Synthetic swing defaults silent** (KI-022/KI-005)
-6. **QQQ 0 contracts** — large-cap sparse strikes (KI-025)
+2. **KI-067: QQQ chain too narrow** — underlying $563.79, chain max strike $562. All calls ITM, strike_otm gate blocks. Struct_cache drift not triggering refresh. NEW Day 20.
+3. **KI-064: IVR mismatch L2 vs L3** — L2 percentile vs L3 average aggregation
+4. **KI-044: API_CONTRACTS.md partially stale** — market_regime added, full sync still pending
+5. **analyze_service.py missing** — app.py ~660 lines (KI-001/KI-023)
+6. **Synthetic swing defaults silent** (KI-022/KI-005)
+7. **QQQ 0 contracts** — large-cap sparse strikes (KI-025, related to KI-067)
 
 Open (LOW):
 7. **Alpaca OI/volume missing** (KI-038)
@@ -229,6 +232,11 @@ Open (LOW):
 9. fomc_days_away defaults to 30 (KI-008)
 10. API URL hardcoded (KI-013/KI-050)
 11. account_size hardcoded in PaperTradeBanner.jsx (KI-049)
+
+Resolved (Day 20):
+- ETF liquidity gate BLOCK→WARN: OTM spread too strict for ETFs (app.py ETF post-processing, Rule 5)
+- Narrow-chain bear_call_spread fallback: strategy_ranker uses 2nd-highest/highest OTM when chain too narrow
+- Session protocol doc gaps fixed: MEMORY.md + GOLDEN_RULES.md aligned to CLAUDE_CONTEXT.md authoritative 6-step list
 
 Resolved (Day 19):
 - KI-062: ETF earnings_days_away fabricated 45 → None (Rule 11 fix)
@@ -266,45 +274,38 @@ Resolved (Day 17):
 | Day 17 | Mar 22, 2026 | First full audit using MASTER_AUDIT_FRAMEWORK (8 categories). All 8 claims VERIFIED. Threading SAFE. Zero bare excepts. KI-060 FIXED: spy_5day_return None→0.0 silent masking in all 4 gate tracks — now returns non-blocking warn. KI-061 CLOSED: iv_store IVR formula verified correct (percentile). Audit health: 0 CRITICAL, 2 HIGH (KI-059 bear untested, KI-044 API docs). No market hours today. |
 | Day 18 | Mar 23, 2026 | Review + planning session (no code changes). Audit framework reviewed: 5 improvements identified (regression gate, Cat 3 IVR typo fixed, Cat 9 smoke test proposed, delta tracking, automation). Options Explainer "Learn" tab concept designed (Phase 8). MCP servers discussed. Audit health unchanged: 0C/2H. |
 | Day 19 | Mar 24, 2026 | Phase 7b: Sector Bear Market Strategies shipped. Lagging→bear_call_spread (RS<98, mom<-0.5). Broad selloff detection. 5 bugs fixed: KI-062 (earnings fabricated), KI-063 (SPY regime fabricated + unit mismatch), KI-065 (Deep Dive direction), KI-066 (DTE gate ETF). ETF gate post-processing: events/pivot/DTE auto-pass. Research doc created. Live tested: XLV+XLY bear_call_spread, QQQ SKIP, BROAD_SELLOFF fires. |
+| Day 20 | Mar 28, 2026 | Sector options pipeline unblocked: ETF liquidity gate BLOCK→WARN (OTM spread too strict), strategy_ranker narrow-chain fallback (135/136 Bear Call for XLK). Session startup protocol fixed across 3 docs (MEMORY.md 3-step→6-step). KI-067 NEW: QQQ chain too narrow for current price. XLK/XLY/XLF all return bear_call_spread strategies. QQQ still blocked. |
 
 ---
 
-## Next Session Priorities (Day 20)
+## Next Session Priorities (Day 21)
 
-### P0 — Single-Stock Bear Live Test (KI-059)
-Sector bear (bear_call_spread on ETFs) is now tested ✅ (Day 19).
-Individual stock buy_put and sell_call still need market-hours live test.
-- Find a stock in confirmed downtrend or at resistance
-- Run buy_put: verify gate track B fires correctly, ITM put strategy returns, P&L math works
-- Run sell_call: verify bear_call_spread builds on individual stock
-- Document any bugs found as KI-06x
+### P0 — Frontend Smoke Test + Single-Stock Bear (KI-059) — MARKET OPEN REQUIRED
+1. Open UI → Sectors tab → verify L1 loads → click XLK → L2 IV/IVR shows → Deep Dive → L3 bear_call_spread renders
+2. Find bearish individual stock → run buy_put + sell_call → verify gate track B fires, ITM put surfaces, P&L math works
 
-### P1 — IVR Mismatch Investigation (KI-064)
-L2 sector analyze shows IVR 97% (ATM contract IV → iv_store percentile).
-L3 gate analysis shows IVR 21% (average of all contracts' impliedVol).
-Different aggregation methods — need to align on one truth.
+### P1 — QQQ Chain Width (KI-067)
+QQQ underlying $563.79 but chain maxes at $562. Investigate struct_cache drift logic — why isn't sell_call fetch reaching +8% OTM (~$609)?
+
+### P1 — IVR Mismatch (KI-064)
+L2 shows IVR 97%, L3 shows IVR 21%. Trace both code paths with live data. Align on one truth.
 
 ### P2 — API_CONTRACTS.md full sync (KI-044)
-Sync verdict/gates/strategies/behavioral_checks schemas. market_regime partially added Day 19.
 
 ### P3 — analyze_service.py extraction (KI-001/023)
-app.py ~650 lines (grew with SPY regime helpers + ETF post-processing). Rule 4 target: ≤150 lines.
-
-### P4 — Options Explainer Page (Phase 8)
-"Learn" tab — interactive education page with mock data. Frontend-only (~300 lines React).
-See Day 18 status doc for full design concept.
+app.py ~660 lines. Rule 4 target: ≤150 lines.
 
 ### Deferred
-- Phase 7a: single-stock bear directions (buy_put, sell_call) — partially tested via sell_call on ETFs
-- Phase 7c: Weakening → sell_call for cyclical sectors (needs research + backtesting)
+- Phase 7c: Weakening → sell_call for cyclical sectors
 - bull_put_spread for sell_put (strategy_ranker.py)
-- ETF-specific gate overrides (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK)
+- ETF-specific gate overrides (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK constants — defined but unused)
 - Phase C/E/F audit items
-- Audit framework improvements: regression gate, Cat 9 smoke test, delta tracking, audit_quick.sh
+- Audit framework improvements: regression gate, Cat 9 smoke test, delta tracking
+- Phase 8: Options Explainer "Learn" tab (~300 lines React, frontend-only)
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY19.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY19_SHORT.md` — Day 19 summary
+- `docs/versioned/KNOWN_ISSUES_DAY20.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY20_SHORT.md` — Day 20 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
 - `docs/Research/Sector_Bear_Market_Day19.md` — Phase 7b research + thresholds
 - `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim sector audit

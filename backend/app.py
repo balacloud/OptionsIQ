@@ -439,6 +439,14 @@ def _analyze_options_inner(payload: dict, ticker: str):
                 g["blocking"] = False
                 g["reason"] = "ETF — VCP signal not applicable, DTE from sector scan"
                 g["computed_value"] = "ETF: auto-pass"
+            # Liquidity: ETF OTM legs naturally have wider bid-ask spreads than individual stocks.
+            # Block on spread alone is too strict for ETFs — downgrade to warn so strategies surface.
+            # Volume > 0 confirms tradeable; user still sees the spread value and must verify before entry.
+            if g["id"] == "liquidity" and g["status"] == "fail" and g.get("blocking"):
+                if "Spread too wide" in str(g.get("reason", "")):
+                    g["status"] = "warn"
+                    g["blocking"] = False
+                    g["reason"] = "ETF OTM spread wider than stock threshold — review bid-ask before entry"
 
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")

@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 15 (March 20, 2026)
+> **Last Updated:** Day 20 (March 27, 2026)
 
 ---
 
@@ -51,12 +51,15 @@ When data quality is below "live", the frontend MUST show a banner.
 - Tier 4 (mock): "MOCK DATA — testing only. Do not paper trade."
 
 ### Rule 9: Session Close Protocol.
-At every session close, update:
-- `CLAUDE_CONTEXT.md`: Current State table + Session Log + Next Session Priorities + Last Updated
-- `docs/versioned/KNOWN_ISSUES_DAY[N].md`: Mark resolved, add new
-- `docs/stable/ROADMAP.md`: Mark completed phases
-- `docs/stable/API_CONTRACTS.md`: If any endpoint added or changed
-- `docs/status/PROJECT_STATUS_DAY[N]_SHORT.md`: New status doc
+At every session close, update ALL of the following (Claude does this — no manual user action):
+- `CLAUDE_CONTEXT.md` — Current State table + Session Log + Next Session Priorities + Last Updated
+- `docs/versioned/KNOWN_ISSUES_DAY[N].md` — mark resolved, add new (create new file each day)
+- `docs/stable/ROADMAP.md` — tick completed items, add new ones
+- `docs/status/PROJECT_STATUS_DAY[N]_SHORT.md` — create new status snapshot
+- `docs/stable/API_CONTRACTS.md` — if any endpoint added or changed
+- `docs/stable/GOLDEN_RULES.md` — if new rule or process lesson learned
+- `memory/MEMORY.md` — update phase, priorities, file statuses
+- Git commit (skip push — no remote configured)
 
 ### Rule 10: Read CLAUDE_CONTEXT.md First.
 At the start of every session: read `CLAUDE_CONTEXT.md` before writing a single line of code.
@@ -162,7 +165,14 @@ Document which approach is used. Never apply a single nearness threshold across 
 
 ## SESSION STARTUP CHECKLIST
 
-**Authoritative reading order is in `CLAUDE_CONTEXT.md` → Session Protocol → Startup Checklist.**
+**Read ALL 6 files IN ORDER. Do not skip or reorder. Authoritative source: `CLAUDE_CONTEXT.md` → Session Protocol.**
+
+1. `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
+2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
+3. `docs/stable/ROADMAP.md` — phase status, done vs pending ← COMMONLY SKIPPED, DO NOT SKIP
+4. `docs/status/PROJECT_STATUS_DAY{N}_SHORT.md` — latest day status snapshot
+5. `docs/versioned/KNOWN_ISSUES_DAY{N}.md` — open bugs and severity
+6. `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 
 Behavioral rules (non-negotiable):
 - Do NOT ask user to re-explain the project
