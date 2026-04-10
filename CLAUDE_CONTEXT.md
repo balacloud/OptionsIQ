@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 20 (March 28, 2026)
-> **Current Version:** v0.14.1
-> **Project Phase:** Phase 7b complete + sector options pipeline unblocked. Single-stock bear test (KI-059) next Monday. Phase 8 (Options Explainer) planned.
+> **Last Updated:** Day 21 (April 9, 2026)
+> **Current Version:** v0.15.0
+> **Project Phase:** ETF-Only Pivot complete. Signal Board UI live. All 4 directions (buy_call, sell_call, buy_put, sell_put) tested on XLU. Market-open frontend smoke test + QQQ chain fix next.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY20_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY20.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY21_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY21.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -62,8 +62,8 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Phase 7b complete + pipeline fixes | Sector options pipeline unblocked: ETF liquidity gate BLOCK→WARN, narrow-chain bear_call_spread fallback. app.py + strategy_ranker.py updated. |
-| Frontend | Done + Day 19 bear UI | Bear badges, selloff banner, IVR bear warning, Deep Dive direction fix. UI smoke test pending (Monday). |
+| Backend | ETF-Only Pivot complete (Day 21) | _etf_payload(), ETF gate tracks, ETF-only enforcement (400 for non-ETFs), delta-based spread legs. All 4 directions tested live on XLU. |
+| Frontend | Signal Board live (Day 21) | RegimeBar + Scanner + Analysis Panel. ScannerRow, L2InlineDetail, AnalysisPanel. React STA-offline crash fixed. |
 | IBKR connection | WORKING | Live confirmed: AMD, XLE, XLK, IWM, TQQQ greeks live. account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
@@ -213,30 +213,29 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY20.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY21.md`
 
 Open (HIGH):
-1. **KI-059: single-stock buy_put + sell_call not live tested** — sector bear ETFs ✅ (XLK/XLY/XLF). Individual stocks still need market-hours test (Monday).
+1. **KI-059: single-stock bear untested** — DEFERRED post ETF-only pivot. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (MEDIUM):
-2. **KI-067: QQQ chain too narrow** — underlying $563.79, chain max strike $562. All calls ITM, strike_otm gate blocks. Struct_cache drift not triggering refresh. NEW Day 20.
-3. **KI-064: IVR mismatch L2 vs L3** — L2 percentile vs L3 average aggregation
-4. **KI-044: API_CONTRACTS.md partially stale** — market_regime added, full sync still pending
-5. **analyze_service.py missing** — app.py ~660 lines (KI-001/KI-023)
-6. **Synthetic swing defaults silent** (KI-022/KI-005)
-7. **QQQ 0 contracts** — large-cap sparse strikes (KI-025, related to KI-067)
+2. **KI-067: QQQ chain width** — price dropped ~15% since Day 20, may self-resolve. Test at market open Day 22.
+3. **KI-064: IVR mismatch L2 vs L3** — L2 percentile 97% vs L3 average 21%
+4. **KI-044: API_CONTRACTS.md stale** — ETF-only fields (`is_etf`, `etf_universe`, `direction_locked: []`) not documented
+5. **analyze_service.py missing** — app.py ~660+ lines (KI-001/KI-023)
+6. **Synthetic swing defaults silent** (KI-022/KI-005 — lower priority post ETF pivot)
 
 Open (LOW):
-7. **Alpaca OI/volume missing** (KI-038)
+7. Alpaca OI/volume missing (KI-038)
 8. OHLCV temporal gap validation (KI-034)
-9. fomc_days_away defaults to 30 (KI-008)
+9. fomc_days_away defaults to 999 (KI-008 — changed from 30 in ETF pivot)
 10. API URL hardcoded (KI-013/KI-050)
 11. account_size hardcoded in PaperTradeBanner.jsx (KI-049)
 
-Resolved (Day 20):
-- ETF liquidity gate BLOCK→WARN: OTM spread too strict for ETFs (app.py ETF post-processing, Rule 5)
-- Narrow-chain bear_call_spread fallback: strategy_ranker uses 2nd-highest/highest OTM when chain too narrow
-- Session protocol doc gaps fixed: MEMORY.md + GOLDEN_RULES.md aligned to CLAUDE_CONTEXT.md authoritative 6-step list
+Resolved (Day 21):
+- pnl_calculator TypeError: float() on None (ETF swing fields) — price-relative scenarios fix
+- IBKR clientId conflict — old process blocking new connection after restart
+- React crash when STA offline — missing `.catch(() => {})` on useEffect
 
 Resolved (Day 19):
 - KI-062: ETF earnings_days_away fabricated 45 → None (Rule 11 fix)
@@ -275,22 +274,29 @@ Resolved (Day 17):
 | Day 18 | Mar 23, 2026 | Review + planning session (no code changes). Audit framework reviewed: 5 improvements identified (regression gate, Cat 3 IVR typo fixed, Cat 9 smoke test proposed, delta tracking, automation). Options Explainer "Learn" tab concept designed (Phase 8). MCP servers discussed. Audit health unchanged: 0C/2H. |
 | Day 19 | Mar 24, 2026 | Phase 7b: Sector Bear Market Strategies shipped. Lagging→bear_call_spread (RS<98, mom<-0.5). Broad selloff detection. 5 bugs fixed: KI-062 (earnings fabricated), KI-063 (SPY regime fabricated + unit mismatch), KI-065 (Deep Dive direction), KI-066 (DTE gate ETF). ETF gate post-processing: events/pivot/DTE auto-pass. Research doc created. Live tested: XLV+XLY bear_call_spread, QQQ SKIP, BROAD_SELLOFF fires. |
 | Day 20 | Mar 28, 2026 | Sector options pipeline unblocked: ETF liquidity gate BLOCK→WARN (OTM spread too strict), strategy_ranker narrow-chain fallback (135/136 Bear Call for XLK). Session startup protocol fixed across 3 docs (MEMORY.md 3-step→6-step). KI-067 NEW: QQQ chain too narrow for current price. XLK/XLY/XLF all return bear_call_spread strategies. QQQ still blocked. |
+| Day 21 | Apr 9, 2026 | **ETF-Only Pivot (v0.15.0).** 16-ETF universe enforced. Signal Board UI (RegimeBar+Scanner+Analysis Panel). ETF gate tracks (_run_etf_buy_call/put/sell_put). _etf_payload() zero-fabrication. Delta-based spread legs. Price-relative P&L. All 4 directions tested live XLU. 3 bugs fixed: pnl TypeError, IBKR clientId conflict, React STA-offline crash. |
 
 ---
 
-## Next Session Priorities (Day 21)
+## Next Session Priorities (Day 22)
 
-### P0 — Frontend Smoke Test + Single-Stock Bear (KI-059) — MARKET OPEN REQUIRED
-1. Open UI → Sectors tab → verify L1 loads → click XLK → L2 IV/IVR shows → Deep Dive → L3 bear_call_spread renders
-2. Find bearish individual stock → run buy_put + sell_call → verify gate track B fires, ITM put surfaces, P&L math works
+### P0 — Market-Open Frontend Smoke Test — MARKET OPEN REQUIRED
+1. Open http://localhost:3050 → verify RegimeBar shows SPY regime
+2. Scanner loads 15 ETFs with quadrant colors
+3. Click ANALYZE ETF → analysis panel opens → gates render → strategies show → P&L table correct
+4. Direction override → re-run works
+5. L2 IV button → detail panel shows IV/IVR/HV/spread
 
-### P1 — QQQ Chain Width (KI-067)
-QQQ underlying $563.79 but chain maxes at $562. Investigate struct_cache drift logic — why isn't sell_call fetch reaching +8% OTM (~$609)?
+### P1 — QQQ Chain Test Post Price-Drop (KI-067)
+QQQ was $563 on Day 20, now ~$480 (market down ~15%). Chain too narrow issue may be
+self-resolving. Test QQQ sell_call at market open. If still blocked, investigate struct_cache
+drift threshold (15%) not triggering refresh.
 
 ### P1 — IVR Mismatch (KI-064)
 L2 shows IVR 97%, L3 shows IVR 21%. Trace both code paths with live data. Align on one truth.
 
-### P2 — API_CONTRACTS.md full sync (KI-044)
+### P2 — API_CONTRACTS.md ETF-Only Fields Sync (KI-044)
+Document: `is_etf`, `direction_locked: []`, `etf_universe` 400 response, `_etf_payload` fields.
 
 ### P3 — analyze_service.py extraction (KI-001/023)
 app.py ~660 lines. Rule 4 target: ≤150 lines.

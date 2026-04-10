@@ -25,14 +25,32 @@ class PnLCalculator:
         risk_pct: float,
         gate8_passed: bool,
     ) -> dict[str, Any]:
-        scenarios = [
-            ("Stop Loss 🔴", float(swing_data.get("stop_loss", current_price))),
-            ("Sideways / -4%", current_price * 0.96),
-            ("Current Price", current_price),
-            ("VCP Pivot ⚡", float(swing_data.get("vcp_pivot", current_price))),
-            ("Target 1 ✅", float(swing_data.get("target1", current_price))),
-            ("Target 2 🎯", float(swing_data.get("target2", current_price))),
-        ]
+        is_etf = swing_data.get("swing_data_quality") == "etf"
+
+        if is_etf:
+            # ETF P&L scenarios: price-relative moves, no fabricated swing targets
+            scenarios = [
+                ("-10%", current_price * 0.90),
+                ("-5%", current_price * 0.95),
+                ("Current", current_price),
+                ("+5%", current_price * 1.05),
+                ("+10%", current_price * 1.10),
+                ("+15%", current_price * 1.15),
+            ]
+        else:
+            # Stock P&L scenarios: swing-based
+            stop  = swing_data.get("stop_loss")
+            pivot = swing_data.get("vcp_pivot")
+            t1    = swing_data.get("target1")
+            t2    = swing_data.get("target2")
+            scenarios = [
+                ("Stop Loss 🔴", float(stop) if stop is not None else current_price * 0.92),
+                ("Sideways / -4%", current_price * 0.96),
+                ("Current Price", current_price),
+                ("VCP Pivot ⚡", float(pivot) if pivot is not None else current_price * 1.01),
+                ("Target 1 ✅", float(t1) if t1 is not None else current_price * 1.08),
+                ("Target 2 🎯", float(t2) if t2 is not None else current_price * 1.15),
+            ]
 
         rows = []
         for label, stock_price in scenarios:

@@ -8,40 +8,47 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (chain_cache.db + iv_store.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, optional
 
-## Current Phase (Day 18)
-v0.13.1. Day 18 was review + planning (no code changes).
-Audit framework reviewed: 5 improvements (regression gate, IVR typo fixed, Cat 9 smoke test, delta tracking, automation).
-Options Explainer "Learn" tab designed as Phase 8 (interactive education, frontend-only, mock data).
-Audit health unchanged: 0 CRITICAL, 2 HIGH (KI-059 bear untested, KI-044 API docs stale).
-Next: Day 19 = bear market live test P0 (IB Gateway + market hours) + API_CONTRACTS sync.
+## Current Phase (Day 21)
+v0.15.0. **ETF-Only Pivot complete.** 16-ETF universe enforced (non-ETFs return 400).
+Signal Board UI: RegimeBar (top) + Scanner (left) + Analysis Panel (right).
+ETF gate tracks: `_run_etf_buy_call/put/sell_put`. `_etf_payload()` zero-fabrication.
+Delta-based spread legs. Price-relative P&L scenarios. All 4 directions tested live on XLU.
+Next: Market-open frontend smoke test + QQQ chain fix (KI-067) + IVR mismatch (KI-064).
 
-## Session Protocol (REQUIRED at start of every session)
-1. Read `CLAUDE_CONTEXT.md` — check Current State, Known Issues, Next Session Priorities
-2. Read `docs/stable/GOLDEN_RULES.md`
-3. Verify state before writing any code
+## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
+1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
+2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
+3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
+4. Read `docs/status/PROJECT_STATUS_DAY21_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY21.md` — open bugs and severity
+6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
+After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
 ## Key Source Files
 ```
 backend/
-  app.py              ~600 lines — HARDENED (Day 12): logger, ACCOUNT_SIZE guard, outer try-except.
-                                   Needs analyze_service.py split (Day 13 P2).
-  constants.py        DONE (Day 12) — 19 new thresholds added (IV abs, DTE signal, SPY regime per dir)
+  app.py              ~660 lines — ETF-only enforcement, _etf_payload(), direction_locked=[],
+                                   ETF behavioral checks, fomc_days_away default=999.
+                                   Still needs analyze_service.py split (KI-001/KI-023).
+  constants.py        DONE (Day 19) — all thresholds + Phase 7b bear constants + DIRECTION_TO_CHAIN_DIR
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
   ib_worker.py        DONE — single IB() thread, submit() queue, expires_at queue poisoning fix
   yfinance_provider.py DONE — middle tier, BS greeks fill
   data_service.py     DONE (Day 12) — provider cascade + SQLite WAL + CB + Alpaca tier
-  ibkr_provider.py    DONE (Day 12) — try-finally cancelMktData. OI via reqMktData confirmed unavailable.
+  ibkr_provider.py    DONE (Day 12) — try-finally cancelMktData. OI confirmed unavailable (platform).
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      DONE (Day 17) — Rule 3 fixed, math frozen. KI-060: SPY gate None masking fixed.
-                                     Callers must coerce ivr_data None→0.0 before gate_payload.
-                                     spy_5day_return: do NOT coerce — gate now handles None internally.
-  strategy_ranker.py  UPDATED (Day 12) — sell_put naked warning on all 3 strategies.
-                                        sell_call → bear_call_spread ✓. buy_put → ITM+spread+ATM ✓.
-  pnl_calculator.py   FIXED (Day 9) — None guard + 4 strategy type handlers
+  gate_engine.py      UPDATED (Day 21) — ETF gate tracks added: _run_etf_buy_call/put/sell_put.
+                                         etf_mode: bool param on run(). Math still frozen.
+                                         Callers must coerce ivr_data None→0.0 before gate_payload.
+  strategy_ranker.py  UPDATED (Day 21) — ETF mode: delta-based spread legs (delta 0.30/0.15).
+                                         Detected via swing_data_quality == "etf".
+                                         sell_call → bear_call_spread ✓. buy_put → ITM+spread+ATM ✓.
+  pnl_calculator.py   UPDATED (Day 21) — ETF: price-relative scenarios (-10% to +15%).
+                                          Stock: explicit None guards on all swing fields.
   iv_store.py         FROZEN — math correct
 
-  sector_scan_service.py  DONE (Day 15+16) — STA consumer, L1+L2, SPY regime via STA (Day 16)
+  sector_scan_service.py  DONE (Day 19) — STA consumer + L1 scan + L2 analyze + Phase 7b bear logic.
 
   # TO CREATE:
   marketdata_provider.py  DEFERRED — MarketData.app no historical IV (confirmed), low priority
@@ -51,39 +58,15 @@ backend/
 ## IBWorker Threading Rules (CRITICAL)
 - ALL IBKRProvider calls MUST go through `_ib_worker.submit(fn, *args, timeout=N)`
 - NEVER call ibkr_provider methods directly from Flask thread — asyncio event loop conflict → hang
-- `_extract_iv_data` uses `_call_provider()` helper to route IBKR calls through IBWorker
 - gate_engine requires float for all keys — coerce `ivr_data` None values to 0.0 before gate_payload
 
-## Queue Poisoning Fix (KI-016 — RESOLVED Day 4)
-- `_Request` stores `expires_at = time.monotonic() + timeout`
-- Worker checks expiry BEFORE executing: if expired → put TimeoutError in result_q → continue
-- submit() timeout and worker expiry both use same `timeout` value — synchronized
-
-## reqMktData Fix (KI-027 — RESOLVED Day 7, verified Day 9)
-- `reqTickers()` does NOT fire `tickOptionComputation` (tick type 13 = modelGreeks)
-- Must use `reqMktData(contract, genericTickList="", snapshot=False)` then `ib.sleep(3+)`
-- Subscribe all contracts, sleep, read Ticker.modelGreeks, cancelMktData(contract) in try-finally
-- Live greeks confirmed 100% during market hours (ibkr_live, usopt lazy connect confirmed)
-
-## KI-035 OI — CONFIRMED PLATFORM LIMITATION (Day 12)
-- `genericTickList="101"` does NOT deliver per-contract OI via reqMktData
-- Volume IS available (Vol > 0 confirmed live). OI is simply not available from IBKR this way.
-- Resolution: graceful degradation in `_liquidity_gate()`:
-  - OI=0 with Vol>0 → WARN not BLOCK
-  - `spread_fail_block` (spread > 15%) is the only hard liquidity block
-  - Note in gate result: `OI 0 [OI unavailable]`
-
-## STA API Field Mapping (verified Day 5 — CRITICAL)
-STA /api/sr/{ticker}: `suggestedEntry` → entry_pullback, `suggestedStop` → stop_loss,
-                      `suggestedTarget` → target1, `riskReward` → risk_reward,
-                      `meta.adx.adx` → adx, `support[-1]` → s1_support
-STA /api/stock/{ticker}: `currentPrice` → last_close + entry_momentum
-STA /api/patterns/{ticker}: `patterns.vcp.confidence` → vcp_confidence, `patterns.vcp.pivot_price` → vcp_pivot
-STA /api/earnings/{ticker}: `days_until` → earnings_days_away (NOT days_away)
-STA /api/context/SPY: `cycles.cards[FOMC].raw_value` → fomc_days_away
-STA /api/stock/SPY: `priceHistory[-1].close > mean(priceHistory[-200:].close)` → spy_above_200sma
-                    `(priceHistory[-1].close - priceHistory[-6].close) / priceHistory[-6].close × 100` → spy_5day_return
-NOTE: yfinance SPY for spy regime REMOVED Day 16 (rate limiting). Now uses STA exclusively.
+## ETF-Only Mode (Day 21)
+- 16 ETFs: XLK, XLY, XLP, XLV, XLF, XLI, XLE, XLU, XLB, XLRE, XLC, MDY, IWM, SCHB, QQQ, TQQQ
+- Non-ETF tickers → HTTP 400 with `etf_universe` list
+- `_etf_payload()` returns: real SPY regime data, all swing fields = None, `swing_data_quality: "etf"`, `signal: None`
+- `direction_locked: []` for all ETFs — direction from regime, not swing signal
+- Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
+- Behavioral checks: IVR context, SPY regime warning, delta discipline (no VCP references)
 
 ## Direction-Aware Chain Fetch (implemented Day 3)
 ```
@@ -93,27 +76,13 @@ sell_call → DTE 21-45 + strikes ATM ±6% (sell_call: -2% to +8%)
 sell_put  → DTE 21-45 + strikes ATM ±6% (sell_put: -8% to +2%)
 Fallback: if direction window yields <3 strikes, supplement from ±15% broad window
 ```
+Structure cache: `IBKRProvider._struct_cache` — in-memory, 4h TTL, keyed by ticker.
 
-## Golden Rules (critical)
-1. Live data default — reqMarketDataType(1). Mock only for pytest/CI.
-2. One IB() instance in IBWorker thread. Flask routes NEVER touch ib_insync directly.
-3. No magic numbers — everything in constants.py.
-4. app.py routes only (≤150 lines). Target not met yet — ~600 lines.
-5. gate_engine.py math is frozen. Coerce None→0.0 in gate_payload.
-6. STA offline → Manual mode. Never crash.
-7. ACCOUNT_SIZE must be in .env — no default in code. Startup raises if missing.
-8. Quality banners mandatory when data tier < live.
-9. Session close: update CLAUDE_CONTEXT.md, KNOWN_ISSUES, ROADMAP, PROJECT_STATUS, MEMORY.md.
-10. Read CLAUDE_CONTEXT.md first every session.
-12. Single circuit breaker — DataService CB is authoritative. No CB logic in app.py.
-
-## Data Provider Hierarchy (updated Day 12)
-1. IBKR Live (reqMktData snapshot=False) — default, greeks confirmed 100% Day 9
-2. IBKR Cache (SQLite WAL, TTL 2 min, persistent) — "Using cached chain" banner
-2.5. MarketData.app (PLANNED, $12/mo) — greeks+IV+OI+volume, 15-min delayed
-3. Alpaca (DONE, free) — greeks+IV but NO OI/volume (model limitation)
-4. yfinance (emergency fallback) — NO real greeks (BS computed from HV)
-5. Mock (dev/CI ONLY) — "MOCK DATA" banner, never for paper trades
+## Phase 7b: Sector Bear Market (Day 19)
+- bear_call_spread for Lagging ETFs: RS < 98 AND momentum < -0.5
+- DIRECTION_TO_CHAIN_DIR: maps display hints (bear_call_spread) → core directions (sell_call)
+- Broad Selloff: >50% sectors Weakening/Lagging AND SPY < 200 SMA
+- IVR < 40% → L2 soft warning (premium thin for credit spreads)
 
 ## Four Directions
 | Direction | View | Gate Track | Strike |
@@ -125,18 +94,12 @@ Fallback: if direction window yields <3 strikes, supplement from ±15% broad win
 
 DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 DTE.
 
-## Day 19 Priorities
-1. **P0:** Bear market live test — buy_put + sell_call with real bearish setup (KI-059, Rule 13) — needs IB Gateway + market hours
-2. **P1:** API_CONTRACTS.md full sync (KI-044) — can be done offline
-3. **P2:** Phase 7 research — sector bear plays (multi-LLM research required before coding)
-4. **P3:** analyze_service.py extraction (app.py ≤ 150 lines)
-5. **P4:** Options Explainer "Learn" tab (Phase 8 — frontend only, mock data)
-
-## Frontend Status (Day 18)
-- Tab switcher: Analyze | Sectors (App.jsx) — "Learn" tab planned (Phase 8)
-- Analyze tab: full gate analysis, strategies, P&L table, behavioral checks, swing import, paper trade
-- Sectors tab: SectorRotation.jsx + ETFCard.jsx + useSectorData.js — L1 scan + L2 detail + L3 deep dive
-- All quality banners: ibkr_live/cache/stale/closed/alpaca/yfinance/mock
+## Day 22 Priorities
+1. **P0:** Market-open frontend smoke test — RegimeBar, scanner, click ETF → analysis panel
+2. **P1:** KI-067 QQQ chain fix — price dropped ~15%, test at market open
+3. **P1:** KI-064 IVR mismatch — L2 percentile 97% vs L3 average 21%
+4. **P2:** API_CONTRACTS.md ETF-only fields sync (KI-044)
+5. **P3:** analyze_service.py extraction (KI-001/KI-023)
 
 ## Git Status
 - Local repo only — no remote origin configured yet
@@ -146,11 +109,10 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
-- `docs/versioned/KNOWN_ISSUES_DAY18.md`
-- `docs/status/PROJECT_STATUS_DAY18_SHORT.md`
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
-- `docs/Research/System_Coherence_Audit_Day11.md`
-- `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
+- `docs/versioned/KNOWN_ISSUES_DAY21.md`
+- `docs/status/PROJECT_STATUS_DAY21_SHORT.md`
+- `docs/Research/Sector_Bear_Market_Day19.md`
 - `docs/Research/Sector_Behavioral_Audit_Day15.md`
 
 ## Memory Index

@@ -58,20 +58,29 @@ class StrategyRanker:
         if not calls:
             return []
         current = float(chain.get("underlying_price", 0.0))
-        target1 = float(swing_data.get("target1", current))
 
         itm = self._closest_delta(calls, 0.68)
         atm = self._closest_delta(calls, 0.52)
-        short = min(calls, key=lambda c: abs(_f(c.get("strike"), 0.0) - target1))
+
+        # Spread short leg: use delta 0.30 (ETF-clean, no swing target dependency).
+        # Swing target1 is only used as a fallback hint if available and non-fabricated.
+        target1_raw = swing_data.get("target1") if swing_data else None
+        if (target1_raw is not None and swing_data.get("swing_data_quality") != "etf"
+                and float(target1_raw) > current):
+            # Stock mode: short leg at swing target
+            short = min(calls, key=lambda c: abs(_f(c.get("strike"), 0.0) - float(target1_raw)))
+        else:
+            # ETF mode (or no target): short leg at delta ~0.30 (defined-risk standard)
+            short = self._closest_delta(calls, 0.30)
 
         itm_obj = self._build_long_call(rank=1, label=f"{int(itm['strike'])}C · {_fmt_exp(itm['expiry'])}", c=itm,
-                                        why="Highest probability. Intrinsic value shields theta. Best for momentum breakouts per institutional quant review.", warning=None)
+                                        why="Highest probability. Delta 0.68 — intrinsic value shields theta decay. Best for sustained directional moves.", warning=None)
 
         spread_obj = self._build_spread(rank=2, long_leg=atm, short_leg=short,
                                         label=f"{int(atm['strike'])}/{int(short['strike'])} Bull Call · {_fmt_exp(atm['expiry'])}",
-                                        why="Lowest cost. Short strike caps at Target 1. Best % return to T1. Lowest theta burn for slower breakouts.")
+                                        why="Defined risk. Long ATM delta 0.52, short OTM delta 0.30. Lowest cost basis, best risk/reward for moderate moves.")
 
-        atm_obj = self._build_long_call(rank=3, label=f"{int(atm['strike'])}C · {_fmt_exp(atm['expiry'])} ⚠️ HIGH THETA", c=atm,
+        atm_obj = self._build_long_call(rank=3, label=f"{int(atm['strike'])}C · {_fmt_exp(atm['expiry'])} HIGH THETA", c=atm,
                                         why="Highest gamma. Best for explosive breakouts only. Theta burns fastest — must move within 5 days.", warning="HIGH THETA")
 
         return [itm_obj, spread_obj, atm_obj]
@@ -242,14 +251,23 @@ class StrategyRanker:
         if not puts:
             return []
         current = float(chain.get("underlying_price", 0.0))
-        target1 = float(swing_data.get("target1", current))  # downside target for bear put spread
 
         # ITM put: delta ~-0.68 (abs delta ~0.68, strike above underlying)
         itm = self._closest_delta(puts, 0.68)
         # ATM put: delta ~-0.52
         atm = self._closest_delta(puts, 0.52)
-        # Bear put spread short leg: closest to downside target1
-        short_leg = min(puts, key=lambda c: abs(_f(c.get("strike"), 0.0) - target1))
+
+        # Bear put spread short leg: delta ~0.30 (ETF-clean, no swing target dependency).
+        # Stock mode only: use downside target1 if available and non-fabricated.
+        target1_raw = swing_data.get("target1") if swing_data else None
+        if (target1_raw is not None and swing_data.get("swing_data_quality") != "etf"
+                and float(target1_raw) < current):
+            # Stock mode: short leg at downside swing target
+            short_leg = min(puts, key=lambda c: abs(_f(c.get("strike"), 0.0) - float(target1_raw)))
+        else:
+            # ETF mode: short leg at delta ~0.30 below current (OTM put, defined risk)
+            otm_puts = [c for c in puts if _f(c.get("strike"), 0.0) < current]
+            short_leg = self._closest_delta(otm_puts if otm_puts else puts, 0.30)
 
         itm_obj = self._build_long_put(rank=1,
                                        label=f"{int(_f(itm['strike'], 0.0))}P · {_fmt_exp(itm['expiry'])}",
@@ -435,13 +453,21 @@ class StrategyRanker:
         puts = [c for c in chain.get("contracts", []) if c.get("right") == "P"]
         if not puts:
             return []
-        s1 = float(swing_data.get("s1_support", chain.get("underlying_price", 0.0)))
+        current = float(chain.get("underlying_price", 0.0))
+        is_etf = swing_data.get("swing_data_quality") == "etf" if swing_data else False
+        s1_raw = swing_data.get("s1_support") if swing_data else None
 
         candidates = []
         for p in puts:
             strike = _f(p.get("strike"), 0.0)
-            if strike > s1:
-                continue
+            if is_etf:
+                # ETF mode: target delta ~0.15–0.30 OTM puts (no fabricated support filter)
+                if strike >= current:
+                    continue  # skip ITM puts for sell_put
+            else:
+                # Stock mode: strike must be below s1_support
+                if s1_raw is not None and strike > float(s1_raw):
+                    continue
             premium = _f(p.get("mid", p.get("last", 0.0)), 0.0)
             max_loss = max(0.01, (strike - premium) * 100)
             ratio = (premium * 100) / max_loss

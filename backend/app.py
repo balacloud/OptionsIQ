@@ -169,6 +169,38 @@ def _spy_5d_return(payload):
     return 0.0  # last resort if STA is offline
 
 
+def _etf_payload(underlying: float, spy_above: bool, spy_5d: float | None,
+                 fomc_days_away: int | None, ivr_pct: float | None) -> dict:
+    """
+    ETF-only payload for gate_engine. No swing fields — no fabrication.
+    Only real, observable values: SPY regime, IVR-based DTE hint, position params.
+    """
+    return {
+        "signal": None,          # no directional lock for ETFs
+        "spy_above_200sma": spy_above,
+        "spy_5day_return": spy_5d,
+        "fomc_days_away": fomc_days_away if fomc_days_away is not None else 999,
+        "ivr_pct_hint": ivr_pct,  # passed through for DTE gate
+        # No swing fields below — all None (Rule 11: null not fake)
+        "entry_pullback": None,
+        "entry_momentum": None,
+        "stop_loss": None,
+        "target1": None,
+        "target2": None,
+        "risk_reward": None,
+        "vcp_pivot": None,
+        "vcp_confidence": None,
+        "adx": None,
+        "last_close": None,
+        "s1_support": None,
+        "earnings_days_away": None,  # ETFs have no earnings
+        "pattern": None,
+        "source": "etf_regime",
+        "swing_data_quality": "etf",
+        "synthesized_fields": [],
+    }
+
+
 def _merge_swing(payload: dict, underlying: float) -> dict:
     # Golden Rule 14: Never fabricate plausible values for missing swing fields.
     # vcp_confidence and adx default to None — gate_engine's `or 0.0` pattern handles
@@ -277,15 +309,17 @@ def _max_pain(chain: dict) -> float:
     return round(min(strikes, key=pain), 2)
 
 
-def _behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
+def _behavioral_checks(gates: list[dict], swing_data: dict, is_etf: bool = False) -> list[dict]:
+    if is_etf:
+        return _etf_behavioral_checks(gates, swing_data)
+    # Stock mode: legacy swing-based checks
     pivot_gate = next((g for g in gates if g["id"] == "pivot_confirm"), None)
     pivot_msg = (
         f"Stock has not closed above VCP pivot ${swing_data['vcp_pivot']:.2f}."
         if pivot_gate and pivot_gate["status"] == "fail"
         else f"Pivot confirmed above ${swing_data['vcp_pivot']:.2f}."
     )
-    timing_conflict = swing_data["entry_momentum"] > swing_data["entry_pullback"] * 1.1
-
+    timing_conflict = (swing_data.get("entry_momentum") or 0) > (swing_data.get("entry_pullback") or 0) * 1.1
     return [
         {
             "id": "gate8_block",
@@ -303,7 +337,7 @@ def _behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
             "id": "vrp_headwind",
             "type": "warning",
             "label": "VRP Headwind",
-            "message": "53.78% stock win does not guarantee options win. Vol risk premium can still hurt outcomes.",
+            "message": "Vol risk premium can hurt outcomes even when directional view is correct.",
         },
         {
             "id": "lottery_bias",
@@ -312,6 +346,65 @@ def _behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
             "message": "Pick Δ0.68, not highest % return.",
         },
     ]
+
+
+def _etf_behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
+    """ETF-specific advisory checks. No swing/VCP fields — pure regime and IV context."""
+    checks = []
+
+    # IVR context
+    ivr = swing_data.get("ivr_pct_hint")
+    if ivr is not None:
+        if ivr > 70:
+            checks.append({
+                "id": "ivr_context",
+                "type": "warning",
+                "label": "IV Rank Elevated",
+                "message": f"IVR {ivr:.0f}% — premium is expensive. Selling strategies have edge; buying options carries IV crush risk.",
+            })
+        elif ivr < 20:
+            checks.append({
+                "id": "ivr_context",
+                "type": "info",
+                "label": "IV Rank Low",
+                "message": f"IVR {ivr:.0f}% — premium is cheap. Buying calls/puts has favorable IV entry; credit spreads collect thin premium.",
+            })
+        else:
+            checks.append({
+                "id": "ivr_context",
+                "type": "info",
+                "label": "IV Rank Neutral",
+                "message": f"IVR {ivr:.0f}% — neutral premium environment. Both buying and selling are viable.",
+            })
+
+    # SPY regime context
+    spy_5d = swing_data.get("spy_5day_return")
+    spy_above = swing_data.get("spy_above_200sma")
+    if spy_5d is not None:
+        if spy_5d < -0.03:
+            checks.append({
+                "id": "spy_regime",
+                "type": "warning",
+                "label": "Market Pullback",
+                "message": f"SPY down {spy_5d:.1%} this week. Bullish calls carry elevated gap risk — consider spreads for defined risk.",
+            })
+        elif not spy_above:
+            checks.append({
+                "id": "spy_regime",
+                "type": "warning",
+                "label": "SPY Below 200-Day SMA",
+                "message": "Broad market in downtrend. Reduce bullish ETF exposure; bear directions have structural tailwind.",
+            })
+
+    # Delta reminder
+    checks.append({
+        "id": "delta_discipline",
+        "type": "info",
+        "label": "Delta Discipline",
+        "message": "For buying: target Δ0.68 (ITM) for high probability. For selling: target Δ0.30 short leg for optimal credit-to-risk.",
+    })
+
+    return checks
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -340,6 +433,11 @@ def analyze_options():
     ticker = str(ticker_raw).upper().strip()
     if not ticker.isalpha() or not (1 <= len(ticker) <= 6):
         return jsonify({"error": f"Invalid ticker: {ticker!r}"}), 400
+    if ticker not in ETF_TICKERS:
+        return jsonify({
+            "error": f"{ticker} is not in the ETF universe",
+            "etf_universe": sorted(ETF_TICKERS),
+        }), 400
     try:
         return _analyze_options_inner(payload, ticker)
     except Exception as exc:
@@ -389,15 +487,37 @@ def _analyze_options_inner(payload: dict, ticker: str):
     elif data_source == "yfinance":
         iv_provider = _yf_provider
 
-    swing_data = _merge_swing(payload, underlying)
+    is_etf = ticker in ETF_TICKERS
     ivr_data = _extract_iv_data(ticker, chain, iv_provider, ib_worker=_ib_worker)
 
+    # ETFs: build clean payload from real observable data only — no swing fabrication.
+    # Stocks: legacy _merge_swing path (still works for any future stock use).
+    if is_etf:
+        spy_regime = _fetch_spy_regime()
+        swing_data = _etf_payload(
+            underlying=underlying,
+            spy_above=bool(spy_regime.get("spy_above_200sma", True)),
+            spy_5d=float(spy_regime["spy_5day_return"] / 100.0) if spy_regime.get("spy_5day_return") is not None else None,
+            fomc_days_away=_i(payload.get("fomc_days_away"), None),
+            ivr_pct=ivr_data.get("ivr_pct"),
+        )
+    else:
+        swing_data = _merge_swing(payload, underlying)
+
     engine = GateEngine(planned_hold_days=planned_hold_days)
-    strategies_preview = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=45)
+    # Use IVR-based DTE hint for ETF strategy preview
+    preview_dte = int(ivr_data.get("ivr_pct") or 0)
+    if is_etf:
+        from constants import IVR_BUYER_PASS_PCT, ETF_DTE_LOW_IVR, ETF_DTE_HIGH_IVR, ETF_DTE_DEFAULT
+        ivr_hint = ivr_data.get("ivr_pct")
+        preview_dte = ETF_DTE_LOW_IVR if (ivr_hint is None or ivr_hint < IVR_BUYER_PASS_PCT) else ETF_DTE_HIGH_IVR
+    else:
+        preview_dte = 45
+    strategies_preview = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=preview_dte)
     selected = strategies_preview[0] if strategies_preview else {}
 
-    # gate_engine is frozen and calls float() on all numeric fields directly.
-    # None values must be coerced to 0.0 before passing — never let None reach gate_engine.
+    # gate_engine ETF tracks handle None values internally.
+    # For stock (legacy) tracks: coerce None→0.0 before passing (gate math calls float() directly).
     ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
 
     gate_payload = {
@@ -415,33 +535,16 @@ def _analyze_options_inner(payload: dict, ticker: str):
         "max_gain_per_lot": float(selected.get("max_gain_per_lot") or -1.0),
         "account_size": account_size,
         "risk_pct": risk_pct,
-        "fomc_days_away": _i(payload.get("fomc_days_away"), 30),
+        "fomc_days_away": _i(payload.get("fomc_days_away"), 999),
         "lots": _f(payload.get("lots"), 1.0),
     }
 
-    gates = engine.run(direction, gate_payload)
+    gates = engine.run(direction, gate_payload, etf_mode=is_etf)
 
-    # Post-process: ETF-specific gate display fixes (Rule 5: gate math frozen, adapt outputs)
-    if ticker in ETF_TICKERS:
+    # ETF liquidity post-process: OTM legs on ETFs have naturally wider spreads than stocks.
+    # Keep spread as a WARN (not block) so strategies surface — trader must still verify before entry.
+    if is_etf:
         for g in gates:
-            # Event Calendar: replace "earn 999d" with honest ETF label
-            if g["id"] == "events" and "999d" in str(g.get("computed_value", "")):
-                g["computed_value"] = g["computed_value"].replace("earn 999d", "earn N/A (ETF)")
-            # Pivot Confirm: ETFs don't have VCP pivots — auto-pass
-            if g["id"] == "pivot_confirm":
-                g["status"] = "pass"
-                g["blocking"] = False
-                g["reason"] = "ETF — VCP pivot not applicable"
-                g["computed_value"] = "ETF: auto-pass"
-            # DTE Selection (buy_call track): VCP/ADX not applicable → auto-pass
-            if g["id"] == "dte" and g["status"] == "fail" and "rec None" in str(g.get("computed_value", "")):
-                g["status"] = "pass"
-                g["blocking"] = False
-                g["reason"] = "ETF — VCP signal not applicable, DTE from sector scan"
-                g["computed_value"] = "ETF: auto-pass"
-            # Liquidity: ETF OTM legs naturally have wider bid-ask spreads than individual stocks.
-            # Block on spread alone is too strict for ETFs — downgrade to warn so strategies surface.
-            # Volume > 0 confirms tradeable; user still sees the spread value and must verify before entry.
             if g["id"] == "liquidity" and g["status"] == "fail" and g.get("blocking"):
                 if "Spread too wide" in str(g.get("reason", "")):
                     g["status"] = "warn"
@@ -465,6 +568,7 @@ def _analyze_options_inner(payload: dict, ticker: str):
     response = {
         "ticker": ticker,
         "direction": direction,
+        "is_etf": is_etf,
         "track": _direction_track(direction),
         "underlying_price": round(underlying, 2),
         "data_source": data_source,
@@ -477,14 +581,19 @@ def _analyze_options_inner(payload: dict, ticker: str):
         "swing_data": swing_data,
         "verdict": verdict,
         "gates": gates,
-        "behavioral_checks": _behavioral_checks(gates, swing_data),
+        "behavioral_checks": _behavioral_checks(gates, swing_data, is_etf=is_etf),
         "top_strategies": strategies,
         "pnl_table": pnl_table,
         "ivr_data": ivr_data,
         "put_call_ratio": _put_call_ratio(chain),
         "max_pain_strike": _max_pain(chain),
         "recommended_dte": recommended_dte,
-        "direction_locked": ["sell_call", "buy_put"] if swing_data.get("signal") == "BUY" else [],
+        # ETFs: no directional lock — direction comes from regime, not swing signal.
+        # Stocks: lock directions opposing the swing signal.
+        "direction_locked": [] if is_etf else (
+            ["sell_call", "buy_put"] if swing_data.get("signal") == "BUY" else
+            ["buy_call", "sell_put"] if swing_data.get("signal") == "SELL" else []
+        ),
     }
     return jsonify(response)
 

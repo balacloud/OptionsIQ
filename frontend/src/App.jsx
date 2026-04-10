@@ -1,84 +1,136 @@
-import { useEffect, useMemo, useState } from 'react';
-import Header from './components/Header';
-import SwingImportStrip from './components/SwingImportStrip';
+/**
+ * OptionsIQ — ETF Signal Board
+ * Layout: RegimeBar (top) | ETF Scanner (left) | Analysis Panel (right)
+ * No tab switching. Click ETF → analysis panel opens inline.
+ */
+import { useEffect, useState, useCallback } from 'react';
+import RegimeBar from './components/RegimeBar';
+import ETFCard from './components/ETFCard';
 import DirectionSelector from './components/DirectionSelector';
 import MasterVerdict from './components/MasterVerdict';
 import GatesGrid from './components/GatesGrid';
-import BehavioralChecks from './components/BehavioralChecks';
 import TopThreeCards from './components/TopThreeCards';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
-import SectorRotation from './components/SectorRotation';
 import useOptionsData from './hooks/useOptionsData';
 import useSectorData from './hooks/useSectorData';
 import './index.css';
 
-const emptySwing = {
-  swing_signal: 'BUY',
-  entry_pullback: '',
-  entry_momentum: '',
-  stop_loss: '',
-  target1: '',
-  target2: '',
-  risk_reward: '',
-  vcp_pivot: '',
-  vcp_confidence: '',
-  adx: '',
-  last_close: '',
-  s1_support: '',
-  spy_above_200sma: true,
-  spy_5day_return: '',
-  earnings_days_away: '',
-  fomc_days_away: '',
-  pattern: 'VCP',
+// Display labels for directions
+const DIR_LABELS = {
+  buy_call: 'Buy Call',
+  bull_call_spread: 'Bull Call Spread',
+  sell_call: 'Sell Call',
+  bear_call_spread: 'Bear Call Spread',
+  buy_put: 'Buy Put',
+  sell_put: 'Sell Put',
 };
 
-function QualityBanner({ data }) {
-  const source  = data?.data_source;
-  const quality = data?.quality;
-  const asof    = data?.timestamp;
+// Map sector display hints → core 4 directions for gate engine
+const SECTOR_DIR_TO_CORE = {
+  buy_call: 'buy_call',
+  bull_call_spread: 'buy_call',
+  bear_call_spread: 'sell_call',
+  sell_call: 'sell_call',
+  buy_put: 'buy_put',
+  sell_put: 'sell_put',
+};
 
+const FILTER_OPTIONS = ['all', 'analyze', 'watch', 'skip'];
+
+function QualityBanner({ data }) {
+  const source = data?.data_source;
   if (!source || source === 'ibkr_live') return null;
 
-  let cls = 'banner-cached', icon = 'i', text = '';
-  if (source === 'ibkr_cache') {
-    const mins = asof ? Math.round((Date.now() - new Date(asof + 'Z').getTime()) / 60000) : '?';
-    text = `Using cached chain — data from ${mins} min ago. Refreshing in background.`;
-    cls = 'banner-cached';
-    icon = 'i';
-  } else if (source === 'ibkr_stale') {
-    const mins = asof ? Math.round((Date.now() - new Date(asof + 'Z').getTime()) / 60000) : '?';
-    text = `Stale IBKR cache (${mins} min old) — IBKR currently unavailable. Refreshing in background.`;
-    cls = 'banner-delayed';
-    icon = '!';
-  } else if (source === 'ibkr_closed') {
-    text = 'Market closed — using estimated greeks (Black-Scholes + 20-day HV). No bid/ask/OI data. Use for directional setup review only.';
-    cls = 'banner-delayed';
-    icon = '!';
-  } else if (source === 'alpaca') {
-    text = 'Using Alpaca fallback — 15-min delayed data. No OI or volume data available. Verify liquidity before trading.';
-    cls = 'banner-delayed';
-    icon = '!';
-  } else if (source === 'yfinance') {
-    text = 'Live data unavailable — using yfinance. Greeks are estimated via Black-Scholes.';
-    cls = 'banner-delayed';
-    icon = '!';
-  } else if (source === 'mock') {
-    text = 'MOCK DATA — for development only. Do not paper trade.';
-    cls = 'banner-mock';
-    icon = '!';
-  } else if (quality === 'partial') {
-    text = 'Partial chain — some greeks may be missing. Verify strikes manually.';
-    cls = 'banner-delayed';
-    icon = '!';
-  } else {
-    return null;
-  }
-
+  const BANNERS = {
+    ibkr_cache:   { cls: 'banner-cached',  icon: 'i', text: (d) => `Cached chain — ${Math.round((Date.now() - new Date(d.timestamp + 'Z').getTime()) / 60000)} min old.` },
+    ibkr_stale:   { cls: 'banner-delayed', icon: '!', text: (d) => `Stale IBKR cache — IBKR unavailable.` },
+    ibkr_closed:  { cls: 'banner-delayed', icon: '!', text: () => 'Market closed — estimated greeks (BS + HV). No bid/ask/OI.' },
+    alpaca:       { cls: 'banner-delayed', icon: '!', text: () => 'Alpaca fallback — 15-min delayed. No OI/volume.' },
+    yfinance:     { cls: 'banner-delayed', icon: '!', text: () => 'yfinance fallback — greeks estimated via Black-Scholes.' },
+    mock:         { cls: 'banner-mock',    icon: '!', text: () => 'MOCK DATA — do not paper trade.' },
+  };
+  const b = BANNERS[source];
+  if (!b) return null;
   return (
-    <div className={`quality-banner ${cls}`}>
-      <span className="banner-icon">{icon}</span>
-      <span className="banner-text">{text}</span>
+    <div className={`quality-banner ${b.cls}`}>
+      <span className="banner-icon">{b.icon}</span>
+      <span className="banner-text">{b.text(data)}</span>
+    </div>
+  );
+}
+
+function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose }) {
+  return (
+    <div className="analysis-panel">
+      <div className="analysis-panel-header">
+        <div>
+          <div className="analysis-panel-title">{ticker}</div>
+          <div className="analysis-panel-sub">Gate Analysis · L3</div>
+        </div>
+        <button className="analysis-panel-close" onClick={onClose}>✕</button>
+      </div>
+
+      <QualityBanner data={data} />
+
+      {data?.underlying_price && (
+        <div className="analysis-price-row">
+          <span className="underlying-label">Underlying</span>
+          <span className="underlying-price">${data.underlying_price.toFixed(2)}</span>
+          {data.ivr_data?.ivr_pct != null && (
+            <span className={`ivr-badge ${data.ivr_data.ivr_pct > 50 ? 'ivr-high' : data.ivr_data.ivr_pct < 25 ? 'ivr-low' : 'ivr-mid'}`}>
+              IVR {data.ivr_data.ivr_pct.toFixed(0)}%
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="card card-sm">
+        <div className="section-title">Direction</div>
+        <DirectionSelector
+          direction={direction}
+          setDirection={setDirection}
+          swingSignal={null}
+          locked={[]}
+        />
+        <button
+          className="analyze-btn"
+          style={{ marginTop: 10, width: '100%' }}
+          onClick={onAnalyze}
+          disabled={loading}
+        >
+          {loading ? 'Analyzing...' : 'Run Analysis'}
+        </button>
+      </div>
+
+      {error && <div className="error-bar">{error}</div>}
+
+      <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
+      <GatesGrid gates={data?.gates || []} />
+      <TopThreeCards
+        strategies={data?.top_strategies || []}
+        gates={data?.gates || []}
+        pnlTable={data?.pnl_table}
+      />
+      <PnLTable
+        table={data?.pnl_table}
+        gateFailed={false}
+      />
+
+      {/* ETF behavioral checks — regime/IV context advisories */}
+      {data?.behavioral_checks?.length > 0 && (
+        <div className="card">
+          <div className="section-title">Advisories</div>
+          {data.behavioral_checks.map(c => (
+            <div key={c.id} className={`behavioral-check behavioral-check-${c.type}`}>
+              <span className="bc-label">{c.label}</span>
+              <span className="bc-msg">{c.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
     </div>
   );
 }
@@ -86,194 +138,237 @@ function QualityBanner({ data }) {
 export default function App() {
   const { data, loading, error, analyze } = useOptionsData();
   const sectorHook = useSectorData();
-  const [activeTab, setActiveTab] = useState('analyze'); // 'analyze' | 'sectors'
-  const [ticker, setTicker]     = useState('');
-  const [direction, setDirection] = useState('buy_call');
-  const [swing, setSwing]       = useState(emptySwing);
-  const [ibModal, setIbModal]   = useState(false);
 
-  // Deep dive from sector tab → switch to analyze tab with ETF pre-filled
-  // Map bull_call_spread → buy_call for L3 gate_engine (only knows 4 core directions)
-  const SECTOR_DIR_TO_CORE = {
-    buy_call: 'buy_call',
-    bull_call_spread: 'buy_call',
-    bear_call_spread: 'sell_call',
-    sell_call: 'sell_call',
-    buy_put: 'buy_put',
-    sell_put: 'sell_put',
-  };
-  const handleSectorDeepDive = (etf) => {
-    const deepTicker = etf.etf;
-    const coreDir = SECTOR_DIR_TO_CORE[etf.suggested_direction] || 'buy_call';
-    setTicker(deepTicker);
-    setDirection(coreDir);
-    setActiveTab('analyze');
-    // Auto-trigger L3 analysis — use values directly (React state is async)
-    analyze({ direction: coreDir, ...swing, ticker: deepTicker }).catch(() => {});
-  };
+  const [selectedETF, setSelectedETF]     = useState(null);    // { etf, suggested_direction, ... }
+  const [direction, setDirection]         = useState('buy_call');
+  const [filter, setFilter]               = useState('all');
+  const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
 
-  const lockedBySignal = useMemo(() => {
-    if (swing.swing_signal === 'BUY')  return ['sell_call', 'buy_put'];
-    if (swing.swing_signal === 'SELL') return ['buy_call', 'sell_put'];
-    return [];
-  }, [swing.swing_signal]);
-
+  // Auto-trigger sector scan on mount — swallow error, hook stores it in sectorHook.error
   useEffect(() => {
-    if (swing.swing_signal === 'BUY') {
-      setDirection((d) => (d === 'sell_call' || d === 'buy_put' ? 'buy_call' : d));
-    }
-  }, [swing.swing_signal]);
-
-  const onAnalyze = async () => {
-    if (!ticker.trim()) return;
-    try {
-      await analyze({ direction, ...swing, ticker: ticker.trim().toUpperCase() });
-    } catch (_) {}
-  };
-
-  // Support deep-link from STA: ?ticker=AMD&auto=true&swing_data={...}
-  useEffect(() => {
-    const params     = new URLSearchParams(window.location.search);
-    const urlTicker  = params.get('ticker');
-    const auto       = params.get('auto') === 'true';
-    const swingParam = params.get('swing_data');
-    if (urlTicker) setTicker(urlTicker.toUpperCase());
-    if (swingParam) {
-      try {
-        const parsed = JSON.parse(swingParam);
-        setSwing((s) => ({ ...s, ...parsed }));
-      } catch (_) {}
-    }
-    if (auto && urlTicker) {
-      analyze({ direction, ...swing, ticker: urlTicker.toUpperCase() }).catch(() => {});
-    }
+    if (!sectorHook.sectors) sectorHook.scanSectors().catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sectors = sectorHook.sectors?.sectors || [];
+
+  const counts = {
+    all:     sectors.length,
+    analyze: sectors.filter(s => s.action === 'ANALYZE').length,
+    watch:   sectors.filter(s => s.action === 'WATCH').length,
+    skip:    sectors.filter(s => s.action === 'SKIP').length,
+  };
+
+  const filtered = filter === 'all'
+    ? sectors
+    : sectors.filter(s => s.action === filter.toUpperCase());
+
+  const runAnalysis = useCallback((etfTicker, dir) => {
+    analyze({ ticker: etfTicker, direction: dir }).catch(() => {});
+  }, [analyze]);
+
+  // Click ETF card: set active ETF, auto-direction from regime, trigger L3 analysis
+  const handleSelectETF = useCallback((etf) => {
+    const coreDir = SECTOR_DIR_TO_CORE[etf.suggested_direction] || 'buy_call';
+    setSelectedETF(etf);
+    setDirection(coreDir);
+    setL2ETF(null);
+    runAnalysis(etf.etf, coreDir);
+  }, [runAnalysis]);
+
+  // L2 detail expand
+  const handleL2 = useCallback((etf) => {
+    if (etf.etf === l2ETF) { setL2ETF(null); sectorHook.clearDetail(); return; }
+    setL2ETF(etf.etf);
+    sectorHook.analyzeETF(etf.etf).catch(() => {});
+  }, [l2ETF, sectorHook]);
+
+  // Direction override in analysis panel → re-run
+  const handleDirectionChange = useCallback((newDir) => {
+    setDirection(newDir);
+    if (selectedETF) runAnalysis(selectedETF.etf, newDir);
+  }, [selectedETF, runAnalysis]);
+
+  // Explicit "Run Analysis" button in panel
+  const handleReanalyze = useCallback(() => {
+    if (selectedETF) runAnalysis(selectedETF.etf, direction);
+  }, [selectedETF, direction, runAnalysis]);
+
+  const hasAnalysisPanel = !!selectedETF;
 
   return (
     <div className="app-shell">
-      <QualityBanner data={data} />
+      {/* Regime bar — always visible */}
+      <RegimeBar sectorData={sectorHook.sectors} />
 
-      {/* ── Tab Bar ── */}
-      <div className="tab-bar">
-        <button
-          className={`tab-btn ${activeTab === 'analyze' ? 'active' : ''}`}
-          onClick={() => setActiveTab('analyze')}
-        >
-          Analyze
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'sectors' ? 'active' : ''}`}
-          onClick={() => setActiveTab('sectors')}
-        >
-          Sectors
-        </button>
-      </div>
+      <div className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>
+        {/* ── Left: ETF Scanner ── */}
+        <div className="scanner-panel">
+          <div className="scanner-header">
+            <div className="scanner-title">ETF Signal Scanner</div>
+            <button
+              className="sector-refresh-btn"
+              onClick={sectorHook.scanSectors}
+              disabled={sectorHook.loading}
+            >
+              {sectorHook.loading ? 'Scanning...' : '↻ Scan'}
+            </button>
+          </div>
 
-      {/* ── Analyze Tab ── */}
-      {activeTab === 'analyze' && (
-        <div className="app-layout">
-          {/* ── Left Panel: controls + verdict ── */}
-          <aside className="left-panel">
-            <Header
-              ticker={ticker}
-              data={data}
-              onIbClick={() => setIbModal(true)}
-            />
+          {/* Filter bar */}
+          <div className="scanner-filters">
+            {FILTER_OPTIONS.map(f => (
+              <button
+                key={f}
+                className={`sector-filter-btn ${filter === f ? 'active' : ''}`}
+                onClick={() => setFilter(f)}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)} ({counts[f]})
+              </button>
+            ))}
+          </div>
 
-            {/* Ticker + Analyze */}
-            <div className="card card-sm">
-              <div className="ticker-bar">
-                <input
-                  className="ticker-input"
-                  value={ticker}
-                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                  placeholder="AMD"
-                  maxLength={8}
+          {sectorHook.error && (
+            <div className="scanner-sta-offline">
+              <div className="sta-offline-icon">⚡</div>
+              <div className="sta-offline-msg">STA offline</div>
+              <div className="sta-offline-sub">Start STA at localhost:5001 to load sector signals</div>
+              <button className="sector-refresh-btn" style={{ marginTop: 8 }} onClick={() => sectorHook.scanSectors().catch(() => {})}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* L2 detail inline panel */}
+          {(sectorHook.etfDetail || sectorHook.detailLoading) && (
+            <div className="l2-inline-panel">
+              {sectorHook.detailLoading && <div className="l2-loading">Loading L2 data...</div>}
+              {sectorHook.etfDetail && !sectorHook.detailLoading && (
+                <L2InlineDetail
+                  detail={sectorHook.etfDetail}
+                  onClose={sectorHook.clearDetail}
+                  onDeepDive={handleSelectETF}
                 />
-                <button className="analyze-btn" onClick={onAnalyze} disabled={loading}>
-                  {loading ? 'Analyzing...' : 'Analyze'}
-                </button>
-              </div>
-              {data?.underlying_price && (
-                <div style={{ marginTop: 10 }}>
-                  <div className="underlying-label">{data.ticker} underlying</div>
-                  <div className="underlying-price">${data.underlying_price.toFixed(2)}</div>
-                </div>
               )}
             </div>
+          )}
 
-            {/* Direction */}
-            <div className="card card-sm">
-              <div className="section-title">Direction</div>
-              <DirectionSelector
-                direction={direction}
-                setDirection={setDirection}
-                swingSignal={swing.swing_signal}
-                locked={lockedBySignal}
+          {/* ETF list — scanner rows */}
+          <div className="scanner-list">
+            {filtered.map(etf => (
+              <ScannerRow
+                key={etf.etf}
+                etf={etf}
+                isSelected={selectedETF?.etf === etf.etf}
+                onSelect={handleSelectETF}
+                onL2={handleL2}
               />
-            </div>
-
-            {/* Master Verdict */}
-            <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
-
-            {/* Swing Import — collapsible */}
-            <SwingImportStrip swing={swing} setSwing={setSwing} ticker={ticker} />
-          </aside>
-
-          {/* ── Right Panel: results ── */}
-          <main className="right-panel">
-            {error && <div className="error-bar">{error}</div>}
-
-            <GatesGrid gates={data?.gates || []} />
-            <TopThreeCards
-              strategies={data?.top_strategies || []}
-              gates={data?.gates || []}
-              pnlTable={data?.pnl_table}
-            />
-            <PnLTable
-              table={data?.pnl_table}
-              gateFailed={(data?.gates || []).some((g) => g.id === 'pivot_confirm' && g.status === 'fail')}
-            />
-            <BehavioralChecks checks={data?.behavioral_checks || []} />
-            <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
-          </main>
-        </div>
-      )}
-
-      {/* ── Sectors Tab ── */}
-      {activeTab === 'sectors' && (
-        <SectorRotation
-          sectorData={sectorHook.sectors}
-          loading={sectorHook.loading}
-          detailLoading={sectorHook.detailLoading}
-          error={sectorHook.error}
-          etfDetail={sectorHook.etfDetail}
-          onScan={sectorHook.scanSectors}
-          onAnalyzeETF={(ticker) => sectorHook.analyzeETF(ticker).catch(() => {})}
-          onClearDetail={sectorHook.clearDetail}
-          onDeepDive={handleSectorDeepDive}
-        />
-      )}
-
-      {/* IB Gateway modal */}
-      {ibModal && (
-        <div className="modal" onClick={() => setIbModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">IB Gateway Connection</div>
-            <div className="modal-body">
-              Start IB Gateway or TWS and enable API connections.<br /><br />
-              <strong>Default ports:</strong><br />
-              7497 — TWS Paper Trading<br />
-              7496 — TWS Live Trading<br />
-              4001 — IB Gateway Live<br />
-              4002 — IB Gateway Paper
-            </div>
-            <div className="modal-footer">
-              <button className="btn-primary" onClick={() => setIbModal(false)}>Got it</button>
-            </div>
+            ))}
+            {!sectorHook.loading && sectorHook.sectors && filtered.length === 0 && (
+              <div className="scanner-empty">No ETFs match filter "{filter}"</div>
+            )}
+            {sectorHook.loading && !sectorHook.sectors && (
+              <div className="scanner-empty">Scanning sector ETFs...</div>
+            )}
           </div>
+
+          {sectorHook.sectors && (
+            <div className="sector-footer">
+              STA: {sectorHook.sectors.sta_status === 'ok' ? '● Connected' : '○ Offline'}
+              {sectorHook.sectors.timestamp && (
+                <span className="text-dim"> · {new Date(sectorHook.sectors.timestamp).toLocaleTimeString()}</span>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* ── Right: Analysis Panel (opens when ETF selected) ── */}
+        {hasAnalysisPanel && (
+          <AnalysisPanel
+            ticker={selectedETF.etf}
+            direction={direction}
+            setDirection={handleDirectionChange}
+            data={data}
+            loading={loading}
+            error={error}
+            onAnalyze={handleReanalyze}
+            onClose={() => setSelectedETF(null)}
+          />
+        )}
+
+        {/* Empty state when no ETF selected */}
+        {!hasAnalysisPanel && sectorHook.sectors && (
+          <div className="analysis-empty">
+            <div className="analysis-empty-icon">↑</div>
+            <div className="analysis-empty-msg">Select an ETF to run gate analysis</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Scanner Row: compact ETF row with key signals ──
+function ScannerRow({ etf, isSelected, onSelect, onL2 }) {
+  const QUADRANT_CLS = {
+    Leading: 'q-leading', Improving: 'q-improving',
+    Weakening: 'q-weakening', Lagging: 'q-lagging',
+  };
+  const qCls = QUADRANT_CLS[etf.quadrant] || '';
+  const dirLabel = etf.suggested_direction ? (DIR_LABELS[etf.suggested_direction] || etf.suggested_direction) : null;
+  const isBear = etf.suggested_direction && ['bear_call_spread', 'sell_call', 'buy_put'].includes(etf.suggested_direction);
+
+  return (
+    <div
+      className={`scanner-row ${isSelected ? 'scanner-row-selected' : ''} ${etf.action === 'SKIP' ? 'scanner-row-skip' : ''}`}
+      onClick={() => etf.action === 'ANALYZE' && onSelect(etf)}
+      title={etf.action !== 'ANALYZE' ? `${etf.action} — ${etf.quadrant}` : undefined}
+    >
+      <div className="sr-ticker">{etf.etf}</div>
+      <div className={`sr-quadrant ${qCls}`}>{etf.quadrant}</div>
+      <div className={`sr-direction ${isBear ? 'sr-bear' : 'sr-bull'}`}>
+        {dirLabel || <span className="text-dim">{etf.action}</span>}
+      </div>
+      <div className="sr-changes">
+        <span className={`sr-chg ${etf.week_change >= 0 ? 'text-green' : 'text-red'}`}>
+          {etf.week_change != null ? `${etf.week_change >= 0 ? '+' : ''}${etf.week_change.toFixed(1)}%` : '—'}
+        </span>
+      </div>
+      {etf.action === 'ANALYZE' && (
+        <button
+          className="sr-l2-btn"
+          onClick={(e) => { e.stopPropagation(); onL2(etf); }}
+          title="L2 IV Detail"
+        >
+          IV
+        </button>
       )}
+    </div>
+  );
+}
+
+// ── L2 inline detail panel (inside scanner) ──
+function L2InlineDetail({ detail, onClose, onDeepDive }) {
+  const fmt = (v, d = 1) => v == null ? '—' : Number(v).toFixed(d);
+
+  return (
+    <div className="l2-detail">
+      <div className="l2-detail-header">
+        <span className="l2-detail-title">{detail.etf} — IV / Liquidity</span>
+        <button className="etf-detail-close" onClick={onClose}>✕</button>
+      </div>
+      <div className="etf-detail-grid">
+        <div className="etf-detail-item"><span className="etf-detail-label">IV</span><span className="etf-detail-value monospace">{detail.iv_current != null ? `${detail.iv_current}%` : '—'}</span></div>
+        <div className="etf-detail-item"><span className="etf-detail-label">IVR</span><span className={`etf-detail-value monospace ${detail.iv_percentile > 50 ? 'text-red' : detail.iv_percentile < 25 ? 'text-green' : ''}`}>{detail.iv_percentile != null ? `${detail.iv_percentile}%` : '—'}</span></div>
+        <div className="etf-detail-item"><span className="etf-detail-label">HV20</span><span className="etf-detail-value monospace">{detail.hv_20 != null ? `${detail.hv_20}%` : '—'}</span></div>
+        <div className="etf-detail-item"><span className="etf-detail-label">Sug. DTE</span><span className="etf-detail-value monospace">{detail.suggested_dte ?? '—'}d</span></div>
+        <div className="etf-detail-item"><span className="etf-detail-label">Spread</span><span className={`etf-detail-value monospace ${detail.atm_spread_pct > 5 ? 'text-red' : detail.atm_spread_pct > 2 ? 'text-amber' : 'text-green'}`}>{detail.atm_spread_pct != null ? `${detail.atm_spread_pct}%` : '—'}</span></div>
+        <div className="etf-detail-item"><span className="etf-detail-label">OI</span><span className="etf-detail-value monospace">{detail.atm_oi != null ? detail.atm_oi.toLocaleString() : '—'}</span></div>
+      </div>
+      {detail.ivr_bear_warning && <div className="etf-warning etf-warning-bear">⚠ {detail.ivr_bear_warning}</div>}
+      {detail.catalyst_warnings?.map((w, i) => <div key={i} className="etf-warning">⚠ {w}</div>)}
+      <button className="etf-btn etf-btn-deep" style={{ marginTop: 10, width: '100%' }} onClick={() => { onClose(); onDeepDive(detail); }}>
+        Full Gate Analysis →
+      </button>
     </div>
   );
 }

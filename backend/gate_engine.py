@@ -11,6 +11,8 @@ from constants import (
     DTE_GATE_TOLERANCE,
     DTE_REC_HIGH_SIGNAL,
     DTE_REC_MED_SIGNAL,
+    ETF_DTE_HIGH_IVR,
+    ETF_DTE_LOW_IVR,
     HV_IV_PASS_RATIO,
     HV_IV_WARN_RATIO,
     HV_LOW_REGIME_PCT,
@@ -71,12 +73,18 @@ def _gate(
 class GateEngine:
     planned_hold_days: int = 7
 
-    def run(self, direction: str, payload: dict) -> list[dict]:
-        # Each direction has its own gate logic — never share gates across buy/sell.
-        # buy_call: buyer gates (low IV, theta, momentum, bullish pivot)
-        # sell_call: seller gates (high IV, OTM strike, flat/bearish regime)
-        # buy_put: buyer gates (low IV, theta, bearish breakdown confirm)
-        # sell_put: seller gates (high IV, strike below support, theta decay)
+    def run(self, direction: str, payload: dict, etf_mode: bool = False) -> list[dict]:
+        # ETF mode: use IVR/HV/theta/liquidity/regime tracks — no VCP/ADX/pivot/breakdown.
+        # Stock mode: full swing-pattern tracks (VCP, ADX, pivot_confirm, breakdown_confirm).
+        if etf_mode:
+            if direction == "buy_call":
+                return self._run_etf_buy_call(payload)
+            if direction == "sell_call":
+                return self._run_sell_call(payload)  # already ETF-clean
+            if direction == "buy_put":
+                return self._run_etf_buy_put(payload)
+            return self._run_etf_sell_put(payload)   # sell_put ETF track
+        # Stock mode (legacy — all 4 original tracks)
         if direction == "buy_call":
             return self._run_track_a(payload)
         if direction == "sell_call":
@@ -623,3 +631,280 @@ class GateEngine:
             r,
             spread_fail_block,  # only block on wide spread; missing OI is a warn
         )
+
+    # -------------------------------------------------------------------------
+    # ETF Gate Tracks (no VCP / ADX / pivot / breakdown — pure quant signals)
+    # -------------------------------------------------------------------------
+
+    def _etf_ivr_buyer_gate(self, p: dict) -> dict:
+        """Shared IVR gate for ETF buyers (buy_call + buy_put): wants LOW IV."""
+        ivr = p.get("ivr_pct")
+        current_iv = float(p.get("current_iv", 0.0))
+        hist_days = int(p.get("history_days", 0))
+        if ivr is None or hist_days < 30:
+            iv = current_iv
+            if iv < IV_ABS_BUYER_PASS_PCT:
+                s, r = "pass", "IV cheap — good entry for buying options"
+            elif iv <= IV_ABS_BUYER_WARN_PCT:
+                s, r = "warn", "Moderate IV — acceptable"
+            else:
+                s, r = "fail", "IV elevated — IV crush risk on entry"
+            return _gate("ivr", "IV Rank", s, f"IV {iv:.2f}% (fallback)",
+                         f"IV <{IV_ABS_BUYER_PASS_PCT} pass, >{IV_ABS_BUYER_WARN_PCT} fail", r, s == "fail")
+        ivr = float(ivr)
+        if ivr < IVR_BUYER_PASS_PCT:
+            s, r = "pass", "IV rank low — ideal for buying options"
+        elif ivr <= IVR_BUYER_WARN_PCT:
+            s, r = "warn", "Moderate IV rank — acceptable"
+        else:
+            s, r = "fail", "IV rank elevated — IV crush risk on entry"
+        return _gate("ivr", "IV Rank", s, f"IVR {ivr:.1f}%",
+                     f"<{IVR_BUYER_PASS_PCT} pass, {IVR_BUYER_PASS_PCT}–{IVR_BUYER_WARN_PCT} warn, >{IVR_BUYER_WARN_PCT} fail", r, s == "fail")
+
+    def _etf_hv_iv_gate(self, p: dict) -> dict:
+        """HV/IV ratio gate — same math for all 4 ETF directions."""
+        current_iv = float(p.get("current_iv", 0.0))
+        hv_20 = float(p.get("hv_20", 0.0) or 0.0)
+        ratio = float(p.get("hv_iv_ratio", 0.0) or 0.0)
+        if hv_20 < HV_LOW_REGIME_PCT:
+            if current_iv < IV_ABS_LOW_HV_PASS_PCT:
+                s, r = "pass", "Low HV regime: IV still acceptable"
+            else:
+                s, r = "fail", "Low HV regime but IV not cheap enough"
+        else:
+            if ratio < HV_IV_PASS_RATIO:
+                s, r = "pass", "Options fairly priced vs realized vol"
+            elif ratio <= HV_IV_WARN_RATIO:
+                s, r = "warn", "Paying average vol risk premium"
+            else:
+                s, r = "fail", "IV significantly overpriced vs HV"
+        return _gate("hv_iv", "HV/IV Ratio", s, f"IV/HV {ratio:.2f}",
+                     f"<{HV_IV_PASS_RATIO} pass, {HV_IV_PASS_RATIO}–{HV_IV_WARN_RATIO} warn, >{HV_IV_WARN_RATIO} fail", r, s == "fail")
+
+    def _etf_theta_gate(self, p: dict) -> dict:
+        """Theta burn gate for buyers — same math, no swing dependency."""
+        premium = float(p.get("premium", 0.0) or 0.0)
+        theta = float(p.get("theta_per_day", 0.0) or 0.0)
+        burn = abs(theta * self.planned_hold_days) / premium * 100 if premium > 0 else 999.0
+        if burn <= THETA_BURN_PASS_PCT:
+            s, r = "pass", "Theta decay manageable over hold period"
+        elif burn <= THETA_BURN_WARN_PCT:
+            s, r = "warn", "Theta notable — need a fast move"
+        else:
+            s, r = "fail", "Theta will erode gains — use longer DTE"
+        return _gate("theta_burn", "Theta Burn", s, f"{burn:.1f}% over {self.planned_hold_days}d",
+                     f"<={THETA_BURN_PASS_PCT} pass, >{THETA_BURN_WARN_PCT} fail", r, s == "fail")
+
+    def _etf_dte_buyer_gate(self, p: dict) -> dict:
+        """
+        IVR-based DTE gate for ETF buyers (tastylive research-verified):
+            IVR < 30  → target 60 DTE
+            IVR >= 30 → target 30 DTE
+        Tolerance: ±10 DTE from target is still a pass.
+        """
+        dte = int(p.get("selected_expiry_dte", 0) or 0)
+        ivr = p.get("ivr_pct")
+        rec_dte = int(p.get("recommended_dte") or (ETF_DTE_LOW_IVR if (ivr is None or float(ivr) < IVR_BUYER_PASS_PCT) else ETF_DTE_HIGH_IVR))
+        p["recommended_dte"] = rec_dte
+        if dte < DEFAULT_MIN_DTE:
+            s, r = "fail", "DTE too short — expiry risk too high"
+        elif abs(dte - rec_dte) <= DTE_GATE_TOLERANCE:
+            s, r = "pass", f"DTE aligned with IV rank (target {rec_dte}d)"
+        elif dte > rec_dte + DTE_GATE_TOLERANCE:
+            s, r = "warn", f"DTE longer than optimal — theta burn reduced but capital tied up"
+        else:
+            s, r = "warn", f"DTE slightly short for current IV rank"
+        return _gate("dte", "DTE Selection", s, f"DTE {dte}, target {rec_dte}",
+                     f"IVR-based: <{IVR_BUYER_PASS_PCT} → 60 DTE, >={IVR_BUYER_PASS_PCT} → 30 DTE", r, s == "fail")
+
+    def _etf_fomc_gate(self, p: dict, dte: int) -> dict:
+        """FOMC proximity check — ETFs have no earnings, FOMC is the primary event."""
+        fomc_days = int(p.get("fomc_days_away", 999) or 999)
+        if 5 <= fomc_days <= 10:
+            s, r, block = "warn", "FOMC event near expiry — rate-sensitive ETFs may gap", False
+        elif fomc_days < 5:
+            s, r, block = "warn", "FOMC imminent — consider reducing size", False
+        else:
+            s, r, block = "pass", "No FOMC event conflict", False
+        return _gate("events", "Event Calendar", s, f"FOMC {fomc_days}d",
+                     "FOMC >10d clear; 5–10d warn; <5d caution", r, block)
+
+    def _etf_spy_regime_bull_gate(self, p: dict) -> dict:
+        """SPY regime gate for bullish ETF buyers (buy_call)."""
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            return _gate("market_regime", "Market Regime", "warn", "SPY unavailable",
+                         "above 200SMA required", "SPY regime unavailable — verify STA", False)
+        spy_above = bool(p.get("spy_above_200sma", False))
+        spy_5d = float(spy_5d_raw)
+        if spy_above and spy_5d > SPY_BULL_5D_WARN:
+            s, r = "pass", "Bull regime — supportive for call buying"
+        elif spy_above and SPY_BULL_5D_FAIL <= spy_5d <= SPY_BULL_5D_WARN:
+            s, r = "warn", "Market softening — tighten entries"
+        else:
+            s, r = "fail", "Market regime unsupportive for call buying"
+        return _gate("market_regime", "Market Regime", s,
+                     f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
+                     f"above 200SMA and 5d>{SPY_BULL_5D_WARN:.0%}", r, s == "fail")
+
+    def _etf_spy_regime_bear_gate(self, p: dict) -> dict:
+        """SPY regime gate for bearish ETF buyers (buy_put)."""
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            return _gate("market_regime", "Market Regime", "warn", "SPY unavailable",
+                         "weak market preferred", "SPY regime unavailable — verify STA", False)
+        spy_above = bool(p.get("spy_above_200sma", False))
+        spy_5d = float(spy_5d_raw)
+        if not spy_above and spy_5d < SPY_BUYPUT_5D_PASS:
+            s, r = "pass", "Bear regime — supportive for put buying"
+        elif spy_5d < SPY_BUYPUT_5D_WARN:
+            s, r = "warn", "Market weakening — reasonable for defensive puts"
+        else:
+            s, r = "fail", "Market regime not supportive for put buying"
+        return _gate("market_regime", "Market Regime", s,
+                     f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
+                     f"below 200SMA and 5d<{SPY_BUYPUT_5D_PASS:.0%} pass", r, s == "fail")
+
+    def _etf_position_size_gate(self, p: dict) -> dict:
+        """Position sizing gate — same math for all directions."""
+        premium = float(p.get("premium", 0.0) or 0.0)
+        account = float(p.get("account_size", DEFAULT_ACCOUNT_SIZE))
+        risk_pct = float(p.get("risk_pct", DEFAULT_RISK_PCT))
+        max_risk = account * risk_pct
+        cost = premium * 100
+        lots = math.floor(max_risk / cost) if cost > 0 else 0
+        if lots >= 1:
+            s, r = "pass", f"Up to {lots} lot(s) within risk budget"
+        else:
+            s, r = "warn", "Option cost exceeds 1% risk budget — size down or skip"
+        return _gate("position_size", "Position Sizing", s, f"lots_allowed={lots}",
+                     "lots>=1 pass; 0 warn", r, False)
+
+    def _run_etf_buy_call(self, p: dict) -> list[dict]:
+        """
+        ETF buy_call gate track.
+        Replaces _run_track_a for ETFs — no VCP, ADX, pivot_confirm.
+        Gates: IVR buyer, HV/IV, theta burn, DTE (IVR-based), FOMC, liquidity,
+               SPY regime (bull), position sizing.
+        """
+        dte = int(p.get("selected_expiry_dte", 0) or 0)
+        return [
+            self._etf_ivr_buyer_gate(p),
+            self._etf_hv_iv_gate(p),
+            self._etf_theta_gate(p),
+            self._etf_dte_buyer_gate(p),
+            self._etf_fomc_gate(p, dte),
+            self._liquidity_gate(p),
+            self._etf_spy_regime_bull_gate(p),
+            self._etf_position_size_gate(p),
+        ]
+
+    def _run_etf_buy_put(self, p: dict) -> list[dict]:
+        """
+        ETF buy_put gate track.
+        Replaces _run_buy_put for ETFs — no VCP, ADX, breakdown_confirm.
+        Gates: IVR buyer, HV/IV, theta burn, DTE (IVR-based), FOMC, liquidity,
+               SPY regime (bear), position sizing.
+        """
+        dte = int(p.get("selected_expiry_dte", 0) or 0)
+        return [
+            self._etf_ivr_buyer_gate(p),
+            self._etf_hv_iv_gate(p),
+            self._etf_theta_gate(p),
+            self._etf_dte_buyer_gate(p),
+            self._etf_fomc_gate(p, dte),
+            self._liquidity_gate(p),
+            self._etf_spy_regime_bear_gate(p),
+            self._etf_position_size_gate(p),
+        ]
+
+    def _run_etf_sell_put(self, p: dict) -> list[dict]:
+        """
+        ETF sell_put gate track.
+        Replaces _run_track_b for ETFs — no s1_support strike_safety gate.
+        Uses IVR seller logic, delta-based strike check, SPY regime for sellers.
+        """
+        out = []
+
+        # Gate 1: IVR seller — wants HIGH IV
+        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+        if ivr >= IVR_SELLER_PASS_PCT:
+            s, r = "pass", "Premium expensive — ideal for put selling"
+        elif ivr >= IVR_SELLER_MIN_PCT:
+            s, r = "warn", "Minimum viable IV for put selling"
+        else:
+            s, r = "fail", "IV too cheap — insufficient premium to sell puts"
+        out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.1f}%",
+                         f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+
+        # Gate 2: Strike delta check — ETF sell_put should be OTM (delta < -0.30 abs)
+        strike = float(p.get("strike", 0.0) or 0.0)
+        und = float(p.get("underlying_price", 0.0) or 0.0)
+        if und > 0:
+            otm_pct = (und - strike) / und * 100  # positive = OTM for puts
+            if otm_pct >= 3.0:
+                s, r = "pass", f"Strike {otm_pct:.1f}% OTM — safe cushion for put selling"
+            elif otm_pct >= 0:
+                s, r = "warn", "Strike near ATM — elevated assignment risk"
+            else:
+                s, r = "fail", "Strike above underlying — ITM put, immediate intrinsic loss"
+        else:
+            s, r = "warn", "Unable to verify strike vs underlying"
+        out.append(_gate("strike_otm", "Strike OTM Check", s,
+                         f"strike {strike:.2f}, und {und:.2f}",
+                         ">=3% OTM pass; ATM warn; ITM fail", r, s == "fail"))
+
+        # Gate 3: DTE seller window
+        dte = int(p.get("selected_expiry_dte", 0) or 0)
+        if DEFAULT_MIN_DTE <= dte <= DTE_REC_HIGH_SIGNAL:
+            s, r = "pass", "Optimal theta decay window"
+        elif DTE_REC_HIGH_SIGNAL < dte <= DTE_REC_MED_SIGNAL:
+            s, r = "warn", "Tradable but slower decay"
+        elif dte > 60 or dte < 7:
+            s, r = "fail", "Outside seller DTE window"
+        else:
+            s, r = "warn", "Suboptimal DTE window"
+        out.append(_gate("dte_seller", "DTE (Seller)", s, f"DTE {dte}",
+                         f"{DEFAULT_MIN_DTE}–{DTE_REC_HIGH_SIGNAL} pass; >60 or <7 fail", r, s == "fail"))
+
+        # Gate 4: FOMC event
+        out.append(self._etf_fomc_gate(p, dte))
+
+        # Gate 5: Liquidity
+        out.append(self._liquidity_gate(p))
+
+        # Gate 6: SPY regime — put sellers want stable/bull market
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", "warn",
+                             "SPY unavailable", "stable/bull market required",
+                             "SPY regime unavailable — verify STA", False))
+        else:
+            spy_above = bool(p.get("spy_above_200sma", False))
+            spy_5d = float(spy_5d_raw)
+            if spy_above and spy_5d > SPY_SELLPUT_5D_WARN:
+                s, r = "pass", "Market stable — favorable for put selling"
+            elif SPY_SELLPUT_5D_FAIL <= spy_5d <= SPY_SELLPUT_5D_WARN:
+                s, r = "warn", "Regime softening for premium selling"
+            else:
+                s, r = "fail", "Downside regime too risky for put selling"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s,
+                             f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
+                             f"above 200SMA and 5d>{SPY_SELLPUT_5D_WARN:.0%}", r, s == "fail"))
+
+        # Gate 7: Max loss check
+        premium = float(p.get("premium", 0.0) or 0.0)
+        lots = max(1.0, float(p.get("lots", 1.0) or 1.0))
+        account = float(p.get("account_size", DEFAULT_ACCOUNT_SIZE))
+        max_loss = (strike - premium) * 100
+        total = max_loss * lots
+        if total <= account * MAX_LOSS_WARN_PCT:
+            s, r = "pass", "Max loss within 10% of account"
+        elif total <= account * MAX_LOSS_FAIL_PCT:
+            s, r = "warn", "Max loss elevated vs account size"
+        else:
+            s, r = "fail", "Max loss exceeds 20% of account"
+        out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}",
+                         f"<={MAX_LOSS_WARN_PCT:.0%} pass, >{MAX_LOSS_FAIL_PCT:.0%} fail", r, s == "fail"))
+
+        return out

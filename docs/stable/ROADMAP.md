@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 19 (March 24, 2026)
-> **Current Version:** v0.14.0
+> **Last Updated:** Day 21 (April 9, 2026)
+> **Current Version:** v0.15.0
 
 ---
 
@@ -98,10 +98,10 @@ See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 The system currently earns in bull + neutral markets only. Bear directions (buy_put, sell_call) are
 code-complete but untested. Phase 7 closes this gap across both single-stock and sector modules.
 
-### 7a — Single Stock Bear Directions (KI-059)
-- [ ] Live test buy_put: bearish stock, gate track B fires, ITM put + bear put spread strategy returns
-- [ ] Live test sell_call: bear_call_spread builds, gate fires for high-IV seller track
-- [ ] Fix any bugs found (KI-06x)
+### 7a — Single Stock Bear Directions (KI-059 — DEFERRED: ETF-only pivot)
+- [ ] ~~Live test buy_put~~ — stocks no longer accepted (ETF-only mode returns 400)
+- [x] ETF buy_put + sell_call tested ✅ Day 21 (XLU all 4 directions confirmed)
+- [ ] If stocks re-enabled later: gate track B fires, ITM put + bear put spread strategy returns
 
 ### 7b — Sector Bear Market Strategies ✅ COMPLETE (Day 19)
 - [x] Research: Lagging ETF → bear_call_spread conditions (RS<98, momentum<-0.5) ✅ Day 19
@@ -161,3 +161,5 @@ Interactive education page — no backend, pure frontend with mock data.
 | v0.13.1 | Day 17 | First full audit (MASTER_AUDIT_FRAMEWORK, 8 categories). KI-060: SPY gate None→0.0 masking fixed in all 4 directions. KI-061: IVR formula verified correct. All 8 behavioral claims VERIFIED. Threading SAFE. Zero bare excepts. |
 | v0.13.1 | Day 18 | Review + planning session (no code changes). Audit framework reviewed (5 improvements, Cat 3 IVR typo fixed). Options Explainer "Learn" tab designed (Phase 8). |
 | v0.14.0 | Day 19 | Phase 7b: Sector Bear Market Strategies. Lagging→bear_call_spread, broad selloff detection, ETF gate auto-pass (events/pivot/DTE). 5 bugs fixed (KI-062/063/065/066 + L2 direction). Research doc created. |
+| v0.14.1 | Day 20 | ETF liquidity gate BLOCK→WARN, narrow-chain bear_call_spread fallback, session protocol docs fixed. |
+| v0.15.0 | Day 21 | **ETF-Only Pivot.** 16-ETF universe enforced (400 for non-ETFs). Signal Board UI (RegimeBar + Scanner + Analysis Panel). ETF gate tracks: _run_etf_buy_call/put/sell_put. _etf_payload() (zero fabrication). Delta-based spread legs. Price-relative P&L scenarios. All 4 directions tested live on XLU. |
