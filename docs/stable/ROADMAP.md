@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 21 (April 9, 2026)
-> **Current Version:** v0.15.0
+> **Last Updated:** Day 22 (April 14, 2026)
+> **Current Version:** v0.15.1
 
 ---
 
@@ -91,6 +91,7 @@ OptionsIQ consumes `GET localhost:5001/api/sectors/rotation` — zero RS computa
 - [x] L2 pipeline fix: get_chain tuple, IVR wiring, SPY regime, scan cache, behavioral audit ✅ Day 15
 - [x] L2 IV overlay live test with IBKR during market hours ✅ Day 16 (6/7 ETFs pass)
 - [x] SPY regime: yfinance → STA /api/stock/SPY priceHistory ✅ Day 16 (rate limit fix)
+- [x] IVR-tiered direction in scan_sectors() — sell_put (IVR>50%), buy_call (IVR<30%) ✅ Day 22
 - [ ] ETF-specific gate overrides in gate_engine (premium $0.50, spread 0.10%)
 See: `docs/Research/Sector_Rotation_ETF_Module_Day11.md`
 
@@ -163,3 +164,4 @@ Interactive education page — no backend, pure frontend with mock data.
 | v0.14.0 | Day 19 | Phase 7b: Sector Bear Market Strategies. Lagging→bear_call_spread, broad selloff detection, ETF gate auto-pass (events/pivot/DTE). 5 bugs fixed (KI-062/063/065/066 + L2 direction). Research doc created. |
 | v0.14.1 | Day 20 | ETF liquidity gate BLOCK→WARN, narrow-chain bear_call_spread fallback, session protocol docs fixed. |
 | v0.15.0 | Day 21 | **ETF-Only Pivot.** 16-ETF universe enforced (400 for non-ETFs). Signal Board UI (RegimeBar + Scanner + Analysis Panel). ETF gate tracks: _run_etf_buy_call/put/sell_put. _etf_payload() (zero fabrication). Delta-based spread legs. Price-relative P&L scenarios. All 4 directions tested live on XLU. |
+| v0.15.1 | Day 22 | Live smoke test. 5 fixes: market_regime_seller ETF blocking, liquidity non-blocking red, spy_above None→False, IVR scan wiring (sell_put when IVR>50%), gate visibility (MasterVerdict inline detail). KI-068/KI-069 identified: strategy.type=None + CAUTION verdict structural issue (OI=0 platform limit always warns). |

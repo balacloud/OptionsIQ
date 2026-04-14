@@ -1,7 +1,8 @@
 import { useState } from 'react';
 
 export default function GatesGrid({ gates }) {
-  const [open, setOpen] = useState(false);
+  // Auto-open when there are any fails or warns so user sees detail immediately
+  const [open, setOpen] = useState(() => gates.some((g) => g.status === 'fail' || g.status === 'warn'));
 
   const pass = gates.filter((g) => g.status === 'pass').length;
   const warn = gates.filter((g) => g.status === 'warn').length;

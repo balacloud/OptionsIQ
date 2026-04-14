@@ -8,19 +8,19 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (chain_cache.db + iv_store.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, optional
 
-## Current Phase (Day 21)
-v0.15.0. **ETF-Only Pivot complete.** 16-ETF universe enforced (non-ETFs return 400).
-Signal Board UI: RegimeBar (top) + Scanner (left) + Analysis Panel (right).
-ETF gate tracks: `_run_etf_buy_call/put/sell_put`. `_etf_payload()` zero-fabrication.
-Delta-based spread legs. Price-relative P&L scenarios. All 4 directions tested live on XLU.
-Next: Market-open frontend smoke test + QQQ chain fix (KI-067) + IVR mismatch (KI-064).
+## Current Phase (Day 23)
+v0.15.1. Live smoke test complete. IVR-tiered scan wiring done. Gate visibility fixed.
+Two structural issues block GO signal: (1) OI=0 platform limitation always creates liquidity
+warn → verdict always CAUTION (KI-069). (2) sell_put only builds naked puts → max_loss
+blocks on any ETF. Need bull_put_spread. strategy.type=None in ETF sell_call (KI-068).
+Next: fix KI-069 verdict logic + KI-068 type field + bull_put_spread → get first GO signal.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY21_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY21.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY22_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY22.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -44,6 +44,8 @@ backend/
   strategy_ranker.py  UPDATED (Day 21) — ETF mode: delta-based spread legs (delta 0.30/0.15).
                                          Detected via swing_data_quality == "etf".
                                          sell_call → bear_call_spread ✓. buy_put → ITM+spread+ATM ✓.
+                                         KI-068: strategy.type=None for ETF sell_call (unfixed).
+                                         NEEDS: bull_put_spread for sell_put (naked blocks max_loss).
   pnl_calculator.py   UPDATED (Day 21) — ETF: price-relative scenarios (-10% to +15%).
                                           Stock: explicit None guards on all swing fields.
   iv_store.py         FROZEN — math correct
@@ -94,12 +96,12 @@ Structure cache: `IBKRProvider._struct_cache` — in-memory, 4h TTL, keyed by ti
 
 DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 DTE.
 
-## Day 22 Priorities
-1. **P0:** Market-open frontend smoke test — RegimeBar, scanner, click ETF → analysis panel
-2. **P1:** KI-067 QQQ chain fix — price dropped ~15%, test at market open
-3. **P1:** KI-064 IVR mismatch — L2 percentile 97% vs L3 average 21%
-4. **P2:** API_CONTRACTS.md ETF-only fields sync (KI-044)
-5. **P3:** analyze_service.py extraction (KI-001/KI-023)
+## Day 23 Priorities
+1. **P0:** KI-069 — Fix verdict logic: ETF OI=0 should be `info` not `warn` (stops CAUTION block)
+2. **P0:** KI-068 — Fix strategy.type=None for ETF sell_call path in strategy_ranker.py
+3. **P1:** bull_put_spread for sell_put (like bear_call_spread for sell_call) — defined risk
+4. **P2:** Verify GO signal: XLF sell_call + XLI sell_put should show green after fixes
+5. **P3:** KI-044 API_CONTRACTS.md ETF-only fields sync
 
 ## Git Status
 - Local repo only — no remote origin configured yet

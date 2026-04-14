@@ -44,20 +44,25 @@ _SCAN_CACHE_TTL = 60  # seconds — L1 data is STA-sourced, 1 min freshness is f
 # ---------------------------------------------------------------------------
 def quadrant_to_direction(quadrant, ivr=None, rs_ratio=None, rs_momentum=None):
     """
-    Research-verified mapping (3-model consensus Day 13 + Phase 7b Day 19):
-    - Leading   → buy_call (bull_call_spread if IVR > 50)
-    - Improving → bull_call_spread (defined risk, 60 DTE)
-    - Weakening → None (WAIT — still RS>100, not bearish)
-    - Lagging   → bear_call_spread if RS < 98 AND momentum < -0.5
-                   (defined risk credit spread on sustained underperformance)
-                   Otherwise None (SKIP — may be bottoming or mean-reverting)
+    IVR-aware direction mapping (research-verified Day 13 + Phase 7b Day 19 + Day 22):
+
+    IVR tiers drive direction for bullish sectors:
+      - IVR < 30%:  buy_call        (cheap IV, outright debit)
+      - IVR 30–50%: bull_call_spread (defined risk debit)
+      - IVR > 50%:  sell_put        (expensive IV, collect premium below support)
+
+    - Leading:   IVR-tiered above
+    - Improving: IVR-tiered above (same logic, slightly weaker RS)
+    - Weakening: None (WAIT — still RS>100, not bearish)
+    - Lagging:   bear_call_spread if RS < 98 AND momentum < -0.5
+                 (defined risk credit spread on sustained underperformance)
     """
-    if quadrant == "Leading":
+    if quadrant in ("Leading", "Improving"):
         if ivr is not None and ivr >= 50:
-            return "bull_call_spread"
-        return "buy_call"
-    elif quadrant == "Improving":
-        return "bull_call_spread"
+            return "sell_put"        # IV expensive: sell put premium below support
+        elif ivr is not None and ivr >= 30:
+            return "bull_call_spread" # IV moderate: defined-risk debit spread
+        return "buy_call"            # IV cheap: outright long call
     elif quadrant == "Lagging":
         # Phase 7b: bear_call_spread for sustained underperformers
         # RS < 98 = underperforming SPY by 2+ points (not borderline)
@@ -205,10 +210,11 @@ def _detect_regime(sectors, spy_regime):
 # ---------------------------------------------------------------------------
 # Level 1: Quick Scan (< 2 sec — STA data + SPY regime)
 # ---------------------------------------------------------------------------
-def scan_sectors():
+def scan_sectors(iv_store=None):
     """
     Fetch all sector rotation data from STA and add options-layer annotations.
     Returns dict with sectors, size_rotation, size_signal, size_bias.
+    iv_store: optional IVStore instance — used to pass IVR percentile to direction mapping.
     """
     try:
         resp = requests.get(
@@ -228,13 +234,27 @@ def scan_sectors():
     size_rotation = sta_data.get("size_rotation", [])
     size_signal = sta_data.get("size_signal", "Neutral")
 
+    def _get_ivr(ticker):
+        """Lookup latest IVR percentile from iv_store. Returns None if insufficient history."""
+        if iv_store is None:
+            return None
+        try:
+            hist = iv_store.get_iv_history(ticker, 252)
+            if not hist:
+                return None
+            latest_iv = hist[-1]["iv"]
+            return iv_store.compute_ivr_pct(ticker, latest_iv)
+        except Exception:
+            return None
+
     sectors = []
     for s in sectors_raw:
         etf = s.get("etf", "")
         quadrant = s.get("quadrant", "Lagging")
         rs = s.get("rsRatio")
         mom = s.get("rsMomentum")
-        direction = quadrant_to_direction(quadrant, rs_ratio=rs, rs_momentum=mom)
+        ivr_pct = _get_ivr(etf)
+        direction = quadrant_to_direction(quadrant, ivr=ivr_pct, rs_ratio=rs, rs_momentum=mom)
         # If a direction is suggested (including bear), action = ANALYZE
         action = "ANALYZE" if direction is not None else quadrant_to_action(quadrant)
         catalyst = _catalyst_warnings(etf)
@@ -269,7 +289,8 @@ def scan_sectors():
         else:
             quad = "Lagging"
 
-        direction = quadrant_to_direction(quad, rs_ratio=rs, rs_momentum=mom)
+        ivr_pct = _get_ivr(etf)
+        direction = quadrant_to_direction(quad, ivr=ivr_pct, rs_ratio=rs, rs_momentum=mom)
         action = "ANALYZE" if direction is not None else quadrant_to_action(quad)
         catalyst = _catalyst_warnings(etf)
 

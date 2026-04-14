@@ -494,9 +494,10 @@ def _analyze_options_inner(payload: dict, ticker: str):
     # Stocks: legacy _merge_swing path (still works for any future stock use).
     if is_etf:
         spy_regime = _fetch_spy_regime()
+        _spy_above_raw = spy_regime.get("spy_above_200sma")
         swing_data = _etf_payload(
             underlying=underlying,
-            spy_above=bool(spy_regime.get("spy_above_200sma", True)),
+            spy_above=bool(_spy_above_raw) if _spy_above_raw is not None else True,
             spy_5d=float(spy_regime["spy_5day_return"] / 100.0) if spy_regime.get("spy_5day_return") is not None else None,
             fomc_days_away=_i(payload.get("fomc_days_away"), None),
             ivr_pct=ivr_data.get("ivr_pct"),
@@ -545,11 +546,22 @@ def _analyze_options_inner(payload: dict, ticker: str):
     # Keep spread as a WARN (not block) so strategies surface — trader must still verify before entry.
     if is_etf:
         for g in gates:
-            if g["id"] == "liquidity" and g["status"] == "fail" and g.get("blocking"):
+            if g["id"] == "liquidity" and g["status"] == "fail":
                 if "Spread too wide" in str(g.get("reason", "")):
                     g["status"] = "warn"
                     g["blocking"] = False
                     g["reason"] = "ETF OTM spread wider than stock threshold — review bid-ask before entry"
+
+    # ETF sell_call market-regime post-process: sector-relative shorts are valid in bull markets.
+    # The sector scan already verified RS + momentum weakness (Lagging thresholds) before
+    # suggesting bear_call_spread. SPY bull trend does NOT invalidate a sector-lagging short.
+    # Downgrade BLOCK → WARN so bear_call_spreads on Lagging ETFs surface for trader review.
+    if is_etf and direction == "sell_call":
+        for g in gates:
+            if g["id"] == "market_regime_seller" and g.get("blocking"):
+                g["blocking"] = False
+                g["reason"] = (g.get("reason", "") +
+                               " — sector RS/momentum weakness overrides SPY trend for ETF relative shorts")
 
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")
@@ -795,7 +807,7 @@ def integrate_schema():
 @app.get("/api/sectors/scan")
 def sectors_scan():
     """Level 1: All sector ETFs with quadrant, direction, action. < 2 sec (STA cached)."""
-    result = scan_sectors()
+    result = scan_sectors(iv_store=iv_store)
     if result.get("error"):
         return jsonify(result), 503
     return jsonify(result)

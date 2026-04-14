@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 21 (April 9, 2026)
-> **Current Version:** v0.15.0
-> **Project Phase:** ETF-Only Pivot complete. Signal Board UI live. All 4 directions (buy_call, sell_call, buy_put, sell_put) tested on XLU. Market-open frontend smoke test + QQQ chain fix next.
+> **Last Updated:** Day 22 (April 14, 2026)
+> **Current Version:** v0.15.1
+> **Project Phase:** Live smoke test complete. IVR-tiered directions wired. Gate visibility fixed. Two structural issues blocking GO signal: OI=0 platform limit always warns (KI-069) + sell_put has no defined-risk spread (KI-070). Next: fix verdict logic + bull_put_spread.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY21_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY21.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY22_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY22.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -213,17 +213,21 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY21.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY22.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED post ETF-only pivot. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (MEDIUM):
-2. **KI-067: QQQ chain width** — price dropped ~15% since Day 20, may self-resolve. Test at market open Day 22.
-3. **KI-064: IVR mismatch L2 vs L3** — L2 percentile 97% vs L3 average 21%
-4. **KI-044: API_CONTRACTS.md stale** — ETF-only fields (`is_etf`, `etf_universe`, `direction_locked: []`) not documented
-5. **analyze_service.py missing** — app.py ~660+ lines (KI-001/KI-023)
-6. **Synthetic swing defaults silent** (KI-022/KI-005 — lower priority post ETF pivot)
+2. **KI-069: CAUTION verdict structural issue** — OI=0 platform limitation always fires liquidity warn → verdict never reaches GO. Need ETF-aware verdict or demote OI=0 to `info`.
+3. **KI-068: strategy.type=None for ETF sell_call** — `_rank_sell_call` ETF path doesn't set `type` field. Frontend can't label strategy.
+4. **KI-067: QQQ chain fractional strikes** — lower priority, QQQ now suggests sell_put not sell_call. Test sell_put path.
+5. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, data-specific, low impact.
+6. **KI-044: API_CONTRACTS.md stale** — ETF-only fields not documented.
+7. **analyze_service.py missing** — app.py ~680+ lines (KI-001/KI-023)
+
+Open (LOW):
+8. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034), fomc_days_away=999 (KI-008), API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
 
 Open (LOW):
 7. Alpaca OI/volume missing (KI-038)
@@ -275,39 +279,41 @@ Resolved (Day 17):
 | Day 19 | Mar 24, 2026 | Phase 7b: Sector Bear Market Strategies shipped. Lagging→bear_call_spread (RS<98, mom<-0.5). Broad selloff detection. 5 bugs fixed: KI-062 (earnings fabricated), KI-063 (SPY regime fabricated + unit mismatch), KI-065 (Deep Dive direction), KI-066 (DTE gate ETF). ETF gate post-processing: events/pivot/DTE auto-pass. Research doc created. Live tested: XLV+XLY bear_call_spread, QQQ SKIP, BROAD_SELLOFF fires. |
 | Day 20 | Mar 28, 2026 | Sector options pipeline unblocked: ETF liquidity gate BLOCK→WARN (OTM spread too strict), strategy_ranker narrow-chain fallback (135/136 Bear Call for XLK). Session startup protocol fixed across 3 docs (MEMORY.md 3-step→6-step). KI-067 NEW: QQQ chain too narrow for current price. XLK/XLY/XLF all return bear_call_spread strategies. QQQ still blocked. |
 | Day 21 | Apr 9, 2026 | **ETF-Only Pivot (v0.15.0).** 16-ETF universe enforced. Signal Board UI (RegimeBar+Scanner+Analysis Panel). ETF gate tracks (_run_etf_buy_call/put/sell_put). _etf_payload() zero-fabrication. Delta-based spread legs. Price-relative P&L. All 4 directions tested live XLU. 3 bugs fixed: pnl TypeError, IBKR clientId conflict, React STA-offline crash. |
+| Day 22 | Apr 14, 2026 | **Live smoke test + 5 fixes (v0.15.1).** market_regime_seller ETF blocking fixed. Liquidity non-blocking red fixed. spy_above_200sma None→False fixed. IVR scan wiring complete (sell_put when IVR>50%). MasterVerdict gate detail inline. GatesGrid auto-open. KI-068/KI-069 identified: strategy.type=None + CAUTION always (OI=0 platform limit). |
 
 ---
 
-## Next Session Priorities (Day 22)
+## Next Session Priorities (Day 23)
 
-### P0 — Market-Open Frontend Smoke Test — MARKET OPEN REQUIRED
-1. Open http://localhost:3050 → verify RegimeBar shows SPY regime
-2. Scanner loads 15 ETFs with quadrant colors
-3. Click ANALYZE ETF → analysis panel opens → gates render → strategies show → P&L table correct
-4. Direction override → re-run works
-5. L2 IV button → detail panel shows IV/IVR/HV/spread
+### P0 — Fix verdict logic for ETFs (KI-069)
+OI=0 is a confirmed IBKR platform limitation (Day 12). It fires a `warn` that prevents GO verdict.
+For ETFs (XLF, XLV, IWM) with excellent real liquidity, this is misleading. Fix: demote
+OI=0 liquidity warn to `status="info"` in ETF mode so it doesn't downgrade verdict.
+Test: XLF/XLV sell_call should become GO after fix (all other gates pass/warn with non-blocking).
 
-### P1 — QQQ Chain Test Post Price-Drop (KI-067)
-QQQ was $563 on Day 20, now ~$480 (market down ~15%). Chain too narrow issue may be
-self-resolving. Test QQQ sell_call at market open. If still blocked, investigate struct_cache
-drift threshold (15%) not triggering refresh.
+### P0 — Fix strategy.type=None for ETF sell_call (KI-068)
+`top_strategies` from XLF/XLV sell_call have `type: None`. Find where bear_call_spread
+sets the `type` field in `strategy_ranker.py` and verify it works in ETF mode.
 
-### P1 — IVR Mismatch (KI-064)
-L2 shows IVR 97%, L3 shows IVR 21%. Trace both code paths with live data. Align on one truth.
+### P1 — bull_put_spread for sell_put direction
+sell_put currently builds naked puts only → always fails `max_loss` gate on any ETF >$50.
+Add `_rank_sell_put_spread()` in `strategy_ranker.py` mirroring bear_call_spread logic:
+short put ATM, long put 5% lower → max_loss = spread width × 100, typically $300-500.
+This makes sell_put viable for any account size and is the correct defined-risk structure.
 
-### P2 — API_CONTRACTS.md ETF-Only Fields Sync (KI-044)
+### P2 — Verify GO signal end-to-end after P0+P1 fixes
+After verdict fix + bull_put_spread: run XLF sell_call + XLI sell_put → should show GO (green)
+with 3 strategies + P&L table. This validates the full pipeline is unblocked.
+
+### P3 — API_CONTRACTS.md ETF-Only Fields Sync (KI-044)
 Document: `is_etf`, `direction_locked: []`, `etf_universe` 400 response, `_etf_payload` fields.
-
-### P3 — analyze_service.py extraction (KI-001/023)
-app.py ~660 lines. Rule 4 target: ≤150 lines.
 
 ### Deferred
 - Phase 7c: Weakening → sell_call for cyclical sectors
-- bull_put_spread for sell_put (strategy_ranker.py)
 - ETF-specific gate overrides (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK constants — defined but unused)
+- analyze_service.py extraction (KI-001/023)
 - Phase C/E/F audit items
-- Audit framework improvements: regression gate, Cat 9 smoke test, delta tracking
-- Phase 8: Options Explainer "Learn" tab (~300 lines React, frontend-only)
+- Phase 8: Options Explainer "Learn" tab
 
 ### Reference
 - `docs/versioned/KNOWN_ISSUES_DAY20.md` — current issue list
