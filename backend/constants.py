@@ -251,6 +251,8 @@ TQQQ_MAX_DTE            = 45     # Volatility decay accelerates beyond 45 days
 ETF_DTE_LOW_IVR         = 60     # IVR < 30 → 60 DTE
 ETF_DTE_HIGH_IVR        = 30     # IVR >= 30 → 30 DTE
 ETF_DTE_DEFAULT         = 45     # Fallback when IVR unavailable
+ETF_DTE_SELLER_PASS_MIN = 21     # ETF seller sweet spot start (vs stock 14)
+ETF_DTE_SELLER_PASS_MAX = 45     # ETF seller sweet spot end (vs stock 21)
 
 # FOMC sensitivity (VERIFIED: QuantSeeker "Which Sectors Move on Fed Days")
 FOMC_HIGH_SENSITIVITY   = {"XLF", "XLRE"}    # Biggest movers on Fed days

@@ -446,7 +446,10 @@ def analyze_options():
 
 
 def _analyze_options_inner(payload: dict, ticker: str):
-    direction = str(payload.get("direction", "buy_call")).strip()
+    from constants import DIRECTION_TO_CHAIN_DIR
+    _raw_dir = str(payload.get("direction", "buy_call")).strip()
+    # Normalize display directions (e.g. bear_call_spread) to core directions (sell_call)
+    direction = DIRECTION_TO_CHAIN_DIR.get(_raw_dir, _raw_dir)
     account_size = float(payload.get("account_size", os.getenv("ACCOUNT_SIZE", 25000)))
     risk_pct = float(payload.get("risk_pct", os.getenv("RISK_PCT", 0.01)))
     planned_hold_days = int(payload.get("planned_hold_days", os.getenv("PLANNED_HOLD_DAYS", 7)))
@@ -509,7 +512,9 @@ def _analyze_options_inner(payload: dict, ticker: str):
     # Use IVR-based DTE hint for ETF strategy preview
     preview_dte = int(ivr_data.get("ivr_pct") or 0)
     if is_etf:
-        from constants import IVR_BUYER_PASS_PCT, ETF_DTE_LOW_IVR, ETF_DTE_HIGH_IVR, ETF_DTE_DEFAULT
+        from constants import (IVR_BUYER_PASS_PCT, ETF_DTE_LOW_IVR, ETF_DTE_HIGH_IVR,
+                               ETF_DTE_DEFAULT, ETF_DTE_SELLER_PASS_MIN, ETF_DTE_SELLER_PASS_MAX,
+                               SPREAD_WARN_PCT, SPREAD_FAIL_PCT)
         ivr_hint = ivr_data.get("ivr_pct")
         preview_dte = ETF_DTE_LOW_IVR if (ivr_hint is None or ivr_hint < IVR_BUYER_PASS_PCT) else ETF_DTE_HIGH_IVR
     else:
@@ -562,6 +567,74 @@ def _analyze_options_inner(payload: dict, ticker: str):
                 g["blocking"] = False
                 g["reason"] = (g.get("reason", "") +
                                " — sector RS/momentum weakness overrides SPY trend for ETF relative shorts")
+
+    if is_etf and direction == "sell_put":
+        # ETF sell_put max_loss post-process: gate computes (strike - premium) × 100 (naked put math).
+        # For bull_put_spread the real max loss is (width - net_credit) × 100 — much smaller.
+        # Re-evaluate using the actual spread max_loss_per_lot from strategies_preview.
+        top_strat = strategies_preview[0] if strategies_preview else {}
+        if top_strat.get("strategy_type") == "bull_put_spread":
+            from constants import MAX_LOSS_WARN_PCT, MAX_LOSS_FAIL_PCT
+            actual_max_loss = float(top_strat.get("max_loss_per_lot") or 0.0)
+            total_risk = actual_max_loss  # 1 lot
+            for g in gates:
+                if g["id"] == "max_loss":
+                    if total_risk <= account_size * MAX_LOSS_WARN_PCT:
+                        g["status"] = "pass"
+                        g["reason"] = "Spread max loss within 10% of account (defined-risk spread)"
+                        g["blocking"] = False
+                    elif total_risk <= account_size * MAX_LOSS_FAIL_PCT:
+                        g["status"] = "warn"
+                        g["reason"] = "Spread max loss elevated vs account (still defined risk)"
+                        g["blocking"] = False
+                    else:
+                        g["status"] = "fail"
+                        g["reason"] = "Spread max loss exceeds 20% of account — reduce lot size"
+                        g["blocking"] = True
+                    g["computed_value"] = f"${total_risk:.2f} (spread max loss)"
+
+    if is_etf:
+        # ETF DTE seller post-process: ETF sweet spot is 21-45 DTE, not the stock 14-21.
+        # Gate was designed for single-stock gamma risk windows; ETF defined-risk spreads
+        # standard is 21-45 DTE (tastylive / CBOE ETF options research).
+        if direction in ("sell_call", "sell_put"):
+            dte_val = int(gate_payload.get("selected_expiry_dte", 0) or 0)
+            for g in gates:
+                if g["id"] == "dte_seller" and g["status"] == "warn":
+                    if ETF_DTE_SELLER_PASS_MIN <= dte_val <= ETF_DTE_SELLER_PASS_MAX:
+                        g["status"] = "pass"
+                        g["reason"] = f"ETF seller sweet spot — DTE {dte_val} within 21-45 range"
+
+        # ETF liquidity post-process: OI=0 is a confirmed IBKR platform limitation for all ETFs
+        # (KI-035, Day 12). SPDR ETFs trade hundreds of thousands of contracts daily; IBKR's
+        # reqMktData simply does not return OI. The stock MIN_PREMIUM_DOLLAR=$2 is also wrong
+        # for ETF spreads where $0.40 credit × 100 = $40/contract is viable.
+        # Promote to pass when: (a) OI=0 platform limit present, (b) spread < hard-fail threshold.
+        from constants import ETF_MIN_PREMIUM_DOLLAR
+        for g in gates:
+            if g["id"] == "liquidity" and g["status"] == "warn":
+                computed = g.get("computed_value", "")
+                oi_absent = "OI unavailable" in computed
+                # Parse spread and premium from computed_value
+                # Format: "OI 0 [OI unavailable], Vol/OI N/A, Prem X.XX, Spread Y.YY%"
+                spread_val, prem_val = None, None
+                try:
+                    if "Spread " in computed:
+                        spread_val = float(computed.split("Spread ")[1].rstrip("%"))
+                    if "Prem " in computed:
+                        prem_val = float(computed.split("Prem ")[1].split(",")[0].split(" ")[0])
+                except (ValueError, IndexError):
+                    pass
+                spread_ok = (spread_val is None) or (spread_val < SPREAD_FAIL_PCT)
+                # For spread directions (sell_call→bear_call_spread, sell_put→bull_put_spread),
+                # per-leg premium is irrelevant — net credit ($44+/contract) is what matters.
+                # Premium check only applies to naked single-leg strategies.
+                is_spread_direction = direction in ("sell_call", "sell_put")
+                prem_ok = is_spread_direction or (prem_val is None) or (prem_val >= ETF_MIN_PREMIUM_DOLLAR)
+                if oi_absent and spread_ok and prem_ok:
+                    g["status"] = "pass"
+                    g["reason"] = ("OI unavailable (IBKR platform limitation — confirmed Day 12). "
+                                   "ETF has confirmed market liquidity; bid-ask spread acceptable.")
 
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")

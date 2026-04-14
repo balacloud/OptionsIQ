@@ -35,7 +35,11 @@ class StrategyRanker:
             return self._rank_sell_call(chain, swing_data, recommended_dte)
         if direction == "buy_put":
             return self._rank_buy_put(chain, swing_data, recommended_dte)
-        return self._rank_track_b(chain, swing_data)  # sell_put
+        # sell_put: ETF mode → bull_put_spread (defined risk); stock mode → naked put
+        is_etf = (swing_data or {}).get("swing_data_quality") == "etf"
+        if direction == "sell_put" and is_etf:
+            return self._rank_sell_put_spread(chain, swing_data, recommended_dte)
+        return self._rank_track_b(chain, swing_data)  # sell_put naked (stock)
 
     def _best_expiry_contracts(self, chain: dict, right: str, preferred_dte: int) -> list[dict]:
         contracts = [c for c in chain.get("contracts", []) if c.get("right") == right]
@@ -233,6 +237,166 @@ class StrategyRanker:
             "warning": "UNLIMITED RISK — pair with long call for defined risk",
             "strike": far_strike,
             "right": "C",
+            "premium": far_p,
+            "expiry": far_otm["expiry"],
+            "dte": int(far_otm.get("dte", 0)),
+            "bid": far_otm.get("bid"),
+            "ask": far_otm.get("ask"),
+            "open_interest": far_otm.get("openInterest", 0),
+            "volume": far_otm.get("volume", 0),
+        })
+
+        return results[:3]
+
+    def _rank_sell_put_spread(self, chain: dict, _swing_data: dict, recommended_dte: int | None) -> list[dict]:
+        """Bull put spread strategies for ETF sell_put direction.
+        Mirror of _rank_sell_call (bear call spread) — defined risk, delta-targeted legs.
+        Short put: delta ~0.30 (slightly OTM below current price) — max credit
+        Long put: delta ~0.15 (further OTM, lower strike) — limits max loss
+        """
+        pref = recommended_dte if recommended_dte else 30
+        puts = self._best_expiry_contracts(chain, "P", pref)
+        if not puts:
+            return []
+        current = float(chain.get("underlying_price", 0.0))
+
+        # OTM puts: strike < current price (below underlying for put sellers)
+        otm_puts = sorted([c for c in puts if _f(c.get("strike"), 0.0) < current],
+                          key=lambda c: _f(c.get("strike"), 0.0), reverse=True)  # highest first
+        if not otm_puts:
+            otm_puts = sorted(puts, key=lambda c: _f(c.get("strike"), 0.0), reverse=True)
+
+        # Short leg: delta ~0.30 (abs) — slightly OTM, collects most credit
+        short_30 = self._closest_delta(otm_puts, 0.30)
+        short_30_strike = _f(short_30.get("strike"), 0.0)
+
+        # Protection leg: delta ~0.15 at a LOWER strike than the short leg
+        below_short30 = [c for c in otm_puts if _f(c.get("strike"), 0.0) < short_30_strike]
+        if below_short30:
+            protection_15 = self._closest_delta(below_short30, 0.15)
+        elif len(otm_puts) >= 2:
+            sorted_otm = sorted(otm_puts, key=lambda c: _f(c.get("strike"), 0.0), reverse=True)
+            short_30 = sorted_otm[0]   # highest OTM → sold leg (most credit)
+            protection_15 = sorted_otm[1]  # lower strike → bought protection
+            short_30_strike = _f(short_30.get("strike"), 0.0)
+        else:
+            protection_15 = short_30  # forces same-strike guard to skip spread
+
+        short_20 = self._closest_delta(otm_puts, 0.20)
+
+        results = []
+
+        # Rank 1: Bull put spread (0.30 delta short, 0.15 delta long below)
+        if short_30.get("strike") != protection_15.get("strike"):
+            short_strike = _f(short_30.get("strike"), 0.0)
+            long_strike = _f(protection_15.get("strike"), 0.0)
+            if long_strike > short_strike:  # ensure long is the lower strike
+                short_30, protection_15 = protection_15, short_30
+                short_strike = _f(short_30.get("strike"), 0.0)
+                long_strike = _f(protection_15.get("strike"), 0.0)
+            short_p = _f(short_30.get("mid", short_30.get("last", 0.0)), 0.0)
+            long_p = _f(protection_15.get("mid", protection_15.get("last", 0.0)), 0.0)
+            net_credit = max(0.01, short_p - long_p)
+            width = max(0.0, short_strike - long_strike)
+            results.append({
+                "rank": 1,
+                "label": f"{int(short_strike)}/{int(long_strike)} Bull Put · {_fmt_exp(short_30['expiry'])}",
+                "strategy_type": "bull_put_spread",
+                "strike_display": f"{short_strike:.0f}/{long_strike:.0f}",
+                "expiry_display": short_30["expiry"],
+                "premium_per_lot": round(net_credit * 100, 2),
+                "breakeven": round(short_strike - net_credit, 2),
+                "delta": round(_f(short_30.get("delta"), 0.0) - _f(protection_15.get("delta"), 0.0), 3),
+                "theta_per_day": round(_f(short_30.get("theta"), 0.0) - _f(protection_15.get("theta"), 0.0), 3),
+                "vega": round(_f(short_30.get("vega"), 0.0) - _f(protection_15.get("vega"), 0.0), 3),
+                "gamma": round(_f(short_30.get("gamma"), 0.0) - _f(protection_15.get("gamma"), 0.0), 3),
+                "implied_vol": round(_f(short_30.get("impliedVol"), 0.0) * 100, 2),
+                "max_gain_per_lot": round(net_credit * 100, 2),
+                "max_loss_per_lot": round(max(0.0, (width - net_credit) * 100), 2),
+                "spread_pct": _spread_pct(short_30),
+                "why": "Highest credit. Defined risk. Sell OTM put below support, buy lower protection. Profit if ETF holds above short strike.",
+                "warning": None,
+                "short_strike": short_strike,
+                "long_strike": long_strike,
+                "net_premium": net_credit,
+                "strike": short_strike,
+                "right": "P",
+                "premium": net_credit,
+                "expiry": short_30["expiry"],
+                "dte": int(short_30.get("dte", 0)),
+                "bid": short_30.get("bid"),
+                "ask": short_30.get("ask"),
+                "open_interest": short_30.get("openInterest", 0),
+                "volume": short_30.get("volume", 0),
+            })
+
+        # Rank 2: Higher PoP bull put spread (0.20 delta short)
+        if short_20.get("strike") != short_30.get("strike"):
+            s20_strike = _f(short_20.get("strike"), 0.0)
+            below_20 = [c for c in otm_puts if _f(c.get("strike"), 0.0) < s20_strike]
+            prot_leg = self._closest_delta(below_20, 0.10) if below_20 else protection_15
+            prot_strike = _f(prot_leg.get("strike"), 0.0)
+            if prot_strike < s20_strike:
+                short_p = _f(short_20.get("mid", short_20.get("last", 0.0)), 0.0)
+                long_p = _f(prot_leg.get("mid", prot_leg.get("last", 0.0)), 0.0)
+                net_credit = max(0.01, short_p - long_p)
+                width = max(0.0, s20_strike - prot_strike)
+                results.append({
+                    "rank": len(results) + 1,
+                    "label": f"{int(s20_strike)}/{int(prot_strike)} Bull Put · {_fmt_exp(short_20['expiry'])}",
+                    "strategy_type": "bull_put_spread",
+                    "strike_display": f"{s20_strike:.0f}/{prot_strike:.0f}",
+                    "expiry_display": short_20["expiry"],
+                    "premium_per_lot": round(net_credit * 100, 2),
+                    "breakeven": round(s20_strike - net_credit, 2),
+                    "delta": round(_f(short_20.get("delta"), 0.0) - _f(prot_leg.get("delta"), 0.0), 3),
+                    "theta_per_day": round(_f(short_20.get("theta"), 0.0) - _f(prot_leg.get("theta"), 0.0), 3),
+                    "vega": round(_f(short_20.get("vega"), 0.0) - _f(prot_leg.get("vega"), 0.0), 3),
+                    "gamma": round(_f(short_20.get("gamma"), 0.0) - _f(prot_leg.get("gamma"), 0.0), 3),
+                    "implied_vol": round(_f(short_20.get("impliedVol"), 0.0) * 100, 2),
+                    "max_gain_per_lot": round(net_credit * 100, 2),
+                    "max_loss_per_lot": round(max(0.0, (width - net_credit) * 100), 2),
+                    "spread_pct": _spread_pct(short_20),
+                    "why": "Higher probability of profit. Less credit but wider buffer before short strike is tested.",
+                    "warning": None,
+                    "short_strike": s20_strike,
+                    "long_strike": prot_strike,
+                    "net_premium": net_credit,
+                    "strike": s20_strike,
+                    "right": "P",
+                    "premium": net_credit,
+                    "expiry": short_20["expiry"],
+                    "dte": int(short_20.get("dte", 0)),
+                    "bid": short_20.get("bid"),
+                    "ask": short_20.get("ask"),
+                    "open_interest": short_20.get("openInterest", 0),
+                    "volume": short_20.get("volume", 0),
+                })
+
+        # Rank 3: Far OTM single put (delta ~0.15, naked-style fallback with defined-risk note)
+        far_otm = self._closest_delta(otm_puts, 0.15)
+        far_strike = _f(far_otm.get("strike"), 0.0)
+        far_p = _f(far_otm.get("mid", far_otm.get("last", 0.0)), 0.0)
+        results.append({
+            "rank": len(results) + 1,
+            "label": f"Sell {int(far_strike)}P · {_fmt_exp(far_otm['expiry'])} ⚠️ FAR OTM",
+            "strategy_type": "sell_put",
+            "strike_display": f"{far_strike:.0f}P",
+            "expiry_display": far_otm["expiry"],
+            "premium_per_lot": round(far_p * 100, 2),
+            "breakeven": round(far_strike - far_p, 2),
+            "delta": round(_f(far_otm.get("delta"), 0.0), 3),
+            "theta_per_day": round(_f(far_otm.get("theta"), 0.0), 3),
+            "vega": round(_f(far_otm.get("vega"), 0.0), 3),
+            "gamma": round(_f(far_otm.get("gamma"), 0.0), 3),
+            "implied_vol": round(_f(far_otm.get("impliedVol"), 0.0) * 100, 2),
+            "max_gain_per_lot": round(far_p * 100, 2),
+            "max_loss_per_lot": None,
+            "spread_pct": _spread_pct(far_otm),
+            "why": "Highest probability of expiring worthless. Consider pairing with lower long put for defined risk.",
+            "warning": "UNLIMITED RISK — pair with long put for defined risk",
+            "strike": far_strike,
+            "right": "P",
             "premium": far_p,
             "expiry": far_otm["expiry"],
             "dte": int(far_otm.get("dte", 0)),
