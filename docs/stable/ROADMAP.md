@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 23 (April 15, 2026)
-> **Current Version:** v0.16.0
+> **Last Updated:** Day 24 (April 15, 2026)
+> **Current Version:** v0.16.1
 
 ---
 
@@ -27,10 +27,10 @@
 - [x] STA offline detection fixed — `json?.status === 'ok'`
 
 ### P2 — Day 6
-- [ ] Create `analyze_service.py` — extract `_merge_swing`, `_extract_iv_data`, `_behavioral_checks`
+- [x] Create `analyze_service.py` — extracted all helpers + orchestrator (Day 24) ✅
+- [x] app.py to ≤350 lines (965→320, KI-023) ✅ Day 24
 - [ ] Synthetic-default warning when swing fields null (KI-022)
 - [ ] FOMC days auto-compute from constants.FOMC_DATES in manual mode
-- [ ] app.py to ≤150 lines (currently 558, KI-023)
 
 ### P3 ✅ DONE (Day 5)
 - [x] IBWorker background heartbeat (KI-019) — `reqCurrentTime()` every 30s, staleness check
@@ -137,9 +137,9 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 - [x] `ibkr_provider.stage_spread_order()` — qualifies legs, builds BAG, placeOrder(transmit=False) ✅ Day 23
 - [x] `POST /api/orders/stage` — validates spread params, calls IBWorker ✅ Day 23
 - [x] `ExecutionCard.jsx` — shows legs, net credit, max profit/loss, Stage button ✅ Day 23
-- [ ] Wire ExecutionCard into App.jsx AnalysisPanel + CSS styles (KI-071) — Day 24 P0
-- [ ] Live test at market open: stage XLF order in TWS blotter (KI-070) — Day 24 P0
-- [ ] Test: qty selector (1-10), success state (order #), error state (IB Gateway offline)
+- [x] Wire ExecutionCard into App.jsx AnalysisPanel + CSS styles (KI-071) ✅ Day 24
+- [x] ExecutionCard redesigned as visual IBKR Client Portal guide (no API staging) ✅ Day 24
+- [x] TWS staging code reverted (readonly=True, stage_spread_order removed) ✅ Day 24
 - [ ] (Future) whatIf commission estimate before staging
 
 ## Post-v1.0 (Backlog)
@@ -177,3 +177,5 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 | v0.14.1 | Day 20 | ETF liquidity gate BLOCK→WARN, narrow-chain bear_call_spread fallback, session protocol docs fixed. |
 | v0.15.0 | Day 21 | **ETF-Only Pivot.** 16-ETF universe enforced (400 for non-ETFs). Signal Board UI (RegimeBar + Scanner + Analysis Panel). ETF gate tracks: _run_etf_buy_call/put/sell_put. _etf_payload() (zero fabrication). Delta-based spread legs. Price-relative P&L scenarios. All 4 directions tested live on XLU. |
 | v0.15.1 | Day 22 | Live smoke test. 5 fixes: market_regime_seller ETF blocking, liquidity non-blocking red, spy_above None→False, IVR scan wiring (sell_put when IVR>50%), gate visibility (MasterVerdict inline detail). KI-068/KI-069 identified: strategy.type=None + CAUTION verdict structural issue (OI=0 platform limit always warns). |
+| v0.16.0 | Day 23 | First GO signals (XLF, XLV bear_call_spread). bull_put_spread. 6 bugs fixed. ExecutionCard + POST /api/orders/stage (later reverted Day 24). |
+| v0.16.1 | Day 24 | Structural cleanup: analyze_service.py extraction (app.py 965→320). 27 tests (5 files). ExecutionCard rewritten as IBKR Client Portal visual guide. TWS staging code reverted. README.md comprehensive rewrite. |

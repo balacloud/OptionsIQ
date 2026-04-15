@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 23 (April 15, 2026)
-> **Current Version:** v0.16.0
-> **Project Phase:** First GO signals confirmed (XLF, XLV bear_call_spread). bull_put_spread built. ExecutionCard created but NOT yet wired into App.jsx. Next: wire ExecutionCard + CSS, live test stage_spread_order at market open (KI-071/KI-070).
+> **Last Updated:** Day 24 (April 15, 2026)
+> **Current Version:** v0.16.1
+> **Project Phase:** Structural cleanup complete. analyze_service.py extracted (app.py 965→320). 27 tests passing. ExecutionCard redesigned as visual IBKR Client Portal guide. TWS staging code reverted. Next: QQQ chain fix (KI-067), frontend smoke test, API_CONTRACTS sync.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY23_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY23.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY24_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY24.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -76,15 +76,14 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | data_service.py | DONE (Day 12) | Provider cascade + SQLite WAL + CB + Alpaca tier |
 | ibkr_provider.py | DONE (Day 12) | try-finally cancelMktData. OI via reqMktData confirmed unavailable (platform limit) |
 | alpaca_provider.py | DONE (Day 10) | REST fallback, greeks ✅, NO OI/volume (model limitation) |
-| analyze_service.py | NOT CREATED | Day 13 P2 — extract from app.py |
-| app.py | Hardened + Day 20 | ~660 lines. SPY regime helpers, earnings None fix, ETF gate post-processing (events/pivot/DTE/liquidity). |
+| analyze_service.py | DONE (Day 24) | 604 lines — all business logic extracted from app.py |
+| app.py | Thin wrappers (Day 24) | 320 lines — routes only, imports from analyze_service.py |
 
 ### Backend Files (current state)
 ```
 backend/
-  app.py              ~600 lines — HARDENED (Day 12): logger defined, ACCOUNT_SIZE guard,
-                                   outer try-except on analyze, bare excepts named+logged.
-                                   Still needs analyze_service.py split (Day 13 P2).
+  app.py              320 lines — THIN WRAPPERS ONLY (Day 24): routes import from analyze_service.py.
+                                   ACCOUNT_SIZE guard, CORS, Flask setup, 14 route handlers.
   constants.py        DONE (Day 12) — 19 new thresholds: IV abs fallback, DTE signal quality,
                                       SPY regime per direction, STRIKE_SAFETY_RATIO, SELL_CALL_OTM_PASS_PCT
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
@@ -116,9 +115,14 @@ backend/
                                        Day 19: Phase 7b bear logic (Lagging→bear_call_spread), _detect_regime(),
                                        L2 chain fix (DIRECTION_TO_CHAIN_DIR), IVR bear warning.
 
+  analyze_service.py  DONE (Day 24) — 604 lines. analyze_etf(), apply_etf_gate_adjustments(),
+                                   all helpers, data fetchers, payload builders, behavioral checks.
+
+  tests/               DONE (Day 24) — 27 tests (pytest). 5 files: bs_calculator, spread_math,
+                                   direction_routing, gate_engine_etf, etf_gate_postprocess.
+
   # TO CREATE:
   marketdata_provider.py  — MarketData.app REST provider ($12/mo — pending)
-  analyze_service.py      — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ---
@@ -281,26 +285,15 @@ Resolved (Day 17):
 | Day 21 | Apr 9, 2026 | **ETF-Only Pivot (v0.15.0).** 16-ETF universe enforced. Signal Board UI (RegimeBar+Scanner+Analysis Panel). ETF gate tracks (_run_etf_buy_call/put/sell_put). _etf_payload() zero-fabrication. Delta-based spread legs. Price-relative P&L. All 4 directions tested live XLU. 3 bugs fixed: pnl TypeError, IBKR clientId conflict, React STA-offline crash. |
 | Day 22 | Apr 14, 2026 | **Live smoke test + 5 fixes (v0.15.1).** market_regime_seller ETF blocking fixed. Liquidity non-blocking red fixed. spy_above_200sma None→False fixed. IVR scan wiring complete (sell_put when IVR>50%). MasterVerdict gate detail inline. GatesGrid auto-open. KI-068/KI-069 identified: strategy.type=None + CAUTION always (OI=0 platform limit). |
 | Day 23 | Apr 15, 2026 | **First GO signals + ExecutionCard (v0.16.0).** KI-069 fixed (OI=0→pass for ETFs). KI-068 fixed (direction normalization bear_call_spread→sell_call). bull_put_spread built (_rank_sell_put_spread). ETF sell_put max_loss re-evaluated using spread. ETF DTE seller 21-45→pass. PnLTable auto-open. MasterVerdict all fails inline. ExecutionCard.jsx + POST /api/orders/stage + ibkr_provider.stage_spread_order() — NOT yet wired into App.jsx (KI-071). |
+| Day 24 | Apr 15, 2026 | **Structural cleanup (v0.16.1).** analyze_service.py extracted (app.py 965→320 lines, analyze_service 604 lines). TWS staging code reverted (readonly=True, stage_spread_order removed, POST /api/orders/stage removed). 27 tests created (5 files: BS greeks, spread math, direction routing, gate engine, ETF post-processing). ExecutionCard rewritten as IBKR Client Portal visual guide (no API calls). KI-071/KI-070/KI-001 resolved. README.md comprehensively rewritten. |
 
 ---
 
-## Next Session Priorities (Day 24)
+## Next Session Priorities (Day 25)
 
-### P0 — Wire ExecutionCard into App.jsx + add CSS (KI-071)
-`ExecutionCard.jsx` and `POST /api/orders/stage` are built but the component is NOT yet
-imported or rendered in `AnalysisPanel`. Add import, render after `<TopThreeCards>` (before PnLTable),
-and add CSS classes: `.execution-card`, `.execution-legs`, `.exec-leg-sell/.exec-leg-buy`,
-`.exec-leg-action`, `.exec-leg-strike`, `.exec-credit`, `.execution-metrics`, `.exec-metric`,
-`.execution-action`, `.exec-qty-row/.exec-qty-btn/.exec-qty-val`, `.exec-stage-btn`,
-`.exec-staged`, `.exec-error`, `.exec-footer-note`, `.execution-badge`.
-
-### P0 — Live test stage_spread_order at market open (KI-070)
-At market open, run XLF sell_call analysis → click "Stage in TWS" → verify:
-1. Order #XXXXX appears in TWS order blotter
-2. Status shows "Not Transmitted" (transmit=False)
-3. No order is sent to market automatically
-4. User clicks Transmit in TWS → order submits
-Test error path: IB Gateway disconnected → should return 503.
+### P1 — Frontend smoke test with backend restart
+Restart backend, verify analyze_service.py import works end-to-end.
+Run XLF sell_call → confirm GO verdict + ExecutionCard renders.
 
 ### P1 — QQQ sell_put chain ITM issue (KI-067)
 QQQ sell_put direction returns put strikes above current price → ITM → wrong for credit spread.
@@ -308,11 +301,10 @@ Check struct_cache entry for QQQ, verify sell_put strike window (should be 0-8% 
 clear cache and re-test.
 
 ### P2 — API_CONTRACTS.md sync (KI-044)
-Document `POST /api/orders/stage` request/response. Add ETF-only fields.
+Remove POST /api/orders/stage (no longer exists). Add ETF-only fields.
 
 ### Deferred
 - Phase 7c: Weakening → sell_call for cyclical sectors
-- analyze_service.py extraction (KI-001/023)
 - Phase C/E/F audit items
 - Phase 8: Options Explainer "Learn" tab
 

@@ -1,89 +1,117 @@
 # OptionsIQ
 
-**Personal options analysis tool — analysis only, zero orders sent.**
+**Personal ETF options analysis tool — analysis only, zero orders sent.**
 
-Takes a stock ticker, pulls the live options chain from IBKR, runs a multi-gate quality check, and recommends the top 3 strike/expiry combinations for your chosen direction (buy call, sell call, buy put, sell put). Records paper trades with live mark-to-market P&L.
+OptionsIQ pulls live options chain data from Interactive Brokers, runs a multi-gate quality framework, ranks the best strike/expiry combinations for vertical spreads, and gives you a step-by-step guide to place the trade on IBKR Client Portal. It covers all four option directions across 16 sector ETFs, with real-time SPY regime awareness and IV Rank scoring.
+
+> **v0.16.1** — Day 24 (April 15, 2026)
 
 ---
 
-## What It Is (and Isn't)
+## What It Does
 
-| ✅ What it does | ❌ What it doesn't do |
-|---|---|
-| Pulls live options chain from IBKR | Send orders to IBKR |
-| Evaluates 9 quality gates per setup | Manage a portfolio |
-| Recommends top 3 strike/expiry combos | Guarantee any outcome |
-| Records paper trades + tracks P&L | Execute real trades |
-| Integrates with STA for swing context | Replace your own judgment |
+- **Sector ETF Scanner** — scans 16 sector ETFs (XLK, XLF, XLV, XLE, XLU, etc.) using STA's relative strength data to find which sectors are Leading, Weakening, Improving, or Lagging
+- **4-Direction Analysis** — buy call, sell call (bear call spread), buy put, sell put (bull put spread) — each with direction-aware chain fetching and gate evaluation
+- **Multi-Gate Quality Framework** — 9+ gates evaluate IV Rank, theta burn, DTE selection, liquidity, market regime, position sizing before any trade recommendation
+- **Defined-Risk Spreads** — automatically builds bear call spreads (delta 0.30/0.15) and bull put spreads (delta 0.30/0.15) with exact max profit, max loss, and breakeven
+- **IBKR Client Portal Guide** — when verdict is GO, shows step-by-step instructions to place the exact trade on IBKR's web platform
+- **Real-Time SPY Regime** — monitors SPY vs 200 SMA, 5-day return, and broad selloff detection (>50% sectors weakening + SPY below 200 SMA)
+- **IV Rank Scoring** — percentile-based IVR from 252-day IV history, stored in SQLite, drives buyer/seller strategy selection
+- **Paper Trading** — records trades with live mark-to-market P&L tracking
+
+### What It Doesn't Do
+
+- Send orders to IBKR (analysis only — you place trades manually)
+- Manage a portfolio or track positions
+- Work with individual stocks (ETF-only since v0.15.0)
+- Replace your own judgment — it's a decision-support tool
+
+---
+
+## ETF Universe (16 Tickers)
+
+| Sector ETFs | Broad/Leveraged |
+|-------------|-----------------|
+| XLK (Tech), XLF (Financials), XLV (Healthcare), XLE (Energy), XLU (Utilities), XLI (Industrials), XLY (Consumer Disc.), XLP (Consumer Staples), XLB (Materials), XLRE (Real Estate), XLC (Communications) | MDY (Mid-Cap), IWM (Small-Cap), SCHB (Broad Market), QQQ (Nasdaq 100), TQQQ (3x Nasdaq) |
+
+Non-ETF tickers return HTTP 400 with the full ETF universe list.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Frontend (React, port 3050)                            │
-│  Ticker input → Direction → Analyze → Results display   │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP POST /api/options/analyze
-┌────────────────────────▼────────────────────────────────┐
-│  Backend (Flask, port 5051)                             │
-│                                                         │
-│  app.py (routes)                                        │
-│    ↓                                                    │
-│  DataService (provider cascade + SQLite cache)          │
-│    ↓                                                    │
-│  IBWorker (single queue → single IB() thread)           │
-│    ↓                                                    │
-│  IBKRProvider ←→ IB Gateway (port 4001)                 │
-│                                                         │
-│  Fallback: yfinance → mock (CI only)                    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Frontend (React, port 3050)                             │
+│                                                          │
+│  Signal Board UI:                                        │
+│    RegimeBar (SPY status) │ ETF Scanner │ Analysis Panel │
+│    Click ETF → direction selector → Run Analysis         │
+│    Results: Verdict → Gates → Strategies → Execution     │
+└────────────────────────┬─────────────────────────────────┘
+                         │ HTTP
+┌────────────────────────▼─────────────────────────────────┐
+│  Backend (Flask, port 5051)                              │
+│                                                          │
+│  app.py (320 lines — thin route handlers)                │
+│  analyze_service.py (604 lines — business logic)         │
+│    ├── analyze_etf() — main orchestrator                 │
+│    ├── apply_etf_gate_adjustments() — post-processing    │
+│    ├── _extract_iv_data() — IV/HV/IVR computation        │
+│    └── _behavioral_checks() — regime/IV advisories       │
+│                                                          │
+│  DataService (provider cascade + SQLite cache)           │
+│    → IBWorker (single queue → single IB() thread)        │
+│      → IBKRProvider ←→ IB Gateway (port 4001)            │
+│    → AlpacaProvider (REST fallback, free)                 │
+│    → YFinanceProvider (emergency fallback)                │
+│    → MockProvider (dev/CI only)                           │
+│                                                          │
+│  GateEngine — 9+ quality gates per direction             │
+│  StrategyRanker — delta-targeted spread builder          │
+│  PnLCalculator — price-relative P&L scenarios            │
+│  IVStore — SQLite: IV history, HV, paper trades          │
+│  BSCalculator — Black-Scholes greeks (off-hours)         │
+└──────────────────────────────────────────────────────────┘
 
 Optional:
   STA (Swing Trade Analyzer, port 5001) — separate project
-  Provides: swing signal, entry/stop/target, ADX, VCP pattern
-  If offline: manual mode, user enters fields directly
+  Provides: sector rotation data, RS ratios, SPY regime
+  If offline: sector scan returns 503, analysis still works
 ```
 
 ### Threading Model
 
-All IBKR calls are serialised through a single dedicated thread:
+All IBKR calls are serialized through a single dedicated thread to avoid asyncio event-loop conflicts:
 
 ```
-Flask thread → IBWorker.submit(fn, timeout=24s)
-                    ↓
-             queue.Queue (thread-safe)
-                    ↓
-            "ib-worker" thread owns IB()
-            → IBKRProvider.get_options_chain()
+Flask thread → IBWorker.submit(fn, timeout=24s) → queue.Queue → "ib-worker" thread owns IB()
 ```
 
-**Why:** `ib_insync` uses asyncio internally. Multiple Flask threads calling it directly causes event-loop conflicts and silent hangs. One thread, one IB() instance — safe.
-
-### Data Provider Hierarchy (live-first)
+### Data Provider Hierarchy
 
 ```
-[1] IBKR Live    reqMarketDataType=1 — default
-[2] IBKR Cache   SQLite, 2-min TTL — "Using cached chain" banner
-[3] yfinance     Emergency fallback — "Live data unavailable" banner
-[4] Mock         CI/dev testing ONLY — never for paper trades
+[1] IBKR Live    — reqMktData(snapshot=False), live greeks + bid/ask
+[2] IBKR Cache   — SQLite, 2-min TTL
+[3] Alpaca       — REST fallback, greeks yes, NO OI/volume
+[4] yfinance     — Emergency fallback, BS-computed greeks
+[5] Mock         — Dev/CI testing ONLY
 ```
 
 ---
 
 ## Prerequisites
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| Python | 3.11+ | Backend |
-| Node.js | 18+ | Frontend |
-| IB Gateway or TWS | Latest | Must be running, port 4001 |
-| IBKR account | Any | Paper or live — analysis only |
-| IBKR market data subscription | US Options (OPRA) | Required for greeks |
+| Requirement | Notes |
+|-------------|-------|
+| Python 3.9+ | Backend (tested on 3.9.6) |
+| Node.js 18+ | Frontend |
+| IB Gateway or TWS | Must be running on port 4001 |
+| IBKR account | Paper or live — analysis only, no orders sent |
+| IBKR market data | US Options (OPRA) subscription required for greeks |
 
 **Optional:**
-- STA (Swing Trade Analyzer) running at `localhost:5001` — auto-fills swing fields
+- STA (Swing Trade Analyzer) at `localhost:5001` — provides sector rotation data and SPY regime
 
 ---
 
@@ -92,7 +120,8 @@ Flask thread → IBWorker.submit(fn, timeout=24s)
 ```bash
 # 1. Clone and configure
 cp backend/.env.example backend/.env
-# Edit backend/.env: set ACCOUNT_SIZE=25000 (your account size in USD)
+# Edit backend/.env — ACCOUNT_SIZE is mandatory:
+#   ACCOUNT_SIZE=25000
 
 # 2. Start IB Gateway or TWS
 # Settings → API → Enable ActiveX and Socket Clients
@@ -101,10 +130,9 @@ cp backend/.env.example backend/.env
 # 3. Start OptionsIQ
 ./start.sh
 
-# Access:
-#   Frontend:  http://localhost:3050
-#   Backend:   http://localhost:5051
-#   Health:    http://localhost:5051/api/health
+# Frontend:  http://localhost:3050
+# Backend:   http://localhost:5051
+# Health:    http://localhost:5051/api/health
 
 # 4. Stop
 ./stop.sh
@@ -113,191 +141,149 @@ cp backend/.env.example backend/.env
 ### `.env` Variables
 
 ```bash
-ACCOUNT_SIZE=25000        # Required — your account size in USD
+ACCOUNT_SIZE=25000        # Required — app raises at startup if missing
 IBKR_HOST=127.0.0.1       # Optional — default: 127.0.0.1
-IBKR_PORT=7497            # Optional — default: 7497 (TWS) or 4001 (IB Gateway)
-IBKR_CLIENT_ID=10         # Optional — default: 10
+IBKR_PORT=4001             # Optional — 4001 (IB Gateway) or 7497 (TWS)
+IBKR_CLIENT_ID=10          # Optional — default: 10
+RISK_PCT=0.01              # Optional — max risk per trade as decimal (1%)
 ```
-
-> **ACCOUNT_SIZE is mandatory.** The app raises at startup if not set. No default — you must be conscious of your position sizing.
 
 ---
 
 ## How to Use
 
-### Basic Workflow
+### Signal Board Workflow
 
-1. Open `http://localhost:3050`
-2. If STA is running — Swing Data section shows **STA Live** badge and auto-fills entry/stop/target
-3. Type a ticker (e.g. `AMD`)
-4. Select direction based on your market view:
-   - **Buy Call** — you expect strong move up (delta ~0.68, 45-90 DTE)
-   - **Sell Put** — neutral to bullish, want to collect premium (ATM ±6%, 21-45 DTE)
-   - **Buy Put** — you expect strong move down (delta ~-0.68, 45-90 DTE)
-   - **Sell Call** — neutral to bearish (ATM ±6%, 21-45 DTE)
-5. Click **Analyze** — wait ~8-12s for live IBKR data
-6. Review verdict (GO / PAUSE / BLOCK) and gates
-7. If verdict is GO, record a paper trade
+1. Open `http://localhost:3050` — the Signal Board loads automatically
+2. **RegimeBar** at the top shows SPY status (above/below 200 SMA, 5-day return)
+3. **ETF Scanner** on the left shows all 16 ETFs with quadrant badges:
+   - **Leading** (green) → buy_call direction
+   - **Improving** (blue) → buy_call direction
+   - **Weakening** (amber) → WAIT (no trade)
+   - **Lagging** (red) → bear_call_spread direction
+4. Click any ETF card → **Analysis Panel** opens on the right
+5. Select direction (or use the scanner's suggested direction)
+6. Click **Run Analysis** — waits 8-12 seconds for live IBKR data
+7. Review results:
+   - **Verdict**: GO (green) / CAUTION (amber) / BLOCKED (red)
+   - **Gates**: 9+ quality checks with pass/warn/fail
+   - **Top Strategies**: ranked spread recommendations with full greeks
+   - **Execution Guide**: step-by-step IBKR Client Portal instructions (on GO verdict)
+   - **P&L Table**: price-relative scenarios
+   - **Advisories**: IV rank context, SPY regime warnings, delta discipline
 
-> **Direction locking:** If STA gives a BUY signal, `sell_call` and `buy_put` are locked (contradicts the signal). SELL signal locks `buy_call` and `sell_put`.
+### Execution Guide (How to Place the Trade)
 
-### Market Hours
+When the verdict is **GO** and the top strategy is a spread (bear_call_spread or bull_put_spread), an **Execution Card** appears with IBKR Client Portal steps:
 
-| Session | Hours (ET) | Behavior |
-|---------|-----------|---------|
-| Regular | 9:30am – 4:00pm | Live greeks from IBKR — full analysis |
-| Pre-market | 6:30am – 9:30am | Zero greeks (market closed) — liquidity gate fails |
-| After-hours | 4:00pm – 8:00pm | BS greeks (HV proxy) — `data_source = ibkr_closed` |
-| Weekend | All day | BS greeks (HV proxy) — use for setup review only |
+1. Log into Client Portal → **Trade** → **Option Chains**
+2. Search for the ticker (e.g., XLF)
+3. Click **View** dropdown → select **"Vertical Spread"**
+4. Select the expiration shown
+5. Click **Ask** on the short strike to sell, **Bid** on the long strike to buy
+6. Set quantity (start with 1 contract)
+7. Set order type: **Limit** at the net credit shown
+8. Click **Preview** → verify legs → **Submit**
 
-> **During market hours:** `data_source = ibkr_live`, full live greeks + bid/ask/OI, all gates evaluated.
-> **Outside market hours:** `data_source = ibkr_closed`. Greeks computed via Black-Scholes (20-day HV as IV proxy). No bid/ask/OI. Liquidity gate always FAILs (expected). Delta/theta/vega are meaningful — use for directional setup planning. Re-analyze during market hours before paper trading.
+A **"Copy Trade Details"** button copies the full trade summary to clipboard.
 
-### AMD → NVDA Workflow (sequential tickers)
-
-```
-T=0s    Analyze AMD    → IBKR fetch ~10s → AMD cached 2 min
-T=10s   Analyze NVDA   → IBKR fetch ~10s → NVDA cached 2 min (no wait)
-T=60s   Analyze AMD again → SQLite cache hit → instant response
-T=62s   Analyze NVDA again → SQLite cache hit → instant response
-```
-
-Each ticker has its own independent 2-minute cache. **No waiting between different tickers.**
+> **Note**: Credit spread limit orders may show "riskless combination" error in Client Portal. Workaround: use TWS desktop app or market order type.
 
 ---
 
-## The 9 Gates
+## The Four Directions
 
-Analysis runs 9 quality gates. Each is PASS / WARN / FAIL.
+| Direction | Market View | Strategy Built | Strike Zone | DTE |
+|-----------|------------|----------------|-------------|-----|
+| buy_call | Strongly Bullish | Long ITM call | 8-20% ITM, delta ~0.68 | 45-90 |
+| sell_call | Neutral/Bearish | Bear call spread | OTM, delta 0.30/0.15 | 21-45 |
+| buy_put | Strongly Bearish | Long ITM put | 8-20% ITM, delta ~-0.68 | 45-90 |
+| sell_put | Neutral/Bullish | Bull put spread | OTM, delta 0.30/0.15 | 21-45 |
 
-| Gate | What it checks | Typical threshold |
-|------|---------------|------------------|
-| **IV Rank** | Is implied volatility cheap or expensive? | IVR < 50 for buyers |
-| **HV/IV Ratio** | Are options fairly priced vs realized vol? | IV/HV ratio < 1.5 |
-| **Theta Burn** | Will theta erode gains before target hits? | < 5% per 7 days |
-| **DTE Selection** | Is expiry in the sweet-spot window? | 45-90 DTE buyers, 21-45 sellers |
-| **Event Calendar** | Earnings or FOMC near expiry? | Earnings > 21d, FOMC > 7d |
-| **Liquidity Proxy** | Enough open interest and volume? | OI > 100, bid/ask spread reasonable |
-| **Market Regime** | Is SPY above 200 SMA? 5-day return? | SPY above 200 SMA = favorable |
-| **Confirmed Close Above Pivot** | Has stock closed above VCP pivot? | Last close > pivot = confirmed |
-| **Position Sizing** | Can you risk ≤1% of account on this? | lots_allowed ≥ 1 |
+### Spread Math (Defined Risk)
 
-**Verdict logic:**
-- **GO** (green) — 7+ pass, ≤1 fail
-- **PAUSE** (amber) — some warns, ≤2 fails
-- **BLOCK** (red) — any critical gate fails (theta, liquidity, sizing)
+**Bear Call Spread** (sell_call direction):
+- SELL call at delta ~0.30 (short leg, collects premium)
+- BUY call at delta ~0.15 (protection, higher strike)
+- Max Profit = net credit × 100
+- Max Loss = (width - net credit) × 100
+- Breakeven = short strike + net credit
 
----
-
-## Data Fields: Live from IBKR vs Computed by IQ Engine
-
-Understanding which fields are real market data vs computed helps interpret results, especially off-hours.
-
-### Fetched Live from IB Gateway (market data subscription required)
-
-| Field | IB API Call | When Available |
-|-------|-------------|----------------|
-| **Underlying price** | `reqMktData` (snapshot) | Always when IBKR connected |
-| **Bid / Ask** | `reqTickers` | Market hours only (9:30am–4pm ET) |
-| **Last price** | `reqTickers` | Market hours only |
-| **Delta, Gamma, Theta, Vega** | `reqTickers` → `modelGreeks` | Market hours only |
-| **Implied Volatility (per contract)** | `reqTickers` → `modelGreeks.impliedVol` | Market hours only |
-| **Open Interest** | `reqTickers` → `callOpenInterest` / `putOpenInterest` | Market hours only |
-| **Volume** | `reqTickers` → `volume` | Market hours only |
-| **Available strikes / expiries** | `reqSecDefOptParams` | Always — cached 4h in memory |
-| **IV history (for IVR)** | `reqHistoricalData` (OPTION_IMPLIED_VOLATILITY) | Always |
-| **OHLCV history** | `reqHistoricalData` (TRADES) | Always |
-
-### Computed by IQ Engine (never from IBKR)
-
-| Field | Computation | Source Data |
-|-------|-------------|-------------|
-| **IV Rank (IVR)** | `(current_iv - iv_52w_low) / (iv_52w_high - iv_52w_low) × 100` | IV history from IBKR or yfinance |
-| **HV/IV Ratio** | 20-day realized vol ÷ current IV | OHLCV returns (IBKR or yfinance) |
-| **Theta Burn %** | `abs(theta × hold_days) / premium × 100` | theta + premium from chain |
-| **Position sizing** | `account_size × risk_pct ÷ (premium × 100)` | User's account size + premium |
-| **Put/Call Ratio** | `put OI / call OI` | OI from chain |
-| **Max Pain Strike** | Minimize aggregate loss for option writers | OI from chain |
-| **P&L scenarios** | Black-Scholes at each price target | premium + greeks |
-| **SPY above 200 SMA** | `SPY.close[-1] > mean(SPY.close[-200:])` | yfinance SPY history |
-| **SPY 5-day return** | `(close[-1] - close[-6]) / close[-6] × 100` | yfinance SPY history |
-
-### Off-Hours (market closed — 4pm–9:30am ET, weekends)
-
-When market is closed, `reqTickers` returns empty. The engine switches to estimated mode:
-
-| Field | Source when closed | Notes |
-|-------|-------------------|-------|
-| **Delta, Gamma, Theta, Vega** | Black-Scholes (bs_calculator.py) | Uses 20-day HV as IV proxy |
-| **Theoretical price (mid)** | Black-Scholes | Not a tradeable quote |
-| **Implied Vol** | 20-day HV from yfinance | Approximation only |
-| **Bid / Ask** | `null` | No market data |
-| **Open Interest** | `0` | Not available off-hours |
-| **data_source** | `ibkr_closed` | Amber banner shown in UI |
-
-> **Rule of thumb:** Off-hours analysis gives you real direction/theta estimates for setup planning.
-> Always re-analyze during market hours before recording a paper trade — live greeks are required.
+**Bull Put Spread** (sell_put direction):
+- SELL put at delta ~0.30 (short leg, collects premium)
+- BUY put at delta ~0.15 (protection, lower strike)
+- Max Profit = net credit × 100
+- Max Loss = (width - net credit) × 100
+- Breakeven = short strike - net credit
 
 ---
 
-## Four Directions
+## Quality Gates
 
-| Direction | Market View | Gate Track | Strike Zone | DTE Sweet Spot |
-|-----------|------------|------------|-------------|----------------|
-| buy_call | Strongly Bullish | A | 8-20% ITM below underlying (delta ~0.68) | 45-90 days |
-| sell_call | Neutral to Bearish | A | ATM ±6% | 21-45 days |
-| buy_put | Strongly Bearish | B | 8-20% ITM above underlying (delta ~-0.68) | 45-90 days |
-| sell_put | Neutral to Bullish | B | ATM ±6% (below price) | 21-45 days |
+Each analysis runs 9+ gates. Every gate is PASS / WARN / FAIL.
 
----
+| Gate | What It Checks | Buyer | Seller |
+|------|---------------|-------|--------|
+| **IV Rank** | Is IV cheap or expensive? | IVR < 30% = pass | IVR > 50% = pass |
+| **HV/IV Ratio** | Options fairly priced vs realized vol? | IV/HV < 1.5 | IV/HV > 1.0 |
+| **Theta Burn** | Will theta erode gains? | < 5% per 7 days | N/A (theta helps sellers) |
+| **DTE Selection** | Expiry in sweet spot? | 45-90 DTE | 21-45 DTE |
+| **Event Calendar** | Earnings/FOMC near expiry? | Earnings > 21d | Earnings > 21d |
+| **Liquidity** | Enough OI and volume? | OI > 100, tight spread | OI > 100, tight spread |
+| **Market Regime** | SPY above 200 SMA? | SPY bullish = pass | Varies by direction |
+| **Pivot Confirm** | Stock above VCP pivot? | N/A for ETFs | N/A for ETFs |
+| **Position Sizing** | Risk ≤ 1% of account? | lots ≥ 1 | max_loss < account % |
 
-## STA Integration
+**ETF-specific adjustments** (applied after gate evaluation):
+- OI=0 promoted to pass (confirmed IBKR platform limitation for ETFs)
+- sell_call market regime downgraded to non-blocking (sector weakness overrides SPY trend)
+- sell_put max_loss re-evaluated using actual spread width (not naked put math)
+- DTE 21-45 promoted to pass for seller directions (ETF sweet spot)
 
-OptionsIQ integrates with [STA (Swing Trade Analyzer)](http://localhost:5001) — a separate project.
-
-**When STA is online:**
-- Swing Data section shows **STA Live** badge
-- Entry price, stop loss, target, ADX, VCP pattern, R:R auto-filled
-- Direction locked to signal (BUY → only buy_call / sell_put available)
-
-**When STA is offline:**
-- Manual mode — enter stop, target, entry directly
-- All analysis still works — just uses your manual inputs
-
-**STA endpoints used (read-only):**
-
-| Data | STA Endpoint |
-|------|-------------|
-| Entry, stop, target, R:R | `/api/sr/{ticker}` → `suggestedEntry/Stop/Target`, `riskReward` |
-| ADX, last close | `/api/sr/{ticker}` → `meta.adx.adx`, `/api/stock/{ticker}` → `currentPrice` |
-| VCP pattern | `/api/patterns/{ticker}` → `patterns.vcp` |
-| Earnings | `/api/earnings/{ticker}` → `days_until` |
-| FOMC days | `/api/context/SPY` → `cycles.cards[FOMC].raw_value` |
-| SPY above 200 SMA | Computed from yfinance (not in STA) |
+**Verdict:**
+- **GO** (green) — all blocking gates pass
+- **CAUTION** (amber) — some warns, no blocking fails
+- **BLOCKED** (red) — any blocking gate fails
 
 ---
 
-## Paper Trading
+## Market Hours Behavior
 
-When gates pass and you want to record a paper trade:
-
-1. From the results page, click **Record Paper Trade** on your preferred strategy
-2. Trade is stored in `backend/data/iv_store.db`
-3. Check all trades at `GET /api/options/paper-trades` — includes mark-to-market P&L
-4. P&L updates with each analyze call for that ticker
-
-> Paper trading uses the exact same live data path as analysis. No mock data, no delayed prices.
+| Session | Hours (ET) | Data Source | Notes |
+|---------|-----------|-------------|-------|
+| Regular | 9:30am-4:00pm | `ibkr_live` | Full live greeks, bid/ask, all gates active |
+| After-hours | 4pm-9:30am | `ibkr_closed` | BS-estimated greeks (HV proxy), no bid/ask |
+| Weekend | All day | `ibkr_closed` | Setup review only — re-analyze at market open |
 
 ---
 
-## Backend API (key endpoints)
+## Sector Rotation (STA-Powered)
+
+The sector scanner uses STA's relative strength data to classify ETFs into quadrants:
+
+| Quadrant | RS Trend | Momentum | Action |
+|----------|----------|----------|--------|
+| **Leading** | RS > 100, rising | Positive | buy_call |
+| **Improving** | RS < 100, rising | Turning positive | buy_call |
+| **Weakening** | RS > 100, falling | Turning negative | WAIT (no trade) |
+| **Lagging** | RS < 98, falling < -0.5 | Negative | bear_call_spread |
+
+**Broad Selloff Detection**: When >50% of sectors are Weakening/Lagging AND SPY is below 200 SMA, a BROAD SELLOFF banner appears.
+
+**IVR-Driven Direction**: When IVR > 50%, scanner suggests sell_put (premium selling has edge). When IVR < 30%, suggests buy_call (cheap premium).
+
+---
+
+## Backend API
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/api/health` | System health + IBKR connection status |
-| POST | `/api/options/analyze` | Main analysis — returns gates + strategies |
+| POST | `/api/options/analyze` | Main analysis — gates + strategies + verdict |
 | GET | `/api/options/chain/{ticker}` | Debug — raw chain data |
 | GET | `/api/options/ivr/{ticker}` | Debug — IV rank data |
+| GET | `/api/sectors/scan` | L1: All ETFs with quadrant + direction |
+| GET | `/api/sectors/analyze/{ticker}` | L2: Single ETF + IV/OI overlay |
 | GET | `/api/integrate/sta-fetch/{ticker}` | Fetch swing data from STA |
 | POST | `/api/options/paper-trade` | Record a paper trade |
 | GET | `/api/options/paper-trades` | List paper trades + P&L |
@@ -311,96 +297,145 @@ Full contracts: `docs/stable/API_CONTRACTS.md`
 
 ```
 options-iq/
-├── start.sh                    # Start backend + frontend
-├── stop.sh                     # Stop all processes
-├── CLAUDE_CONTEXT.md           # Claude AI session guide (not for humans)
+├── start.sh / stop.sh           # Start/stop all services
+├── CLAUDE_CONTEXT.md             # AI session guide
+├── README.md                     # This file
 │
 ├── backend/
-│   ├── app.py                  # Flask routes (558 lines, target ≤150)
-│   ├── constants.py            # All thresholds and config
-│   ├── ib_worker.py            # Single IBKR thread — owns IB() instance
-│   ├── ibkr_provider.py        # IBKR options chain fetch
-│   ├── data_service.py         # Provider cascade + SQLite cache + circuit breaker
-│   ├── yfinance_provider.py    # Fallback data provider
-│   ├── bs_calculator.py        # Black-Scholes greeks
-│   ├── gate_engine.py          # Gate math (frozen — verified correct)
-│   ├── strategy_ranker.py      # Top-3 strategy selection (frozen)
-│   ├── pnl_calculator.py       # P&L scenarios (frozen)
-│   ├── iv_store.py             # IV history storage (frozen)
-│   ├── .env                    # Your config (gitignored)
-│   ├── .env.example            # Template
-│   └── data/                  # SQLite databases
-│       ├── chain_cache.db      # 2-min options chain cache
-│       └── iv_store.db         # IV history + paper trades
+│   ├── app.py                    # Flask routes (320 lines — thin wrappers)
+│   ├── analyze_service.py        # Business logic (604 lines — Day 24 extraction)
+│   ├── constants.py              # All thresholds and config (single source of truth)
+│   ├── gate_engine.py            # Gate calculations (frozen, verified)
+│   ├── strategy_ranker.py        # Spread builder + ranking
+│   ├── pnl_calculator.py         # P&L scenarios (frozen)
+│   ├── bs_calculator.py          # Black-Scholes greeks
+│   ├── iv_store.py               # IV history + paper trades (SQLite)
+│   ├── data_service.py           # Provider cascade + cache
+│   ├── ib_worker.py              # Single IBKR thread
+│   ├── ibkr_provider.py          # IBKR options chain fetch (readonly)
+│   ├── alpaca_provider.py        # Alpaca REST fallback
+│   ├── yfinance_provider.py      # Emergency fallback
+│   ├── sector_scan_service.py    # STA consumer + sector rotation logic
+│   ├── tests/                    # 27 tests (pytest)
+│   │   ├── test_bs_calculator.py       # Black-Scholes greeks validation
+│   │   ├── test_spread_math.py         # Spread max_loss/profit/breakeven
+│   │   ├── test_direction_routing.py   # Direction normalization + strategy routing
+│   │   ├── test_gate_engine_etf.py     # ETF gate pass/warn/fail
+│   │   └── test_etf_gate_postprocess.py # ETF post-processing adjustments
+│   └── data/                     # SQLite databases (gitignored)
 │
-├── frontend/
-│   └── src/
-│       ├── App.jsx             # Main app, state management
-│       ├── hooks/
-│       │   └── useOptionsData.js  # API calls
-│       └── components/
-│           ├── MasterVerdict.jsx    # GO/PAUSE/BLOCK hero
-│           ├── GatesGrid.jsx        # 9 gates display
-│           ├── TopThreeCards.jsx    # Strategy recommendations
-│           ├── SwingImportStrip.jsx # STA import + manual entry
-│           ├── DirectionSelector.jsx
-│           ├── PnLTable.jsx
-│           ├── BehavioralChecks.jsx
-│           └── Header.jsx
+├── frontend/src/
+│   ├── App.jsx                   # Signal Board layout
+│   ├── index.css                 # All styles
+│   ├── hooks/
+│   │   ├── useOptionsData.js     # Analysis API calls
+│   │   └── useSectorData.js      # Sector scan API calls
+│   └── components/
+│       ├── RegimeBar.jsx         # SPY regime status bar
+│       ├── ETFCard.jsx           # Scanner card per ETF
+│       ├── DirectionSelector.jsx # 4-direction picker
+│       ├── MasterVerdict.jsx     # GO/CAUTION/BLOCKED hero
+│       ├── GatesGrid.jsx         # Gate results display
+│       ├── TopThreeCards.jsx     # Strategy recommendations
+│       ├── ExecutionCard.jsx     # IBKR Client Portal trade guide
+│       ├── PnLTable.jsx          # P&L scenarios table
+│       └── PaperTradeBanner.jsx  # Paper trade recording
 │
 └── docs/
-    ├── stable/
-    │   ├── GOLDEN_RULES.md         # Code + process rules
-    │   ├── ROADMAP.md              # Phase progress
-    │   ├── API_CONTRACTS.md        # Endpoint specs
-    │   └── CONCURRENCY_ARCHITECTURE.md  # Threading design
-    ├── versioned/
-    │   └── KNOWN_ISSUES_DAY*.md   # Issue tracking by session
-    └── status/
-        └── PROJECT_STATUS_DAY*_SHORT.md  # Session summaries
+    ├── stable/                   # Persistent docs
+    │   ├── GOLDEN_RULES.md
+    │   ├── ROADMAP.md
+    │   ├── API_CONTRACTS.md
+    │   └── MASTER_AUDIT_FRAMEWORK.md
+    ├── versioned/                # Per-session issue tracking
+    │   └── KNOWN_ISSUES_DAY*.md
+    ├── status/                   # Per-session summaries
+    │   └── PROJECT_STATUS_DAY*_SHORT.md
+    └── Research/                 # Research docs
+        ├── Sector_Rotation_ETF_Module_Day11.md
+        └── Sector_Bear_Market_Day19.md
 ```
+
+---
+
+## Testing
+
+```bash
+cd backend
+./venv/bin/python -m pytest tests/ -v
+```
+
+27 tests covering:
+- **Black-Scholes greeks** — delta ranges (ATM/ITM/OTM), theta/vega signs, invalid inputs
+- **Spread math** — bear call + bull put: max_loss, max_profit, breakeven correctness
+- **Direction routing** — normalization (bear_call_spread → sell_call), all 4 directions route correctly
+- **Gate engine (ETF)** — IVR pass/fail thresholds, DTE ranges, verdict logic
+- **ETF gate post-processing** — OI=0 promotion, max_loss spread recalc, regime non-blocking, DTE seller promotion
+
+All tests run without IBKR — pure mock data, <1 second total.
+
+---
+
+## Data Fields: Live vs Computed
+
+### From IB Gateway (market hours)
+| Field | Source |
+|-------|--------|
+| Underlying price, Bid/Ask, Last | `reqMktData` |
+| Delta, Gamma, Theta, Vega, IV | `reqMktData` → `modelGreeks` |
+| Available strikes/expiries | `reqSecDefOptParams` (cached 4h) |
+| IV history (for IVR) | `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` |
+
+### Computed by OptionsIQ
+| Field | Formula |
+|-------|---------|
+| IV Rank (IVR) | `(current_iv - 52w_low) / (52w_high - 52w_low) × 100` |
+| HV/IV Ratio | 20-day realized vol / current IV |
+| Theta Burn % | `abs(theta × hold_days) / premium × 100` |
+| Max Pain Strike | Minimize aggregate writer pain across OI |
+| P&L Scenarios | Black-Scholes at each price target |
+| SPY above 200 SMA | STA priceHistory or yfinance |
 
 ---
 
 ## Known Limitations
 
-| Limitation | Impact | Status |
-|-----------|--------|--------|
-| Market closed → no bid/ask/OI | Liquidity gate fails (expected) — greeks estimated via BS | Fixed: delta/theta are real off-hours (v0.6) |
-| Deep ITM large-cap options sparse | NVDA buy_call may get only 2 contracts | Broad retry mitigates; verify during market hours |
-| app.py 558 lines | Business logic not independently testable | Refactor to analyze_service.py planned |
-| No market hours screening for candidates | Manual ticker selection only | Use TradingView screener + STA signals |
-
----
-
-## Development Notes
-
-**Frozen files** — do not modify the math in these:
-- `gate_engine.py` — gate calculations are verified correct
-- `strategy_ranker.py` — ranking math verified correct
-- `pnl_calculator.py` — P&L scenarios verified correct
-- `iv_store.py` — IV storage logic verified correct
-
-**Adding a new gate threshold:** Add to `constants.py` first, then import. Never hardcode numbers in gate_engine or app.py.
-
-**Adding a new route:** Keep app.py as routes-only. Business logic goes in `analyze_service.py` (when created).
-
-**Testing IBKR connectivity:**
-```bash
-curl http://localhost:5051/api/health
-# "ibkr_connected": true = IB Gateway live
-# "ibkr_connected": false = check IB Gateway is running on port 4001
-```
+| Limitation | Impact | Workaround |
+|-----------|--------|-----------|
+| OI always 0 for ETFs | Liquidity gate can't use OI | Confirmed IBKR platform limitation; auto-promoted to pass when spread is tight |
+| QQQ chain returns ITM strikes for sell_put | Wrong strike window | KI-067: clear struct_cache and retry |
+| No individual stocks | ETF-only mode since v0.15.0 | By design — focused on sector rotation |
+| Credit spread "riskless combination" error | Can't place limit order in Client Portal | Use TWS desktop or market order |
+| Off-hours: no bid/ask/OI | Liquidity gate fails | Re-analyze during market hours before trading |
 
 ---
 
 ## Version History
 
-| Version | What Changed |
-|---------|-------------|
-| v0.5 | IBWorker heartbeat, STA field mapping fixed, market regime fix, direction locking SELL |
-| v0.6 | Market hours detection — BS greeks when closed, `ibkr_closed` tier, amber banner |
-| v0.4 | Queue poisoning fix, RequestTimeout, legacy CB removed, frontend bugs |
-| v0.3 | IBWorker, DataService, direction-aware chain fetch, live IBKR confirmed |
-| v0.2 | Frontend redesign — two-panel layout, verdict hero |
-| v0.1 | Scaffold — project structure, docs, codex files |
+| Version | Day | Highlights |
+|---------|-----|-----------|
+| v0.16.1 | 24 | Structural cleanup: analyze_service.py extraction (app.py 965→320), 27 tests, ExecutionCard visual guide |
+| v0.16.0 | 23 | First GO signals (XLF, XLV bear_call_spread). bull_put_spread built. 6 bugs fixed. |
+| v0.15.1 | 22 | Live smoke test + 5 ETF gate fixes |
+| v0.15.0 | 21 | ETF-Only Pivot. Signal Board UI. 16-ETF universe enforced. All 4 directions tested. |
+| v0.14.1 | 20 | ETF liquidity gate BLOCK→WARN, narrow-chain fallback |
+| v0.14.0 | 19 | Sector bear market strategies. Lagging→bear_call_spread. Broad selloff detection. |
+| v0.13.1 | 17 | First full audit (8 categories). KI-060 SPY gate fix. |
+| v0.13.0 | 16 | L2 live test passed (6/7 ETFs). SPY regime from STA. |
+| v0.12.0 | 15 | Sector L2 pipeline fixed. Behavioral audit (21 claims). |
+| v0.11.0 | 14 | Sector rotation frontend. Tab switcher. |
+| v0.10.0 | 13 | Sector rotation backend. Multi-LLM research audit. |
+| v0.9.2 | 12 | System hardening. gate_engine Rule 3. SQLite WAL. |
+| v0.9 | 10 | Alpaca provider. OI fix. MarketData.app tested. |
+| v0.8 | 9 | Live greeks confirmed. bear_call_spread working. |
+| v0.7 | 7 | All 4 direction strategies. reqMktData fix. |
+| v0.6 | 6 | Market hours detection. BS greeks when closed. |
+| v0.5 | 5 | IBWorker heartbeat. STA mapping. Direction locking. |
+| v0.3 | 3 | Data layer complete. Live IBKR confirmed. |
+| v0.1 | 1 | Project scaffold. |
+
+---
+
+## License
+
+Personal project — not open source.
