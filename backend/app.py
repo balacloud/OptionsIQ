@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import requests as _requests
@@ -21,6 +20,7 @@ from mock_provider import MockProvider
 from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
 from yfinance_provider import YFinanceProvider
+from analyze_service import analyze_etf, get_live_price, _extract_iv_data
 
 VERSION = "2.0"
 load_dotenv(Path(__file__).resolve().with_name(".env"))
@@ -60,353 +60,6 @@ data_svc = DataService(
 )
 
 
-# ─── Shared helpers ───────────────────────────────────────────────────────────
-
-def _get_live_price(ticker: str) -> float:
-    """Get underlying price via IBWorker (if connected) or yfinance fallback."""
-    if _ib_worker.is_connected() and _ib_worker.provider:
-        try:
-            return _ib_worker.submit(_ib_worker.provider.get_underlying_price, ticker, timeout=10.0)
-        except Exception as exc:
-            logger.warning("IBWorker get_underlying_price failed for %s: %s", ticker, exc)
-    try:
-        return _yf_provider.get_underlying_price(ticker)
-    except Exception as exc:
-        logger.warning("yfinance get_underlying_price failed for %s: %s", ticker, exc)
-        return 0.0
-
-
-def _chain_field_stats(chain: dict) -> dict:
-    contracts = chain.get("contracts", []) or []
-    total = len(contracts)
-    if total == 0:
-        return {"contracts": 0, "core_complete_pct": 0.0, "greeks_complete_pct": 0.0, "quote_complete_pct": 0.0}
-
-    def _ok_num(v):
-        return isinstance(v, (int, float)) and v == v and v >= 0
-
-    core_complete = greeks_complete = quote_complete = 0
-    for c in contracts:
-        if all(c.get(k) is not None for k in ("expiry", "dte", "right", "strike")):
-            core_complete += 1
-        if all(_ok_num(c.get(k)) for k in ("delta", "gamma", "vega")):
-            greeks_complete += 1
-        if all(_ok_num(c.get(k)) for k in ("bid", "ask")):
-            quote_complete += 1
-
-    return {
-        "contracts": total,
-        "core_complete_pct": round((core_complete / total) * 100, 1),
-        "greeks_complete_pct": round((greeks_complete / total) * 100, 1),
-        "quote_complete_pct": round((quote_complete / total) * 100, 1),
-    }
-
-
-def _direction_track(direction: str) -> str:
-    return "A" if direction in {"buy_call", "sell_call"} else "B"
-
-
-def _f(v, default):
-    """Parse a float from payload — treats empty string / None as missing."""
-    try:
-        return float(v) if v not in (None, "", "null") else default
-    except (TypeError, ValueError):
-        return default
-
-
-def _i(v, default):
-    try:
-        return int(float(v)) if v not in (None, "", "null") else default
-    except (TypeError, ValueError):
-        return default
-
-
-# Module-level SPY regime cache (shared across analyze calls within same process)
-_spy_regime_cache = {"data": None, "ts": 0}
-_SPY_REGIME_TTL = 120  # 2 min — same as chain cache
-
-
-def _fetch_spy_regime():
-    """Fetch real SPY regime from STA, with 2-min cache. Never fabricate."""
-    import time
-    now = time.monotonic()
-    if _spy_regime_cache["data"] and (now - _spy_regime_cache["ts"]) < _SPY_REGIME_TTL:
-        return _spy_regime_cache["data"]
-    regime = _spy_regime()  # from sector_scan_service
-    _spy_regime_cache["data"] = regime
-    _spy_regime_cache["ts"] = now
-    return regime
-
-
-def _spy_above_200(payload):
-    """Get spy_above_200sma: from payload if present, else fetch real data from STA."""
-    v = payload.get("spy_above_200sma")
-    if v is not None:
-        return bool(v)
-    regime = _fetch_spy_regime()
-    val = regime.get("spy_above_200sma")
-    if val is not None:
-        return bool(val)
-    return True  # last resort if STA is offline — safe default, don't penalize
-
-
-def _spy_5d_return(payload):
-    """Get spy_5day_return: from payload if present, else fetch real data from STA.
-    Gate engine thresholds are in decimal form (e.g., -0.02 = -2%).
-    STA and sta_fetch both return percentage form (e.g., -1.23 = -1.23%).
-    We normalize to decimal here so gate comparisons are correct.
-    """
-    v = payload.get("spy_5day_return")
-    if v is not None:
-        pct = _f(v, 0.0)
-        # Normalize: if abs > 0.5, likely percentage form → convert to decimal
-        # (A 50%+ weekly SPY move is impossible in practice)
-        return pct / 100.0 if abs(pct) > 0.5 else pct
-    regime = _fetch_spy_regime()
-    val = regime.get("spy_5day_return")
-    if val is not None:
-        return float(val) / 100.0  # STA returns percentage, gate expects decimal
-    return 0.0  # last resort if STA is offline
-
-
-def _etf_payload(underlying: float, spy_above: bool, spy_5d: float | None,
-                 fomc_days_away: int | None, ivr_pct: float | None) -> dict:
-    """
-    ETF-only payload for gate_engine. No swing fields — no fabrication.
-    Only real, observable values: SPY regime, IVR-based DTE hint, position params.
-    """
-    return {
-        "signal": None,          # no directional lock for ETFs
-        "spy_above_200sma": spy_above,
-        "spy_5day_return": spy_5d,
-        "fomc_days_away": fomc_days_away if fomc_days_away is not None else 999,
-        "ivr_pct_hint": ivr_pct,  # passed through for DTE gate
-        # No swing fields below — all None (Rule 11: null not fake)
-        "entry_pullback": None,
-        "entry_momentum": None,
-        "stop_loss": None,
-        "target1": None,
-        "target2": None,
-        "risk_reward": None,
-        "vcp_pivot": None,
-        "vcp_confidence": None,
-        "adx": None,
-        "last_close": None,
-        "s1_support": None,
-        "earnings_days_away": None,  # ETFs have no earnings
-        "pattern": None,
-        "source": "etf_regime",
-        "swing_data_quality": "etf",
-        "synthesized_fields": [],
-    }
-
-
-def _merge_swing(payload: dict, underlying: float) -> dict:
-    # Golden Rule 14: Never fabricate plausible values for missing swing fields.
-    # vcp_confidence and adx default to None — gate_engine's `or 0.0` pattern handles
-    # None safely: float(None or 0.0) = 0.0, causing DTE gate to fail correctly.
-    synthesized = []
-    vcp_confidence = _f(payload.get("vcp_confidence"), None)
-    adx = _f(payload.get("adx"), None)
-    if vcp_confidence is None:
-        synthesized.append("vcp_confidence")
-    if adx is None:
-        synthesized.append("adx")
-    # Price targets can be synthesized safely — they don't affect gate pass/fail.
-    # Signal quality fields MUST NOT be fabricated (they drive DTE gate logic).
-    return {
-        "signal": payload.get("swing_signal") or "BUY",
-        "entry_pullback": _f(payload.get("entry_pullback"), underlying * 0.97),
-        "entry_momentum": _f(payload.get("entry_momentum"), underlying),
-        "stop_loss": _f(payload.get("stop_loss"), underlying * 0.92),
-        "target1": _f(payload.get("target1"), underlying * 1.08),
-        "target2": _f(payload.get("target2"), underlying * 1.15),
-        "risk_reward": _f(payload.get("risk_reward"), 3.0),
-        "vcp_pivot": _f(payload.get("vcp_pivot"), underlying * 1.01),
-        "vcp_confidence": vcp_confidence,
-        "adx": adx,
-        "last_close": _f(payload.get("last_close"), underlying),
-        "s1_support": _f(payload.get("s1_support"), underlying * 0.95),
-        "spy_above_200sma": _spy_above_200(payload),
-        "spy_5day_return": _spy_5d_return(payload),
-        # ETFs have no earnings — pass None so gate treats as 999d (no event).
-        # Stocks: use payload value; default None (not 45) — KI-008: fabricated default caused false FAILs.
-        "earnings_days_away": _i(payload.get("earnings_days_away"), None),
-        "pattern": payload.get("pattern") or "VCP",
-        "source": payload.get("source") or "manual",
-        "swing_data_quality": "partial" if synthesized else "full",
-        "synthesized_fields": synthesized,
-    }
-
-
-def _extract_iv_data(ticker: str, chain: dict, provider, ib_worker=None) -> dict:
-    # Golden Rule #2: IBKRProvider must ONLY be called from the ib-worker thread.
-    # Use ib_worker.submit() for any IBKR calls, never call provider methods directly.
-    contracts = chain.get("contracts", [])
-    ivs = [float(c.get("impliedVol", 0.0)) * 100 for c in contracts if c.get("impliedVol") is not None]
-    current_iv = round(sum(ivs) / len(ivs), 2) if ivs else None
-
-    def _call_provider(fn, *args):
-        """Route IBKR calls through ib_worker; call other providers directly."""
-        if ib_worker is not None and provider is ib_worker.provider:
-            try:
-                return ib_worker.submit(fn, *args, timeout=20.0)
-            except (TimeoutError, Exception) as exc:
-                app.logger.warning("IBWorker IV call timed out/failed: %s", exc)
-                return None if fn.__name__ == "get_historical_iv" else []
-        return fn(*args)
-
-    history = iv_store.get_iv_history(ticker, 252)
-    if len(history) < 30:
-        hist_source = _call_provider(provider.get_historical_iv, ticker, 365)
-        if hist_source:
-            source_label = "mock" if provider is mock_provider else "ibkr"
-            for h in hist_source:
-                iv_store.store_iv(ticker, h["date"], h["iv"], source=source_label)
-            history = iv_store.get_iv_history(ticker, 252)
-
-    ivr_pct = iv_store.compute_ivr_pct(ticker, current_iv) if current_iv is not None else None
-    bars = _call_provider(provider.get_ohlcv_daily, ticker, 60) if hasattr(provider, "get_ohlcv_daily") else []
-    if bars:
-        iv_store.store_ohlcv(ticker, bars)
-    hv_20 = iv_store.compute_hv(ticker, 20)
-    ratio = round((current_iv / hv_20), 2) if (current_iv and hv_20) else None
-
-    return {
-        "current_iv": current_iv,
-        "ivr_pct": ivr_pct,
-        "hv_20": hv_20,
-        "hv_iv_ratio": ratio,
-        "history_days": len(history),
-        "fallback_used": ivr_pct is None,
-    }
-
-
-def _put_call_ratio(chain: dict) -> float:
-    puts = sum(float(c.get("openInterest", 0.0)) for c in chain.get("contracts", []) if c.get("right") == "P")
-    calls = sum(float(c.get("openInterest", 0.0)) for c in chain.get("contracts", []) if c.get("right") == "C")
-    if calls <= 0:
-        return 0.0
-    return round(puts / calls, 2)
-
-
-def _max_pain(chain: dict) -> float:
-    strikes = sorted({float(c["strike"]) for c in chain.get("contracts", [])})
-    if not strikes:
-        return 0.0
-
-    def pain(px: float) -> float:
-        total = 0.0
-        for c in chain.get("contracts", []):
-            oi = float(c.get("openInterest", 0.0))
-            strike = float(c["strike"])
-            if c.get("right") == "C":
-                total += max(0.0, px - strike) * oi
-            else:
-                total += max(0.0, strike - px) * oi
-        return total
-
-    return round(min(strikes, key=pain), 2)
-
-
-def _behavioral_checks(gates: list[dict], swing_data: dict, is_etf: bool = False) -> list[dict]:
-    if is_etf:
-        return _etf_behavioral_checks(gates, swing_data)
-    # Stock mode: legacy swing-based checks
-    pivot_gate = next((g for g in gates if g["id"] == "pivot_confirm"), None)
-    pivot_msg = (
-        f"Stock has not closed above VCP pivot ${swing_data['vcp_pivot']:.2f}."
-        if pivot_gate and pivot_gate["status"] == "fail"
-        else f"Pivot confirmed above ${swing_data['vcp_pivot']:.2f}."
-    )
-    timing_conflict = (swing_data.get("entry_momentum") or 0) > (swing_data.get("entry_pullback") or 0) * 1.1
-    return [
-        {
-            "id": "gate8_block",
-            "type": "hard_block" if pivot_gate and pivot_gate["status"] == "fail" else "info",
-            "label": "Hard Block: Pivot Not Confirmed",
-            "message": pivot_msg,
-        },
-        {
-            "id": "entry_timing",
-            "type": "warning" if timing_conflict else "info",
-            "label": "Entry Timing Conflict",
-            "message": "Momentum entry is stretched above pullback anchor." if timing_conflict else "Entry timing is within normal pullback/momentum bounds.",
-        },
-        {
-            "id": "vrp_headwind",
-            "type": "warning",
-            "label": "VRP Headwind",
-            "message": "Vol risk premium can hurt outcomes even when directional view is correct.",
-        },
-        {
-            "id": "lottery_bias",
-            "type": "warning",
-            "label": "Lottery Bias",
-            "message": "Pick Δ0.68, not highest % return.",
-        },
-    ]
-
-
-def _etf_behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
-    """ETF-specific advisory checks. No swing/VCP fields — pure regime and IV context."""
-    checks = []
-
-    # IVR context
-    ivr = swing_data.get("ivr_pct_hint")
-    if ivr is not None:
-        if ivr > 70:
-            checks.append({
-                "id": "ivr_context",
-                "type": "warning",
-                "label": "IV Rank Elevated",
-                "message": f"IVR {ivr:.0f}% — premium is expensive. Selling strategies have edge; buying options carries IV crush risk.",
-            })
-        elif ivr < 20:
-            checks.append({
-                "id": "ivr_context",
-                "type": "info",
-                "label": "IV Rank Low",
-                "message": f"IVR {ivr:.0f}% — premium is cheap. Buying calls/puts has favorable IV entry; credit spreads collect thin premium.",
-            })
-        else:
-            checks.append({
-                "id": "ivr_context",
-                "type": "info",
-                "label": "IV Rank Neutral",
-                "message": f"IVR {ivr:.0f}% — neutral premium environment. Both buying and selling are viable.",
-            })
-
-    # SPY regime context
-    spy_5d = swing_data.get("spy_5day_return")
-    spy_above = swing_data.get("spy_above_200sma")
-    if spy_5d is not None:
-        if spy_5d < -0.03:
-            checks.append({
-                "id": "spy_regime",
-                "type": "warning",
-                "label": "Market Pullback",
-                "message": f"SPY down {spy_5d:.1%} this week. Bullish calls carry elevated gap risk — consider spreads for defined risk.",
-            })
-        elif not spy_above:
-            checks.append({
-                "id": "spy_regime",
-                "type": "warning",
-                "label": "SPY Below 200-Day SMA",
-                "message": "Broad market in downtrend. Reduce bullish ETF exposure; bear directions have structural tailwind.",
-            })
-
-    # Delta reminder
-    checks.append({
-        "id": "delta_discipline",
-        "type": "info",
-        "label": "Delta Discipline",
-        "message": "For buying: target Δ0.68 (ITM) for high probability. For selling: target Δ0.30 short leg for optimal credit-to-risk.",
-    })
-
-    return checks
-
-
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -439,248 +92,17 @@ def analyze_options():
             "etf_universe": sorted(ETF_TICKERS),
         }), 400
     try:
-        return _analyze_options_inner(payload, ticker)
+        result = analyze_etf(
+            payload, ticker,
+            data_svc=data_svc, ib_worker=_ib_worker,
+            yf_provider=_yf_provider, mock_provider=mock_provider,
+            strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
+            iv_store=iv_store, spy_regime_fn=_spy_regime,
+        )
+        return jsonify(result)
     except Exception as exc:
         logger.exception("analyze_options unhandled error for %s", ticker)
         return jsonify({"error": str(exc)}), 500
-
-
-def _analyze_options_inner(payload: dict, ticker: str):
-    from constants import DIRECTION_TO_CHAIN_DIR
-    _raw_dir = str(payload.get("direction", "buy_call")).strip()
-    # Normalize display directions (e.g. bear_call_spread) to core directions (sell_call)
-    direction = DIRECTION_TO_CHAIN_DIR.get(_raw_dir, _raw_dir)
-    account_size = float(payload.get("account_size", os.getenv("ACCOUNT_SIZE", 25000)))
-    risk_pct = float(payload.get("risk_pct", os.getenv("RISK_PCT", 0.01)))
-    planned_hold_days = int(payload.get("planned_hold_days", os.getenv("PLANNED_HOLD_DAYS", 7)))
-    chain_profile = str(payload.get("chain_profile", os.getenv("CHAIN_PROFILE_DEFAULT", "smart"))).strip().lower()
-    if chain_profile not in {"smart", "full"}:
-        chain_profile = "smart"
-    try:
-        min_dte = int(payload.get("min_dte", os.getenv("IBKR_MIN_DTE", "14")))
-    except Exception:
-        min_dte = int(os.getenv("IBKR_MIN_DTE", "14"))
-
-    underlying_hint = payload.get("last_close")
-    try:
-        underlying_hint = float(underlying_hint) if underlying_hint is not None else None
-    except Exception:
-        underlying_hint = None
-    target_price = payload.get("entry_momentum", underlying_hint)
-    try:
-        target_price = float(target_price) if target_price is not None else None
-    except Exception:
-        target_price = underlying_hint
-
-    chain, data_source = data_svc.get_chain(
-        ticker,
-        profile=chain_profile,
-        direction=direction,
-        underlying_hint=underlying_hint,
-        target_price=target_price,
-        min_dte=min_dte,
-    )
-    underlying = float(chain.get("underlying_price") or data_svc.get_underlying_price(ticker, hint=underlying_hint))
-    connected = data_source not in {"mock"}
-    quality = data_svc.quality_label(data_source, chain)
-
-    iv_provider = mock_provider
-    if data_source in {"ibkr_live", "ibkr_closed", "ibkr_cache", "ibkr_stale"} and _ib_worker.provider is not None:
-        iv_provider = _ib_worker.provider
-    elif data_source == "yfinance":
-        iv_provider = _yf_provider
-
-    is_etf = ticker in ETF_TICKERS
-    ivr_data = _extract_iv_data(ticker, chain, iv_provider, ib_worker=_ib_worker)
-
-    # ETFs: build clean payload from real observable data only — no swing fabrication.
-    # Stocks: legacy _merge_swing path (still works for any future stock use).
-    if is_etf:
-        spy_regime = _fetch_spy_regime()
-        _spy_above_raw = spy_regime.get("spy_above_200sma")
-        swing_data = _etf_payload(
-            underlying=underlying,
-            spy_above=bool(_spy_above_raw) if _spy_above_raw is not None else True,
-            spy_5d=float(spy_regime["spy_5day_return"] / 100.0) if spy_regime.get("spy_5day_return") is not None else None,
-            fomc_days_away=_i(payload.get("fomc_days_away"), None),
-            ivr_pct=ivr_data.get("ivr_pct"),
-        )
-    else:
-        swing_data = _merge_swing(payload, underlying)
-
-    engine = GateEngine(planned_hold_days=planned_hold_days)
-    # Use IVR-based DTE hint for ETF strategy preview
-    preview_dte = int(ivr_data.get("ivr_pct") or 0)
-    if is_etf:
-        from constants import (IVR_BUYER_PASS_PCT, ETF_DTE_LOW_IVR, ETF_DTE_HIGH_IVR,
-                               ETF_DTE_DEFAULT, ETF_DTE_SELLER_PASS_MIN, ETF_DTE_SELLER_PASS_MAX,
-                               SPREAD_WARN_PCT, SPREAD_FAIL_PCT)
-        ivr_hint = ivr_data.get("ivr_pct")
-        preview_dte = ETF_DTE_LOW_IVR if (ivr_hint is None or ivr_hint < IVR_BUYER_PASS_PCT) else ETF_DTE_HIGH_IVR
-    else:
-        preview_dte = 45
-    strategies_preview = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=preview_dte)
-    selected = strategies_preview[0] if strategies_preview else {}
-
-    # gate_engine ETF tracks handle None values internally.
-    # For stock (legacy) tracks: coerce None→0.0 before passing (gate math calls float() directly).
-    ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
-
-    gate_payload = {
-        **ivr_for_gates,
-        **swing_data,
-        "underlying_price": underlying,
-        "selected_expiry_dte": int(selected.get("dte", 21)),
-        "strike": float(selected.get("strike", underlying)),
-        "premium": float(selected.get("premium", 0.0)),
-        "theta_per_day": float(selected.get("theta_per_day", -0.2)),
-        "open_interest": float(selected.get("open_interest", 0.0)),
-        "volume": float(selected.get("volume", 0.0)),
-        "bid": selected.get("bid"),
-        "ask": selected.get("ask"),
-        "max_gain_per_lot": float(selected.get("max_gain_per_lot") or -1.0),
-        "account_size": account_size,
-        "risk_pct": risk_pct,
-        "fomc_days_away": _i(payload.get("fomc_days_away"), 999),
-        "lots": _f(payload.get("lots"), 1.0),
-    }
-
-    gates = engine.run(direction, gate_payload, etf_mode=is_etf)
-
-    # ETF liquidity post-process: OTM legs on ETFs have naturally wider spreads than stocks.
-    # Keep spread as a WARN (not block) so strategies surface — trader must still verify before entry.
-    if is_etf:
-        for g in gates:
-            if g["id"] == "liquidity" and g["status"] == "fail":
-                if "Spread too wide" in str(g.get("reason", "")):
-                    g["status"] = "warn"
-                    g["blocking"] = False
-                    g["reason"] = "ETF OTM spread wider than stock threshold — review bid-ask before entry"
-
-    # ETF sell_call market-regime post-process: sector-relative shorts are valid in bull markets.
-    # The sector scan already verified RS + momentum weakness (Lagging thresholds) before
-    # suggesting bear_call_spread. SPY bull trend does NOT invalidate a sector-lagging short.
-    # Downgrade BLOCK → WARN so bear_call_spreads on Lagging ETFs surface for trader review.
-    if is_etf and direction == "sell_call":
-        for g in gates:
-            if g["id"] == "market_regime_seller" and g.get("blocking"):
-                g["blocking"] = False
-                g["reason"] = (g.get("reason", "") +
-                               " — sector RS/momentum weakness overrides SPY trend for ETF relative shorts")
-
-    if is_etf and direction == "sell_put":
-        # ETF sell_put max_loss post-process: gate computes (strike - premium) × 100 (naked put math).
-        # For bull_put_spread the real max loss is (width - net_credit) × 100 — much smaller.
-        # Re-evaluate using the actual spread max_loss_per_lot from strategies_preview.
-        top_strat = strategies_preview[0] if strategies_preview else {}
-        if top_strat.get("strategy_type") == "bull_put_spread":
-            from constants import MAX_LOSS_WARN_PCT, MAX_LOSS_FAIL_PCT
-            actual_max_loss = float(top_strat.get("max_loss_per_lot") or 0.0)
-            total_risk = actual_max_loss  # 1 lot
-            for g in gates:
-                if g["id"] == "max_loss":
-                    if total_risk <= account_size * MAX_LOSS_WARN_PCT:
-                        g["status"] = "pass"
-                        g["reason"] = "Spread max loss within 10% of account (defined-risk spread)"
-                        g["blocking"] = False
-                    elif total_risk <= account_size * MAX_LOSS_FAIL_PCT:
-                        g["status"] = "warn"
-                        g["reason"] = "Spread max loss elevated vs account (still defined risk)"
-                        g["blocking"] = False
-                    else:
-                        g["status"] = "fail"
-                        g["reason"] = "Spread max loss exceeds 20% of account — reduce lot size"
-                        g["blocking"] = True
-                    g["computed_value"] = f"${total_risk:.2f} (spread max loss)"
-
-    if is_etf:
-        # ETF DTE seller post-process: ETF sweet spot is 21-45 DTE, not the stock 14-21.
-        # Gate was designed for single-stock gamma risk windows; ETF defined-risk spreads
-        # standard is 21-45 DTE (tastylive / CBOE ETF options research).
-        if direction in ("sell_call", "sell_put"):
-            dte_val = int(gate_payload.get("selected_expiry_dte", 0) or 0)
-            for g in gates:
-                if g["id"] == "dte_seller" and g["status"] == "warn":
-                    if ETF_DTE_SELLER_PASS_MIN <= dte_val <= ETF_DTE_SELLER_PASS_MAX:
-                        g["status"] = "pass"
-                        g["reason"] = f"ETF seller sweet spot — DTE {dte_val} within 21-45 range"
-
-        # ETF liquidity post-process: OI=0 is a confirmed IBKR platform limitation for all ETFs
-        # (KI-035, Day 12). SPDR ETFs trade hundreds of thousands of contracts daily; IBKR's
-        # reqMktData simply does not return OI. The stock MIN_PREMIUM_DOLLAR=$2 is also wrong
-        # for ETF spreads where $0.40 credit × 100 = $40/contract is viable.
-        # Promote to pass when: (a) OI=0 platform limit present, (b) spread < hard-fail threshold.
-        from constants import ETF_MIN_PREMIUM_DOLLAR
-        for g in gates:
-            if g["id"] == "liquidity" and g["status"] == "warn":
-                computed = g.get("computed_value", "")
-                oi_absent = "OI unavailable" in computed
-                # Parse spread and premium from computed_value
-                # Format: "OI 0 [OI unavailable], Vol/OI N/A, Prem X.XX, Spread Y.YY%"
-                spread_val, prem_val = None, None
-                try:
-                    if "Spread " in computed:
-                        spread_val = float(computed.split("Spread ")[1].rstrip("%"))
-                    if "Prem " in computed:
-                        prem_val = float(computed.split("Prem ")[1].split(",")[0].split(" ")[0])
-                except (ValueError, IndexError):
-                    pass
-                spread_ok = (spread_val is None) or (spread_val < SPREAD_FAIL_PCT)
-                # For spread directions (sell_call→bear_call_spread, sell_put→bull_put_spread),
-                # per-leg premium is irrelevant — net credit ($44+/contract) is what matters.
-                # Premium check only applies to naked single-leg strategies.
-                is_spread_direction = direction in ("sell_call", "sell_put")
-                prem_ok = is_spread_direction or (prem_val is None) or (prem_val >= ETF_MIN_PREMIUM_DOLLAR)
-                if oi_absent and spread_ok and prem_ok:
-                    g["status"] = "pass"
-                    g["reason"] = ("OI unavailable (IBKR platform limitation — confirmed Day 12). "
-                                   "ETF has confirmed market liquidity; bid-ask spread acceptable.")
-
-    verdict = engine.build_verdict(gates)
-    recommended_dte = gate_payload.get("recommended_dte")
-
-    strategies = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=recommended_dte)
-    gate8 = next((g for g in gates if g["id"] == "pivot_confirm"), {"status": "pass"})
-    pnl_table = pnl_calculator.calculate(
-        current_price=underlying,
-        swing_data=swing_data,
-        strategies=strategies,
-        account_size=account_size,
-        risk_pct=risk_pct,
-        gate8_passed=gate8["status"] == "pass",
-    )
-
-    response = {
-        "ticker": ticker,
-        "direction": direction,
-        "is_etf": is_etf,
-        "track": _direction_track(direction),
-        "underlying_price": round(underlying, 2),
-        "data_source": data_source,
-        "chain_profile": chain_profile,
-        "min_dte": min_dte,
-        "quality": quality,
-        "chain_quality": _chain_field_stats(chain),
-        "ibkr_connected": connected,
-        "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
-        "swing_data": swing_data,
-        "verdict": verdict,
-        "gates": gates,
-        "behavioral_checks": _behavioral_checks(gates, swing_data, is_etf=is_etf),
-        "top_strategies": strategies,
-        "pnl_table": pnl_table,
-        "ivr_data": ivr_data,
-        "put_call_ratio": _put_call_ratio(chain),
-        "max_pain_strike": _max_pain(chain),
-        "recommended_dte": recommended_dte,
-        # ETFs: no directional lock — direction comes from regime, not swing signal.
-        # Stocks: lock directions opposing the swing signal.
-        "direction_locked": [] if is_etf else (
-            ["sell_call", "buy_put"] if swing_data.get("signal") == "BUY" else
-            ["buy_call", "sell_put"] if swing_data.get("signal") == "SELL" else []
-        ),
-    }
-    return jsonify(response)
 
 
 @app.get("/api/options/chain/<ticker>")
@@ -716,7 +138,8 @@ def ivr_debug(ticker: str):
         if data_source in {"ibkr_live", "ibkr_cache", "ibkr_stale"} and _ib_worker.provider
         else _yf_provider
     )
-    data = _extract_iv_data(symbol, chain, iv_provider, ib_worker=_ib_worker)
+    data = _extract_iv_data(symbol, chain, iv_provider,
+                            ib_worker=_ib_worker, mock_provider=mock_provider, iv_store=iv_store)
     return jsonify(data)
 
 
@@ -736,7 +159,7 @@ def list_paper_trades():
     trades = iv_store.list_paper_trades()
     out = []
     for t in trades:
-        underlying = _get_live_price(t["ticker"])
+        underlying = get_live_price(t["ticker"], ib_worker=_ib_worker, yf_provider=_yf_provider)
         if t["direction"] == "sell_put":
             pnl = (float(t["premium"]) - max(0.0, float(t["strike"]) - underlying)) * 100 * float(t["lots"])
         else:
@@ -792,27 +215,22 @@ def sta_fetch(ticker: str):
             "message": f"STA not reachable at {STA_BASE_URL} — use Manual mode",
         })
 
-    # STA /api/sr/<ticker> uses camelCase top-level fields — no nested "levels" object
     meta = sr.get("meta", {})
     vcp = patterns.get("patterns", {}).get("vcp", {})
 
-    # FOMC days from context cycles cards
     fomc_days = None
     for card in context.get("cycles", {}).get("cards", []):
         if "FOMC" in card.get("name", ""):
             fomc_days = card.get("raw_value")
             break
 
-    # swing_signal from trade viability
     viable = meta.get("tradeViability", {}).get("viable", "")
     swing_signal = "BUY" if viable == "YES" else "SELL"
 
-    # nearest support level (last = closest to price)
     support_levels = sr.get("support", [])
     s1_support = support_levels[-1] if support_levels else None
 
-    # SPY regime — compute from yfinance (not in STA API)
-    spy_above_200sma = True  # safe default: don't penalize if we can't fetch
+    spy_above_200sma = True
     spy_5day_return = None
     try:
         import yfinance as yf
@@ -825,7 +243,7 @@ def sta_fetch(ticker: str):
                 five_day_ago = float(spy_hist["Close"].iloc[-6])
                 spy_5day_return = round((latest_close - five_day_ago) / five_day_ago * 100, 2)
     except Exception as exc:
-        logger.warning("SPY regime fetch failed: %s", exc)  # keep defaults — don't fail sta_fetch
+        logger.warning("SPY regime fetch failed: %s", exc)
 
     return jsonify({
         "status": "ok",
@@ -836,7 +254,7 @@ def sta_fetch(ticker: str):
         "entry_momentum": stock.get("currentPrice"),
         "stop_loss": sr.get("suggestedStop"),
         "target1": sr.get("suggestedTarget"),
-        "target2": None,  # STA provides single target
+        "target2": None,
         "risk_reward": sr.get("riskReward"),
         "vcp_pivot": vcp.get("pivot_price"),
         "vcp_confidence": vcp.get("confidence"),
@@ -896,69 +314,6 @@ def sectors_analyze(ticker: str):
     if result.get("error"):
         return jsonify(result), 503
     return jsonify(result)
-
-
-# ---------------------------------------------------------------------------
-# Order staging (Day 23) — transmit=False, staged in TWS blotter only
-# ---------------------------------------------------------------------------
-STAGEABLE_SPREAD_TYPES = {"bear_call_spread", "bull_put_spread"}
-
-@app.post("/api/orders/stage")
-def stage_order():
-    """
-    Stage a vertical spread in TWS order blotter (transmit=False).
-    The order is NOT sent to market — user must click Transmit in TWS to execute.
-
-    Required JSON fields:
-      ticker, strategy_type, right, expiry, short_strike, long_strike, net_credit
-    Optional: qty (default 1)
-    """
-    body = request.get_json(silent=True) or {}
-
-    ticker = str(body.get("ticker", "")).upper().strip()
-    strategy_type = str(body.get("strategy_type", "")).strip()
-    right = str(body.get("right", "")).strip().upper()
-    expiry = str(body.get("expiry", "")).strip()
-    qty = int(body.get("qty", 1))
-
-    try:
-        short_strike = float(body.get("short_strike", 0))
-        long_strike  = float(body.get("long_strike",  0))
-        net_credit   = float(body.get("net_credit",   0))
-    except (TypeError, ValueError) as e:
-        return jsonify({"error": f"Invalid numeric field: {e}"}), 400
-
-    # Validation
-    if not ticker:
-        return jsonify({"error": "ticker required"}), 400
-    if ticker not in ETF_TICKERS:
-        return jsonify({"error": f"{ticker} not in ETF universe", "etf_universe": list(ETF_TICKERS)}), 400
-    if strategy_type not in STAGEABLE_SPREAD_TYPES:
-        return jsonify({"error": f"strategy_type must be one of {sorted(STAGEABLE_SPREAD_TYPES)}"}), 400
-    if right not in ("C", "P"):
-        return jsonify({"error": "right must be C or P"}), 400
-    if not expiry or len(expiry) < 8:
-        return jsonify({"error": "expiry required (ISO date, e.g. 2026-05-15)"}), 400
-    if short_strike <= 0 or long_strike <= 0:
-        return jsonify({"error": "short_strike and long_strike must be positive"}), 400
-    if net_credit <= 0:
-        return jsonify({"error": "net_credit must be positive"}), 400
-    if qty < 1 or qty > 50:
-        return jsonify({"error": "qty must be 1-50"}), 400
-
-    if _ib_worker is None or not _ib_worker.is_connected():
-        return jsonify({"error": "IB Gateway not connected — start IB Gateway and reconnect"}), 503
-
-    try:
-        result = _ib_worker.submit(
-            _ib_worker.provider.stage_spread_order,
-            ticker, right, expiry, short_strike, long_strike, net_credit, qty,
-            timeout=30,
-        )
-        return jsonify(result)
-    except Exception as exc:
-        logger.error("stage_order: %s %s/%s failed — %s", ticker, short_strike, long_strike, exc)
-        return jsonify({"error": str(exc)}), 500
 
 
 if __name__ == "__main__":

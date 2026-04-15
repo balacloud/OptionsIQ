@@ -1354,3 +1354,148 @@ tr:last-child td { border-bottom: none; }
     height: 50vh;
   }
 }
+
+/* ─── Execution Card (visual guide) ─── */
+.execution-card {
+  border: 1px solid var(--accent);
+  background: var(--card-bg);
+}
+.execution-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.execution-badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.execution-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.execution-ticker {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.execution-expiry {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.execution-legs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+.exec-leg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.exec-leg-sell {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.exec-leg-buy {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.exec-leg-action {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.exec-leg-strike {
+  font-size: 0.95rem;
+}
+.exec-leg-plus {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.exec-credit {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.execution-metrics {
+  display: flex;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 8px 0;
+}
+.exec-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.exec-metric-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.exec-metric-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.execution-steps {
+  margin: 12px 0 8px;
+}
+.exec-steps-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.exec-steps-list {
+  margin: 0;
+  padding-left: 20px;
+}
+.exec-step {
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.7;
+}
+.execution-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.exec-copy-btn {
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.exec-copy-btn:hover {
+  background: var(--border);
+}
+.exec-footer-note {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-style: italic;
+}

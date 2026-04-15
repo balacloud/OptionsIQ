@@ -10,6 +10,7 @@ import DirectionSelector from './components/DirectionSelector';
 import MasterVerdict from './components/MasterVerdict';
 import GatesGrid from './components/GatesGrid';
 import TopThreeCards from './components/TopThreeCards';
+import ExecutionCard from './components/ExecutionCard';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
 import useOptionsData from './hooks/useOptionsData';
@@ -111,6 +112,11 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
         strategies={data?.top_strategies || []}
         gates={data?.gates || []}
         pnlTable={data?.pnl_table}
+      />
+      <ExecutionCard
+        ticker={ticker}
+        strategy={data?.top_strategies?.[0]}
+        verdict={data?.verdict}
       />
       <PnLTable
         table={data?.pnl_table}
