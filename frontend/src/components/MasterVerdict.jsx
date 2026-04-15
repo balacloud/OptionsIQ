@@ -21,8 +21,8 @@ export default function MasterVerdict({ verdict, gates }) {
   const labelMap = { go: 'GO', block: 'BLOCK', pause: 'PAUSE' };
   const label = labelMap[heroClass] || verdict.score_label;
 
-  // Show blocking fail gates inline so user knows exactly what failed
-  const blockingFails = gates.filter((g) => g.status === 'fail' && g.blocking !== false);
+  // Show ALL fail gates inline (blocking and non-blocking) so user sees every red dot explained
+  const blockingFails = gates.filter((g) => g.status === 'fail');
   const warnGates = gates.filter((g) => g.status === 'warn');
 
   return (

@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 22 (April 14, 2026)
-> **Current Version:** v0.15.1
-> **Project Phase:** Live smoke test complete. IVR-tiered directions wired. Gate visibility fixed. Two structural issues blocking GO signal: OI=0 platform limit always warns (KI-069) + sell_put has no defined-risk spread (KI-070). Next: fix verdict logic + bull_put_spread.
+> **Last Updated:** Day 23 (April 15, 2026)
+> **Current Version:** v0.16.0
+> **Project Phase:** First GO signals confirmed (XLF, XLV bear_call_spread). bull_put_spread built. ExecutionCard created but NOT yet wired into App.jsx. Next: wire ExecutionCard + CSS, live test stage_spread_order at market open (KI-071/KI-070).
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY22_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY22.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY23_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY23.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -213,18 +213,18 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY22.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY23.md`
 
 Open (HIGH):
-1. **KI-059: single-stock bear untested** — DEFERRED post ETF-only pivot. Stocks return 400. ETF all 4 directions ✅ Day 21.
+1. **KI-071: ExecutionCard not wired into App.jsx** — component + endpoint built Day 23 but NOT wired in UI. CSS missing. Day 24 P0.
+2. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (MEDIUM):
-2. **KI-069: CAUTION verdict structural issue** — OI=0 platform limitation always fires liquidity warn → verdict never reaches GO. Need ETF-aware verdict or demote OI=0 to `info`.
-3. **KI-068: strategy.type=None for ETF sell_call** — `_rank_sell_call` ETF path doesn't set `type` field. Frontend can't label strategy.
-4. **KI-067: QQQ chain fractional strikes** — lower priority, QQQ now suggests sell_put not sell_call. Test sell_put path.
+3. **KI-070: stage_spread_order not live tested** — readonly=False + stage endpoint built but not verified at market open against TWS.
+4. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
 5. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, data-specific, low impact.
-6. **KI-044: API_CONTRACTS.md stale** — ETF-only fields not documented.
-7. **analyze_service.py missing** — app.py ~680+ lines (KI-001/KI-023)
+6. **KI-044: API_CONTRACTS.md stale** — ETF-only fields + /api/orders/stage not documented.
+7. **KI-001/KI-023: app.py ~750+ lines** — analyze_service.py not yet extracted.
 
 Open (LOW):
 8. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034), fomc_days_away=999 (KI-008), API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
@@ -280,44 +280,44 @@ Resolved (Day 17):
 | Day 20 | Mar 28, 2026 | Sector options pipeline unblocked: ETF liquidity gate BLOCK→WARN (OTM spread too strict), strategy_ranker narrow-chain fallback (135/136 Bear Call for XLK). Session startup protocol fixed across 3 docs (MEMORY.md 3-step→6-step). KI-067 NEW: QQQ chain too narrow for current price. XLK/XLY/XLF all return bear_call_spread strategies. QQQ still blocked. |
 | Day 21 | Apr 9, 2026 | **ETF-Only Pivot (v0.15.0).** 16-ETF universe enforced. Signal Board UI (RegimeBar+Scanner+Analysis Panel). ETF gate tracks (_run_etf_buy_call/put/sell_put). _etf_payload() zero-fabrication. Delta-based spread legs. Price-relative P&L. All 4 directions tested live XLU. 3 bugs fixed: pnl TypeError, IBKR clientId conflict, React STA-offline crash. |
 | Day 22 | Apr 14, 2026 | **Live smoke test + 5 fixes (v0.15.1).** market_regime_seller ETF blocking fixed. Liquidity non-blocking red fixed. spy_above_200sma None→False fixed. IVR scan wiring complete (sell_put when IVR>50%). MasterVerdict gate detail inline. GatesGrid auto-open. KI-068/KI-069 identified: strategy.type=None + CAUTION always (OI=0 platform limit). |
+| Day 23 | Apr 15, 2026 | **First GO signals + ExecutionCard (v0.16.0).** KI-069 fixed (OI=0→pass for ETFs). KI-068 fixed (direction normalization bear_call_spread→sell_call). bull_put_spread built (_rank_sell_put_spread). ETF sell_put max_loss re-evaluated using spread. ETF DTE seller 21-45→pass. PnLTable auto-open. MasterVerdict all fails inline. ExecutionCard.jsx + POST /api/orders/stage + ibkr_provider.stage_spread_order() — NOT yet wired into App.jsx (KI-071). |
 
 ---
 
-## Next Session Priorities (Day 23)
+## Next Session Priorities (Day 24)
 
-### P0 — Fix verdict logic for ETFs (KI-069)
-OI=0 is a confirmed IBKR platform limitation (Day 12). It fires a `warn` that prevents GO verdict.
-For ETFs (XLF, XLV, IWM) with excellent real liquidity, this is misleading. Fix: demote
-OI=0 liquidity warn to `status="info"` in ETF mode so it doesn't downgrade verdict.
-Test: XLF/XLV sell_call should become GO after fix (all other gates pass/warn with non-blocking).
+### P0 — Wire ExecutionCard into App.jsx + add CSS (KI-071)
+`ExecutionCard.jsx` and `POST /api/orders/stage` are built but the component is NOT yet
+imported or rendered in `AnalysisPanel`. Add import, render after `<TopThreeCards>` (before PnLTable),
+and add CSS classes: `.execution-card`, `.execution-legs`, `.exec-leg-sell/.exec-leg-buy`,
+`.exec-leg-action`, `.exec-leg-strike`, `.exec-credit`, `.execution-metrics`, `.exec-metric`,
+`.execution-action`, `.exec-qty-row/.exec-qty-btn/.exec-qty-val`, `.exec-stage-btn`,
+`.exec-staged`, `.exec-error`, `.exec-footer-note`, `.execution-badge`.
 
-### P0 — Fix strategy.type=None for ETF sell_call (KI-068)
-`top_strategies` from XLF/XLV sell_call have `type: None`. Find where bear_call_spread
-sets the `type` field in `strategy_ranker.py` and verify it works in ETF mode.
+### P0 — Live test stage_spread_order at market open (KI-070)
+At market open, run XLF sell_call analysis → click "Stage in TWS" → verify:
+1. Order #XXXXX appears in TWS order blotter
+2. Status shows "Not Transmitted" (transmit=False)
+3. No order is sent to market automatically
+4. User clicks Transmit in TWS → order submits
+Test error path: IB Gateway disconnected → should return 503.
 
-### P1 — bull_put_spread for sell_put direction
-sell_put currently builds naked puts only → always fails `max_loss` gate on any ETF >$50.
-Add `_rank_sell_put_spread()` in `strategy_ranker.py` mirroring bear_call_spread logic:
-short put ATM, long put 5% lower → max_loss = spread width × 100, typically $300-500.
-This makes sell_put viable for any account size and is the correct defined-risk structure.
+### P1 — QQQ sell_put chain ITM issue (KI-067)
+QQQ sell_put direction returns put strikes above current price → ITM → wrong for credit spread.
+Check struct_cache entry for QQQ, verify sell_put strike window (should be 0-8% below underlying),
+clear cache and re-test.
 
-### P2 — Verify GO signal end-to-end after P0+P1 fixes
-After verdict fix + bull_put_spread: run XLF sell_call + XLI sell_put → should show GO (green)
-with 3 strategies + P&L table. This validates the full pipeline is unblocked.
-
-### P3 — API_CONTRACTS.md ETF-Only Fields Sync (KI-044)
-Document: `is_etf`, `direction_locked: []`, `etf_universe` 400 response, `_etf_payload` fields.
+### P2 — API_CONTRACTS.md sync (KI-044)
+Document `POST /api/orders/stage` request/response. Add ETF-only fields.
 
 ### Deferred
 - Phase 7c: Weakening → sell_call for cyclical sectors
-- ETF-specific gate overrides (ETF_MIN_PREMIUM, ETF_SPREAD_BLOCK constants — defined but unused)
 - analyze_service.py extraction (KI-001/023)
 - Phase C/E/F audit items
 - Phase 8: Options Explainer "Learn" tab
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY20.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY20_SHORT.md` — Day 20 summary
+- `docs/versioned/KNOWN_ISSUES_DAY23.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY23_SHORT.md` — Day 23 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
 - `docs/Research/Sector_Bear_Market_Day19.md` — Phase 7b research + thresholds
-- `docs/Research/Sector_Behavioral_Audit_Day15.md` — 21-claim sector audit

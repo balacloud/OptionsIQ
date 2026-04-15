@@ -898,5 +898,68 @@ def sectors_analyze(ticker: str):
     return jsonify(result)
 
 
+# ---------------------------------------------------------------------------
+# Order staging (Day 23) — transmit=False, staged in TWS blotter only
+# ---------------------------------------------------------------------------
+STAGEABLE_SPREAD_TYPES = {"bear_call_spread", "bull_put_spread"}
+
+@app.post("/api/orders/stage")
+def stage_order():
+    """
+    Stage a vertical spread in TWS order blotter (transmit=False).
+    The order is NOT sent to market — user must click Transmit in TWS to execute.
+
+    Required JSON fields:
+      ticker, strategy_type, right, expiry, short_strike, long_strike, net_credit
+    Optional: qty (default 1)
+    """
+    body = request.get_json(silent=True) or {}
+
+    ticker = str(body.get("ticker", "")).upper().strip()
+    strategy_type = str(body.get("strategy_type", "")).strip()
+    right = str(body.get("right", "")).strip().upper()
+    expiry = str(body.get("expiry", "")).strip()
+    qty = int(body.get("qty", 1))
+
+    try:
+        short_strike = float(body.get("short_strike", 0))
+        long_strike  = float(body.get("long_strike",  0))
+        net_credit   = float(body.get("net_credit",   0))
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid numeric field: {e}"}), 400
+
+    # Validation
+    if not ticker:
+        return jsonify({"error": "ticker required"}), 400
+    if ticker not in ETF_TICKERS:
+        return jsonify({"error": f"{ticker} not in ETF universe", "etf_universe": list(ETF_TICKERS)}), 400
+    if strategy_type not in STAGEABLE_SPREAD_TYPES:
+        return jsonify({"error": f"strategy_type must be one of {sorted(STAGEABLE_SPREAD_TYPES)}"}), 400
+    if right not in ("C", "P"):
+        return jsonify({"error": "right must be C or P"}), 400
+    if not expiry or len(expiry) < 8:
+        return jsonify({"error": "expiry required (ISO date, e.g. 2026-05-15)"}), 400
+    if short_strike <= 0 or long_strike <= 0:
+        return jsonify({"error": "short_strike and long_strike must be positive"}), 400
+    if net_credit <= 0:
+        return jsonify({"error": "net_credit must be positive"}), 400
+    if qty < 1 or qty > 50:
+        return jsonify({"error": "qty must be 1-50"}), 400
+
+    if _ib_worker is None or not _ib_worker.is_connected():
+        return jsonify({"error": "IB Gateway not connected — start IB Gateway and reconnect"}), 503
+
+    try:
+        result = _ib_worker.submit(
+            _ib_worker.provider.stage_spread_order,
+            ticker, right, expiry, short_strike, long_strike, net_credit, qty,
+            timeout=30,
+        )
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("stage_order: %s %s/%s failed — %s", ticker, short_strike, long_strike, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5051, debug=False)

@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 22 (April 14, 2026)
-> **Current Version:** v0.15.1
+> **Last Updated:** Day 23 (April 15, 2026)
+> **Current Version:** v0.16.0
 
 ---
 
@@ -129,6 +129,18 @@ Interactive education page — no backend, pure frontend with mock data.
 - [ ] Interactive: stock price slider → P&L update, IVR toggle → gate behavior
 - [ ] Covers: when to buy vs sell premium, IVR connection, theta decay, spread risk capping
 - [ ] Links back to Analyze tab ("this is what OptionsIQ does when you pick buy_call")
+
+## Phase 9 — Order Execution (Day 23, in progress)
+Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
+
+- [x] Research IBKR TWS API: transmit=False safety, BAG contract, ComboLeg structure ✅ Day 23
+- [x] `ibkr_provider.stage_spread_order()` — qualifies legs, builds BAG, placeOrder(transmit=False) ✅ Day 23
+- [x] `POST /api/orders/stage` — validates spread params, calls IBWorker ✅ Day 23
+- [x] `ExecutionCard.jsx` — shows legs, net credit, max profit/loss, Stage button ✅ Day 23
+- [ ] Wire ExecutionCard into App.jsx AnalysisPanel + CSS styles (KI-071) — Day 24 P0
+- [ ] Live test at market open: stage XLF order in TWS blotter (KI-070) — Day 24 P0
+- [ ] Test: qty selector (1-10), success state (order #), error state (IB Gateway offline)
+- [ ] (Future) whatIf commission estimate before staging
 
 ## Post-v1.0 (Backlog)
 - [ ] Real-time chain refresh, P&L history chart, multi-ticker watchlist, CSV export

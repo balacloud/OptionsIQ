@@ -86,7 +86,7 @@ class IBKRProvider:
                 last_exc = None
                 for cid in range(self.client_id, self.client_id + max(1, self.client_id_scan)):
                     try:
-                        self.ib.connect(self.host, self.port, clientId=cid, timeout=2, readonly=True)
+                        self.ib.connect(self.host, self.port, clientId=cid, timeout=2, readonly=False)
                         self.client_id = cid
                         self.ib.reqMarketDataType(self.market_data_type)
                         return
@@ -692,6 +692,90 @@ class IBKRProvider:
             return out
         except Exception as exc:
             raise IBKRNotAvailableError("IB Gateway not available") from exc
+
+    # ─── Order staging (transmit=False — appears in TWS blotter, not sent) ─────
+
+    def stage_spread_order(
+        self,
+        ticker: str,
+        right: str,          # "C" or "P"
+        expiry: str,         # ISO date e.g. "2026-05-15"
+        short_strike: float,
+        long_strike: float,
+        net_credit: float,   # lmtPrice (net credit per share)
+        qty: int = 1,
+    ) -> dict:
+        """
+        Stage a vertical spread in TWS order blotter (transmit=False).
+        The order appears in TWS for user review — NOT sent to market until
+        user manually clicks Transmit in TWS.
+
+        bear_call_spread: SELL short_call + BUY long_call (long_strike > short_strike)
+        bull_put_spread:  SELL short_put  + BUY long_put  (long_strike < short_strike)
+        """
+        from ib_insync import Contract, Option
+        from ib_insync.objects import ComboLeg
+        from ib_insync.order import LimitOrder
+
+        self._ensure_connected()
+        symbol = ticker.upper()
+        expiry_yyyymmdd = expiry.replace("-", "")  # "2026-05-15" → "20260515"
+
+        # Qualify both legs to get conIds
+        short_opt = Option(symbol, expiry_yyyymmdd, float(short_strike), right, "SMART")
+        long_opt  = Option(symbol, expiry_yyyymmdd, float(long_strike),  right, "SMART")
+        qual = self.ib.qualifyContracts(short_opt, long_opt)
+
+        if len(qual) < 2:
+            raise IBKRNotAvailableError(
+                f"Could not qualify both legs for {symbol} {expiry} "
+                f"{short_strike}/{long_strike} {right}"
+            )
+
+        short_q = next((q for q in qual if abs(float(q.strike) - float(short_strike)) < 0.01), None)
+        long_q  = next((q for q in qual if abs(float(q.strike) - float(long_strike))  < 0.01), None)
+
+        if not short_q or not long_q:
+            raise IBKRNotAvailableError("Could not match qualified option contracts to requested strikes")
+
+        # Build BAG (combo) contract
+        bag = Contract()
+        bag.symbol   = symbol
+        bag.secType  = "BAG"
+        bag.currency = "USD"
+        bag.exchange = "SMART"
+
+        sell_leg = ComboLeg()
+        sell_leg.conId    = short_q.conId
+        sell_leg.ratio    = 1
+        sell_leg.action   = "SELL"
+        sell_leg.exchange = "SMART"
+
+        buy_leg = ComboLeg()
+        buy_leg.conId    = long_q.conId
+        buy_leg.ratio    = 1
+        buy_leg.action   = "BUY"
+        buy_leg.exchange = "SMART"
+
+        bag.comboLegs = [sell_leg, buy_leg]
+
+        # Limit order — SELL the spread for net credit; transmit=False prevents auto-send
+        order = LimitOrder("SELL", qty, round(float(net_credit), 2))
+        order.transmit = False
+        order.tif = "DAY"
+        order.account = ""  # use default account
+
+        trade = self.ib.placeOrder(bag, order)
+        self.ib.sleep(0.5)  # allow IB Gateway to acknowledge
+
+        return {
+            "order_id": trade.order.orderId,
+            "status": "staged",
+            "message": (
+                f"Order #{trade.order.orderId} staged in TWS. "
+                "Open TWS → Order Management → review and click Transmit to send."
+            ),
+        }
 
     # ─── OHLCV daily ─────────────────────────────────────────────────────────
 

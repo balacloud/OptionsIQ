@@ -15,7 +15,7 @@ function PnlCell({ value, gated }) {
 }
 
 export default function PnLTable({ table, gateFailed }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => !!(table?.scenarios?.length));
 
   return (
     <div className="collapsible">
