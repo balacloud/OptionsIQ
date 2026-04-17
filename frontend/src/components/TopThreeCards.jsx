@@ -6,6 +6,35 @@ function fmt(v) {
   return isNaN(n) ? v : n.toFixed(2);
 }
 
+function plainEnglishSummary(strategy) {
+  if (!strategy) return null;
+  const { strategy_type, short_strike, long_strike, strike, breakeven, expiry_display, max_gain_per_lot } = strategy;
+  const credit = max_gain_per_lot != null ? (max_gain_per_lot / 100).toFixed(2) : null;
+  const be = breakeven != null ? Number(breakeven).toFixed(2) : null;
+  const ss = short_strike ?? strike;
+  const ls = long_strike;
+
+  if (strategy_type === 'bear_call_spread' && ss != null && ls != null && credit) {
+    return `SELL the $${fmt(ss)} call + BUY the $${fmt(ls)} call for $${credit}/share credit. You keep the credit if ETF stays below $${fmt(ss)}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  if (strategy_type === 'bull_put_spread' && ss != null && ls != null && credit) {
+    return `SELL the $${fmt(ss)} put + BUY the $${fmt(ls)} put for $${credit}/share credit. You keep the credit if ETF stays above $${fmt(ss)}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  if ((strategy_type === 'itm_call' || strategy_type === 'atm_call') && be) {
+    return `Buy this call. You profit if ETF rises above $${be}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  if ((strategy_type === 'itm_put' || strategy_type === 'atm_put') && be) {
+    return `Buy this put. You profit if ETF drops below $${be}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  if (strategy_type === 'sell_call' && ss && credit) {
+    return `Sell the $${fmt(ss)} call, collect $${credit}/share. You keep the credit if ETF stays below $${fmt(ss)}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  if (strategy_type === 'sell_put' && ss && credit) {
+    return `Sell the $${fmt(ss)} put, collect $${credit}/share. You keep the credit if ETF stays above $${fmt(ss)}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  return null;
+}
+
 function fmtPnl(v) {
   if (v == null || v === '--') return null;
   const n = Number(v);
@@ -81,6 +110,13 @@ export default function TopThreeCards({ strategies, gates, pnlTable }) {
 
           <div className="strategy-rank1-badge"># 1 — Top Recommendation</div>
           <div className="strategy-rank1-title">{rank1.label}</div>
+
+          {/* Plain English summary */}
+          {plainEnglishSummary(rank1) && (
+            <div className="strategy-plain-english">
+              {plainEnglishSummary(rank1)}
+            </div>
+          )}
 
           <div className="strategy-details">
             <div className="strategy-detail-item">

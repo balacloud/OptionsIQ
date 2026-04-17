@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 24 (April 15, 2026)
-> **Current Version:** v0.16.1
-> **Project Phase:** Structural cleanup complete. analyze_service.py extracted (app.py 965→320). 27 tests passing. ExecutionCard redesigned as visual IBKR Client Portal guide. TWS staging code reverted. Next: QQQ chain fix (KI-067), frontend smoke test, API_CONTRACTS sync.
+> **Last Updated:** Day 25 (April 17, 2026)
+> **Current Version:** v0.17.0
+> **Project Phase:** Phase 8 UX overhaul complete. Beginner-friendly frontend: DirectionGuide, TradeExplainer, GateExplainer, LearnTab (4 lessons). Zero backend changes. MASTER_AUDIT_FRAMEWORK v1.2 (Category 9 added). Next: market-open smoke test of new UX components (KI-076), KI-067 QQQ fix, KI-044 API docs sync.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY24_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY24.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY25_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY25.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -63,7 +63,7 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | Area | Status | Notes |
 |------|--------|-------|
 | Backend | ETF-Only Pivot complete (Day 21) | _etf_payload(), ETF gate tracks, ETF-only enforcement (400 for non-ETFs), delta-based spread legs. All 4 directions tested live on XLU. |
-| Frontend | Signal Board live (Day 21) | RegimeBar + Scanner + Analysis Panel. ScannerRow, L2InlineDetail, AnalysisPanel. React STA-offline crash fixed. |
+| Frontend | Phase 8 UX overhaul complete (Day 25) | DirectionGuide + TradeExplainer + GateExplainer + LearnTab (4 lessons). MasterVerdict/TopThreeCards enhanced. Build clean (0 warnings). Needs market-open smoke test (KI-076). |
 | IBKR connection | WORKING | Live confirmed: AMD, XLE, XLK, IWM, TQQQ greeks live. account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
@@ -217,44 +217,30 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY23.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY25.md`
 
 Open (HIGH):
-1. **KI-071: ExecutionCard not wired into App.jsx** — component + endpoint built Day 23 but NOT wired in UI. CSS missing. Day 24 P0.
-2. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
+1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (MEDIUM):
-3. **KI-070: stage_spread_order not live tested** — readonly=False + stage endpoint built but not verified at market open against TWS.
-4. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
-5. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, data-specific, low impact.
-6. **KI-044: API_CONTRACTS.md stale** — ETF-only fields + /api/orders/stage not documented.
-7. **KI-001/KI-023: app.py ~750+ lines** — analyze_service.py not yet extracted.
+2. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
+3. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, data-specific, low impact.
+4. **KI-044: API_CONTRACTS.md stale** — ETF-only fields not documented. POST /api/orders/stage removed.
+5. **KI-075: GateExplainer GATE_KB may drift from gate_engine.py** — plain English answers hardcoded, need sync audit. Day 25 new.
+6. **KI-076: TradeExplainer isBearish() not live-tested all 4 directions** — needs market-open smoke test. Day 25 new. Day 26 P0.
 
 Open (LOW):
-8. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034), fomc_days_away=999 (KI-008), API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
+7. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034), fomc_days_away=999 (KI-008)
+8. API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
+9. deepcopy() overhead (KI-072), struct_cache unbounded (KI-073), no startup health check (KI-074)
+10. **KI-077: DirectionGuide sell_put "capped" label may mislead if naked recommended** — Day 25 new.
 
-Open (LOW):
-7. Alpaca OI/volume missing (KI-038)
-8. OHLCV temporal gap validation (KI-034)
-9. fomc_days_away defaults to 999 (KI-008 — changed from 30 in ETF pivot)
-10. API URL hardcoded (KI-013/KI-050)
-11. account_size hardcoded in PaperTradeBanner.jsx (KI-049)
+Resolved (Day 25): 0 — pure frontend UX session
 
-Resolved (Day 21):
-- pnl_calculator TypeError: float() on None (ETF swing fields) — price-relative scenarios fix
-- IBKR clientId conflict — old process blocking new connection after restart
-- React crash when STA offline — missing `.catch(() => {})` on useEffect
-
-Resolved (Day 19):
-- KI-062: ETF earnings_days_away fabricated 45 → None (Rule 11 fix)
-- KI-063: SPY regime fabricated defaults → real STA data + unit mismatch fix
-- KI-065: Deep Dive bear_call_spread → buy_call frontend mapping fix
-- KI-066: DTE Selection gate false FAIL for ETFs → auto-pass
-- L2 None→buy_call: SKIP ETFs silently fetched buy_call chain → direction mapping fix
-
-Resolved (Day 17):
-- KI-060: spy_5day_return None → 0.0 silent masking in all 4 gate tracks (HIGH)
-- KI-061: iv_store.py IVR formula verified correct — percentile-based (HIGH)
+Resolved (Day 24):
+- KI-071: ExecutionCard wired + redesigned as visual guide
+- KI-070: stage_spread_order reverted (not live tested → code removed)
+- KI-001/KI-023: analyze_service.py extracted (app.py 965→320)
 
 ---
 
@@ -286,14 +272,18 @@ Resolved (Day 17):
 | Day 22 | Apr 14, 2026 | **Live smoke test + 5 fixes (v0.15.1).** market_regime_seller ETF blocking fixed. Liquidity non-blocking red fixed. spy_above_200sma None→False fixed. IVR scan wiring complete (sell_put when IVR>50%). MasterVerdict gate detail inline. GatesGrid auto-open. KI-068/KI-069 identified: strategy.type=None + CAUTION always (OI=0 platform limit). |
 | Day 23 | Apr 15, 2026 | **First GO signals + ExecutionCard (v0.16.0).** KI-069 fixed (OI=0→pass for ETFs). KI-068 fixed (direction normalization bear_call_spread→sell_call). bull_put_spread built (_rank_sell_put_spread). ETF sell_put max_loss re-evaluated using spread. ETF DTE seller 21-45→pass. PnLTable auto-open. MasterVerdict all fails inline. ExecutionCard.jsx + POST /api/orders/stage + ibkr_provider.stage_spread_order() — NOT yet wired into App.jsx (KI-071). |
 | Day 24 | Apr 15, 2026 | **Structural cleanup (v0.16.1).** analyze_service.py extracted (app.py 965→320 lines, analyze_service 604 lines). TWS staging code reverted (readonly=True, stage_spread_order removed, POST /api/orders/stage removed). 27 tests created (5 files: BS greeks, spread math, direction routing, gate engine, ETF post-processing). ExecutionCard rewritten as IBKR Client Portal visual guide (no API calls). KI-071/KI-070/KI-001 resolved. README.md comprehensively rewritten. |
+| Day 25 | Apr 17, 2026 | **Phase 8 UX Overhaul (v0.17.0).** Research-first: 3 multi-LLM prompts (GPT-4o + Gemini + Perplexity) synthesized before coding. New: DirectionGuide.jsx (educational 2×2 direction cards), TradeExplainer.jsx (percentage-based number line + risk/reward bar + ITM/ATM/OTM zones), GateExplainer.jsx (accordion Q&A, readiness bar, gate meters), LearnTab.jsx (4 interactive lessons: Strikes/Directions/Spreads/Gates). Enhanced: MasterVerdict (plain English subtitle), TopThreeCards (plain English per strategy). App.jsx wired with tab nav (Signal Board / Learn Options). 600 lines new CSS. Build clean (0 warnings, 0 errors). MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. 3 new KIs: KI-075 (GATE_KB drift), KI-076 (isBearish() untested live), KI-077 (sell_put capped label). Zero backend changes. |
 
 ---
 
-## Next Session Priorities (Day 25)
+## Next Session Priorities (Day 26)
 
-### P1 — Frontend smoke test with backend restart
-Restart backend, verify analyze_service.py import works end-to-end.
-Run XLF sell_call → confirm GO verdict + ExecutionCard renders.
+### P0 — Market-open smoke test of new UX components (KI-076)
+When market is open, run live analysis for all 4 directions (XLF or XLE):
+- TradeExplainer: verify profit zone is green on correct side for bear_call_spread + bull_put_spread
+- GateExplainer: verify Q&A answers match actual gate results shown
+- DirectionGuide: verify direction locking (BUY signal → sell_call disabled)
+- LearnTab: click through all 4 lessons, verify slider works, SVGs render
 
 ### P1 — QQQ sell_put chain ITM issue (KI-067)
 QQQ sell_put direction returns put strikes above current price → ITM → wrong for credit spread.
@@ -306,10 +296,10 @@ Remove POST /api/orders/stage (no longer exists). Add ETF-only fields.
 ### Deferred
 - Phase 7c: Weakening → sell_call for cyclical sectors
 - Phase C/E/F audit items
-- Phase 8: Options Explainer "Learn" tab
+- KI-077: sell_put DirectionGuide "capped" label (LOW priority)
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY23.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY23_SHORT.md` — Day 23 summary
-- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
-- `docs/Research/Sector_Bear_Market_Day19.md` — Phase 7b research + thresholds
+- `docs/versioned/KNOWN_ISSUES_DAY25.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY25_SHORT.md` — Day 25 summary
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
+- `docs/Research/UX_Research_Synthesis_Day25.md` — Phase 8 research synthesis

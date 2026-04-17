@@ -21,6 +21,13 @@ export default function MasterVerdict({ verdict, gates }) {
   const labelMap = { go: 'GO', block: 'BLOCK', pause: 'PAUSE' };
   const label = labelMap[heroClass] || verdict.score_label;
 
+  const subtitleMap = {
+    go:    'This trade meets all safety checks. Review the details below before placing.',
+    pause: 'Some conditions are concerning. Read the warnings below — you may want to wait.',
+    block: 'Critical safety check failed. Do NOT place this trade until conditions improve.',
+  };
+  const subtitle = subtitleMap[heroClass];
+
   // Show ALL fail gates inline (blocking and non-blocking) so user sees every red dot explained
   const blockingFails = gates.filter((g) => g.status === 'fail');
   const warnGates = gates.filter((g) => g.status === 'warn');
@@ -29,6 +36,7 @@ export default function MasterVerdict({ verdict, gates }) {
     <div className={`verdict-hero ${heroClass}`}>
       <div className="verdict-label">{label}</div>
       <div className="verdict-headline">{verdict.headline}</div>
+      {subtitle && <div className="verdict-subtitle">{subtitle}</div>}
 
       {total > 0 && (
         <div className="verdict-gate-summary">

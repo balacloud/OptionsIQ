@@ -120,15 +120,22 @@ code-complete but untested. Phase 7 closes this gap across both single-stock and
 - [ ] Research: conditions for selling calls on weakening cyclicals (avoid defensive inflows)
 - [ ] Backtesting: validate sell_call on Weakening ETFs doesn't get squeezed by rotation
 
-## Phase 8 — Options Explainer Page ("Learn" Tab)
+## Phase 8 — Options Explainer Page ("Learn" Tab) ✅ COMPLETE (Day 25)
 Interactive education page — no backend, pure frontend with mock data.
-- [ ] "Learn" tab added to App.jsx (alongside Analyze | Sectors)
-- [ ] 4-panel layout: buy_call, sell_call, buy_put, sell_put with single ticker example
-- [ ] P&L profile charts per direction (mock data)
-- [ ] Strike zone visualization (ITM/ATM/OTM number line)
-- [ ] Interactive: stock price slider → P&L update, IVR toggle → gate behavior
-- [ ] Covers: when to buy vs sell premium, IVR connection, theta decay, spread risk capping
-- [ ] Links back to Analyze tab ("this is what OptionsIQ does when you pick buy_call")
+- [x] "Learn" tab added to App.jsx (alongside Signal Board) ✅ Day 25
+- [x] 4 interactive lessons: Strikes, Directions, Spreads, Gates ✅ Day 25
+- [x] Strike zone visualization (ITM/ATM/OTM number line with price slider) ✅ Day 25
+- [x] P&L profile SVG diagrams per direction (4 directions + spreads payoff) ✅ Day 25
+- [x] Interactive: stock price slider → moneyness update in Strikes lesson ✅ Day 25
+- [x] Covers: when to buy vs sell premium, spreads, gates, strike selection ✅ Day 25
+- [x] Inline TradeExplainer in analysis panel — context-sensitive per trade ✅ Day 25
+- [x] GateExplainer replaces GatesGrid — plain English Q&A accordion ✅ Day 25
+- [x] DirectionGuide replaces DirectionSelector — educational 2×2 cards ✅ Day 25
+- [x] MasterVerdict + TopThreeCards enhanced with plain English descriptions ✅ Day 25
+- [x] Multi-LLM research synthesis: GPT-4o + Gemini + Perplexity ✅ Day 25
+- [ ] Links back to Analyze tab from Learn ("this is what OptionsIQ does when you pick buy_call") — deferred
+- [ ] Live test all 4 directions to verify TradeExplainer zone colors (KI-076) — Day 26 P0
+See: `docs/Research/UX_Research_Synthesis_Day25.md`
 
 ## Phase 9 — Order Execution (Day 23, in progress)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -179,3 +186,4 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 | v0.15.1 | Day 22 | Live smoke test. 5 fixes: market_regime_seller ETF blocking, liquidity non-blocking red, spy_above None→False, IVR scan wiring (sell_put when IVR>50%), gate visibility (MasterVerdict inline detail). KI-068/KI-069 identified: strategy.type=None + CAUTION verdict structural issue (OI=0 platform limit always warns). |
 | v0.16.0 | Day 23 | First GO signals (XLF, XLV bear_call_spread). bull_put_spread. 6 bugs fixed. ExecutionCard + POST /api/orders/stage (later reverted Day 24). |
 | v0.16.1 | Day 24 | Structural cleanup: analyze_service.py extraction (app.py 965→320). 27 tests (5 files). ExecutionCard rewritten as IBKR Client Portal visual guide. TWS staging code reverted. README.md comprehensive rewrite. |
+| v0.17.0 | Day 25 | **Phase 8 UX Overhaul** — beginner-friendly frontend. DirectionGuide, TradeExplainer (number line + risk/reward bar), GateExplainer (plain English Q&A accordion), LearnTab (4 interactive lessons: Strikes/Directions/Spreads/Gates). MasterVerdict + TopThreeCards enhanced with plain English. MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. Zero backend changes. |

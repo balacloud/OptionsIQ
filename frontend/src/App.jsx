@@ -5,14 +5,15 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import RegimeBar from './components/RegimeBar';
-import ETFCard from './components/ETFCard';
-import DirectionSelector from './components/DirectionSelector';
+import DirectionGuide from './components/DirectionGuide';
 import MasterVerdict from './components/MasterVerdict';
-import GatesGrid from './components/GatesGrid';
+import GateExplainer from './components/GateExplainer';
+import TradeExplainer from './components/TradeExplainer';
 import TopThreeCards from './components/TopThreeCards';
 import ExecutionCard from './components/ExecutionCard';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
+import LearnTab from './components/LearnTab';
 import useOptionsData from './hooks/useOptionsData';
 import useSectorData from './hooks/useSectorData';
 import './index.css';
@@ -86,12 +87,11 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
         </div>
       )}
 
+      {/* Direction Guide — replaces bare DirectionSelector */}
       <div className="card card-sm">
-        <div className="section-title">Direction</div>
-        <DirectionSelector
+        <DirectionGuide
           direction={direction}
           setDirection={setDirection}
-          swingSignal={null}
           locked={[]}
         />
         <button
@@ -107,7 +107,20 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
       {error && <div className="error-bar">{error}</div>}
 
       <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
-      <GatesGrid gates={data?.gates || []} />
+
+      {/* Trade Explainer — visual "what is this trade" */}
+      {data?.top_strategies?.[0] && (
+        <TradeExplainer
+          strategy={data.top_strategies[0]}
+          underlyingPrice={data.underlying_price}
+          ticker={ticker}
+          direction={direction}
+        />
+      )}
+
+      {/* Gate Explainer — replaces GatesGrid */}
+      <GateExplainer gates={data?.gates || []} direction={direction} />
+
       <TopThreeCards
         strategies={data?.top_strategies || []}
         gates={data?.gates || []}
@@ -149,6 +162,7 @@ export default function App() {
   const [direction, setDirection]         = useState('buy_call');
   const [filter, setFilter]               = useState('all');
   const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
+  const [activeTab, setActiveTab]         = useState('signals'); // 'signals' | 'learn'
 
   // Auto-trigger sector scan on mount — swallow error, hook stores it in sectorHook.error
   useEffect(() => {
@@ -206,7 +220,26 @@ export default function App() {
       {/* Regime bar — always visible */}
       <RegimeBar sectorData={sectorHook.sectors} />
 
-      <div className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>
+      {/* Top-level tab nav */}
+      <div className="app-tab-nav">
+        <button
+          className={`app-tab-btn ${activeTab === 'signals' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('signals')}
+        >
+          Signal Board
+        </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'learn' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('learn')}
+        >
+          Learn Options
+        </button>
+      </div>
+
+      {/* Learn tab */}
+      {activeTab === 'learn' && <LearnTab />}
+
+      {activeTab !== 'learn' && <div className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>
         {/* ── Left: ETF Scanner ── */}
         <div className="scanner-panel">
           <div className="scanner-header">
@@ -308,7 +341,7 @@ export default function App() {
             <div className="analysis-empty-msg">Select an ETF to run gate analysis</div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -354,8 +387,6 @@ function ScannerRow({ etf, isSelected, onSelect, onL2 }) {
 
 // ── L2 inline detail panel (inside scanner) ──
 function L2InlineDetail({ detail, onClose, onDeepDive }) {
-  const fmt = (v, d = 1) => v == null ? '—' : Number(v).toFixed(d);
-
   return (
     <div className="l2-detail">
       <div className="l2-detail-header">

@@ -1,8 +1,8 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 18 (March 23, 2026)
-> **Version:** v1.1
+> **Last Updated:** Day 25 (April 17, 2026)
+> **Version:** v1.2
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
-> **Time estimate:** 30-45 mins per full audit. Run all 8 categories or specify one by name.
+> **Time estimate:** 30-45 mins per full audit. Run all 9 categories or specify one by name.
 
 ---
 
@@ -380,6 +380,77 @@ Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction cover
 | Day 15 Sector Behavioral | Mar 20, 2026 | 1,3,7 | 21 claims | 0 | 0 after fixes | Sector module specific |
 | Day 16 Quant Spot Check | Mar 20, 2026 | 3,7 | 2 findings | 0 | 1 (KI-059) | IVR adj confirmed, bear untested |
 | Day 17 Full Audit | Mar 22, 2026 | 1-8 | 10 checks | 0 | 2 found+fixed | KI-060 SPY None masking fixed, KI-061 IVR formula verified. Post-fix: 0C/2H remaining (KI-059, KI-044) |
+| Day 25 Category 9 Added | Apr 17, 2026 | 9 | New category | 0 | 0 | Frontend UX Accuracy audit added. Phase 8 UX overhaul introduced hardcoded GATE_KB + isBearish() zone logic — needs sync audit trigger. |
+
+---
+
+---
+
+### Category 9: Frontend UX Accuracy Audit
+**Added:** Day 25 (April 17, 2026)
+**Principle:** R15 (code is truth), R21 (quant filter) — wrong plain English descriptions mislead a beginner into making a wrong trade.
+
+**Why this matters:** The Day 25 UX overhaul added hardcoded knowledge to the frontend — gate Q&A text, profit/loss zone directions, strategy type templates. These can silently drift from backend logic when the backend changes, showing "Profit Zone" where the math says loss.
+
+**When to run:** Whenever gate_engine.py or strategy_ranker.py changes, OR monthly as part of weekly audit rotation.
+
+```
+[ ] TradeExplainer isBearish() classification:
+    Open TradeExplainer.jsx — function isBearish(strategy_type)
+    Should return true ONLY for: bear_call_spread, sell_call, buy_put, itm_put, atm_put
+    For these, profit zone is LEFT of breakeven (price stays below)
+    For all others (bull_put_spread, buy_call, sell_put, itm_call, atm_call): profit zone RIGHT
+    Verify against gate_engine.py gate tracks — bearish gates = tracks where PRICE FALLING = profit
+
+[ ] TradeExplainer getTradeHeadline() templates:
+    For each strategy_type, verify the headline is correct:
+    bear_call_spread → "profit if stays below ${breakeven}" ✓ (short call above)
+    bull_put_spread  → "profit if stays above ${breakeven}" ✓ (short put below)
+    itm_call/atm_call → "profit if rises above ${breakeven}" ✓
+    itm_put/atm_put  → "profit if drops below ${breakeven}" ✓
+    sell_call        → "profit if stays below ${strike}" — note: unlimited risk without spread
+    sell_put         → "profit if stays above ${strike}"
+
+[ ] GateExplainer GATE_KB accuracy:
+    Open GateExplainer.jsx — GATE_KB object
+    For each gate ID, verify the question and pass/fail answers match gate_engine.py logic:
+    ivr_seller → PASS answer should say "IV is expensive" (IVR > 50% for sellers)
+    ivr        → PASS answer should say "IV is cheap" (IVR < 30% for buyers)
+    market_regime_seller → different from market_regime (seller bias = up OR flat = pass)
+    strike_otm → PASS = strike is X% above/below current price (check SELL_CALL_OTM_PASS_PCT)
+    risk_defined → PASS only when spread is present (bear_call_spread, bull_put_spread) — NOT sell_call naked
+
+[ ] GateExplainer category assignment:
+    All gate IDs are assigned to one of: market, pricing, risk
+    No gate shows in wrong category (e.g., market_regime_seller must be in 'market', not 'risk')
+    Gates without GATE_KB entry → fallback renders gate.id + raw reason (no crash)
+
+[ ] DirectionGuide descriptions match actual system behavior:
+    buy_call card: "I think price will RISE significantly" — matches Track A, ITM calls ✓
+    sell_put card: "I think price will STAY or rise slowly" — matches Track B, sell premium ✓
+    sell_call card: "I think price will STAY or drop slowly" — matches Track A, sell premium ✓
+    buy_put card: "I think price will DROP significantly" — matches Track B, ITM puts ✓
+    Risk labels: sell_call and sell_put show "Risk: Spread width (capped)" — correct only when spread built
+    (sell_put can still be naked per strategy_ranker — DirectionGuide says spread, may be misleading for sell_put)
+
+[ ] LearnTab educational content accuracy:
+    LessonStrikes: ITM/ATM/OTM zones flip correctly for puts vs calls (call slider = OTM right, put = OTM left)
+    LessonDirections: 4 P&L SVG lines show correct shapes (call = up-sloping right, put = up-sloping left)
+    LessonSpreads: bear call spread example numbers match typical XLF scenario (credit < spread width)
+    LessonGates: gate descriptions consistent with GATE_KB in GateExplainer (no contradictions)
+
+[ ] Strategy type coverage:
+    GateExplainer and TradeExplainer handle all strategy_types returned by strategy_ranker:
+    bear_call_spread ✓, bull_put_spread ✓, itm_call ✓, atm_call ✓, itm_put ✓, atm_put ✓
+    sell_call ✓, sell_put ✓, naked_put (if returned — does TradeExplainer handle this?)
+    If strategy_type is unknown → TradeExplainer renders gracefully (fallback template, not crash)
+```
+
+**Severity mapping:**
+- `isBearish()` wrong for any type → **CRITICAL** (green shown where loss zone is)
+- `GATE_KB` text contradicts gate_engine logic → **HIGH** (wrong advice for beginner)
+- Category misassignment in GATE_KB → **MEDIUM** (confusing but not dangerous)
+- LearnTab text inconsistency → **LOW** (educational, not trading decision)
 
 ---
 
