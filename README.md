@@ -4,7 +4,7 @@
 
 OptionsIQ pulls live options chain data from Interactive Brokers, runs a multi-gate quality framework, ranks the best strike/expiry combinations for vertical spreads, and gives you a step-by-step guide to place the trade on IBKR Client Portal. It covers all four option directions across 16 sector ETFs, with real-time SPY regime awareness and IV Rank scoring.
 
-> **v0.16.1** — Day 24 (April 15, 2026)
+> **v0.18.0** — Day 26 (April 20, 2026)
 
 ---
 
@@ -376,37 +376,8 @@ All tests run without IBKR — pure mock data, <1 second total.
 
 ---
 
-## Data Fields: Live vs Computed
 
-### From IB Gateway (market hours)
-| Field | Source |
-|-------|--------|
-| Underlying price, Bid/Ask, Last | `reqMktData` |
-| Delta, Gamma, Theta, Vega, IV | `reqMktData` → `modelGreeks` |
-| Available strikes/expiries | `reqSecDefOptParams` (cached 4h) |
-| IV history (for IVR) | `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` |
 
-### Computed by OptionsIQ
-| Field | Formula |
-|-------|---------|
-| IV Rank (IVR) | `(current_iv - 52w_low) / (52w_high - 52w_low) × 100` |
-| HV/IV Ratio | 20-day realized vol / current IV |
-| Theta Burn % | `abs(theta × hold_days) / premium × 100` |
-| Max Pain Strike | Minimize aggregate writer pain across OI |
-| P&L Scenarios | Black-Scholes at each price target |
-| SPY above 200 SMA | STA priceHistory or yfinance |
-
----
-
-## Known Limitations
-
-| Limitation | Impact | Workaround |
-|-----------|--------|-----------|
-| OI always 0 for ETFs | Liquidity gate can't use OI | Confirmed IBKR platform limitation; auto-promoted to pass when spread is tight |
-| QQQ chain returns ITM strikes for sell_put | Wrong strike window | KI-067: clear struct_cache and retry |
-| No individual stocks | ETF-only mode since v0.15.0 | By design — focused on sector rotation |
-| Credit spread "riskless combination" error | Can't place limit order in Client Portal | Use TWS desktop or market order |
-| Off-hours: no bid/ask/OI | Liquidity gate fails | Re-analyze during market hours before trading |
 
 ---
 

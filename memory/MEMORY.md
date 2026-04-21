@@ -107,3 +107,4 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 ## Memory Index
 - [feedback_test_before_plan.md](feedback_test_before_plan.md) — Always test APIs with live calls before making claims or planning
 - [feedback_save_plans.md](feedback_save_plans.md) — Always save plans/synthesis to docs/Research/ as .md files
+- [feedback_readme_update.md](feedback_readme_update.md) — Update README.md version badge at every session close

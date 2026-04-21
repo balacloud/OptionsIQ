@@ -36,8 +36,9 @@ Behavioral rules (do not skip):
 - [ ] `docs/status/PROJECT_STATUS_DAY{N}_SHORT.md` — create new status snapshot
 - [ ] `docs/stable/API_CONTRACTS.md` — if any endpoint added or changed
 - [ ] `docs/stable/GOLDEN_RULES.md` — if new rule or process lesson learned
+- [ ] `README.md` — update version badge (`> **vX.Y.Z** — Day N`)
 - [ ] `memory/MEMORY.md` — update phase, file statuses, priorities
-- [ ] Git commit and push (skip push if no remote configured yet)
+- [ ] Git commit and push
 
 ---
 
