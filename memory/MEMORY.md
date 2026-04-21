@@ -89,7 +89,8 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 4. **P3:** KI-044 — API_CONTRACTS.md full sync
 
 ## Git Status
-- Local repo only — no remote origin configured yet
+- Remote: https://github.com/balacloud/OptionsIQ.git (configured Day 26)
+- All 26 days of commits pushed. Push after every session close.
 
 ## Docs Location
 - `CLAUDE_CONTEXT.md` — root (master reference)
