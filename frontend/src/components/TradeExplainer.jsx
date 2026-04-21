@@ -204,24 +204,17 @@ export default function TradeExplainer({ strategy, underlyingPrice, ticker, dire
         {/* Base axis line */}
         <div className="te-axis" />
 
-        {/* Markers */}
-        {markers.map((m) => {
-          const staggered = markerMap[m.type]?.stagger;
-          return (
-            <div
-              key={m.type}
-              className={`te-marker te-marker-${m.type} ${staggered ? 'te-marker-stagger' : ''}`}
-              style={{ left: `${m.pct}%` }}
-            >
-              <div className="te-marker-line" />
-              <div className="te-marker-dot" />
-              <div className={`te-marker-labels ${staggered ? 'te-labels-below' : ''}`}>
-                <div className="te-marker-label">{m.label}</div>
-                <div className="te-marker-sublabel">{m.sublabel}</div>
-              </div>
-            </div>
-          );
-        })}
+        {/* Markers — tick + dot only, no inline labels to prevent overlap */}
+        {markers.map((m) => (
+          <div
+            key={m.type}
+            className={`te-marker te-marker-${m.type}`}
+            style={{ left: `${m.pct}%` }}
+          >
+            <div className="te-marker-line" />
+            <div className="te-marker-dot" />
+          </div>
+        ))}
 
         {/* Zone labels */}
         <div className="te-zone-labels">
@@ -245,6 +238,19 @@ export default function TradeExplainer({ strategy, underlyingPrice, ticker, dire
             </>
           )}
         </div>
+      </div>
+
+      {/* Strike key — clean table showing all marker labels without overlap */}
+      <div className="te-strike-key">
+        {[...markers].sort((a, b) => a.value - b.value).map((m) => (
+          <div key={m.type} className={`te-sk-item te-sk-${m.type}`}>
+            <div className="te-sk-dot" />
+            <div className="te-sk-text">
+              <div className="te-sk-price">{m.label}</div>
+              <div className="te-sk-sub">{m.sublabel}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Moneyness legend */}

@@ -163,6 +163,20 @@ export default function App() {
   const [filter, setFilter]               = useState('all');
   const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
   const [activeTab, setActiveTab]         = useState('signals'); // 'signals' | 'learn'
+  const [seedIVState, setSeedIVState]     = useState({ loading: false, result: null, error: null });
+
+  const handleSeedIV = async () => {
+    setSeedIVState({ loading: true, result: null, error: null });
+    try {
+      const res = await fetch('/api/admin/seed-iv/all', { method: 'POST' });
+      const data = await res.json();
+      setSeedIVState({ loading: false, result: data, error: null });
+      setTimeout(() => setSeedIVState(s => ({ ...s, result: null })), 6000);
+    } catch (e) {
+      setSeedIVState({ loading: false, result: null, error: 'Seed failed — is backend running?' });
+      setTimeout(() => setSeedIVState(s => ({ ...s, error: null })), 5000);
+    }
+  };
 
   // Auto-trigger sector scan on mount — swallow error, hook stores it in sectorHook.error
   useEffect(() => {
@@ -244,14 +258,32 @@ export default function App() {
         <div className="scanner-panel">
           <div className="scanner-header">
             <div className="scanner-title">ETF Signal Scanner</div>
-            <button
-              className="sector-refresh-btn"
-              onClick={sectorHook.scanSectors}
-              disabled={sectorHook.loading}
-            >
-              {sectorHook.loading ? 'Scanning...' : '↻ Scan'}
-            </button>
+            <div className="scanner-header-actions">
+              <button
+                className="sector-refresh-btn"
+                onClick={sectorHook.scanSectors}
+                disabled={sectorHook.loading}
+              >
+                {sectorHook.loading ? 'Scanning...' : '↻ Scan'}
+              </button>
+              <button
+                className="seed-iv-btn"
+                onClick={handleSeedIV}
+                disabled={seedIVState.loading}
+                title="Pull 1 year of IV history from IBKR for all ETFs — seeds the IVR gate"
+              >
+                {seedIVState.loading ? 'Seeding...' : '↓ Seed IV'}
+              </button>
+            </div>
           </div>
+          {seedIVState.result && (
+            <div className="seed-iv-toast seed-iv-success">
+              ✓ IV seeded — {seedIVState.result.total_iv_rows} rows across {seedIVState.result.tickers_seeded} ETFs
+            </div>
+          )}
+          {seedIVState.error && (
+            <div className="seed-iv-toast seed-iv-error">{seedIVState.error}</div>
+          )}
 
           {/* Filter bar */}
           <div className="scanner-filters">

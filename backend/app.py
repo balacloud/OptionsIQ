@@ -168,29 +168,61 @@ def list_paper_trades():
     return jsonify(out)
 
 
-@app.post("/api/options/seed-iv/<ticker>")
-def seed_iv(ticker: str):
-    """Seeds IV history from IBWorker (if connected) or yfinance fallback."""
-    symbol = ticker.upper()
+def _seed_iv_for_ticker(symbol: str) -> dict:
+    """Seed IV history for one ticker. IBKR if connected, yfinance fallback."""
     connected = _ib_worker.is_connected() and _ib_worker.provider is not None
     hist = []
+    source = "none"
     if connected:
         try:
             hist = _ib_worker.submit(_ib_worker.provider.get_historical_iv, symbol, 365, timeout=30.0)
+            source = "ibkr"
         except Exception as exc:
             logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
     if not hist:
         try:
             hist = _yf_provider.get_historical_iv(symbol, 365)
-            connected = False
+            source = "yfinance"
         except Exception as exc:
             logger.warning("seed-iv yfinance fallback failed for %s: %s", symbol, exc)
-            hist = []
     for row in hist:
-        iv_store.store_iv(symbol, row["date"], row["iv"], source="ibkr" if connected else "yfinance")
-    if not hist:
-        return jsonify({"seeded_days": 0, "earliest_date": None, "latest_date": None})
-    return jsonify({"seeded_days": len(hist), "earliest_date": hist[0]["date"], "latest_date": hist[-1]["date"]})
+        iv_store.store_iv(symbol, row["date"], row["iv"], source=source)
+    return {
+        "ticker": symbol,
+        "seeded_days": len(hist),
+        "source": source,
+        "earliest_date": hist[0]["date"] if hist else None,
+        "latest_date": hist[-1]["date"] if hist else None,
+    }
+
+
+@app.post("/api/options/seed-iv/<ticker>")
+def seed_iv(ticker: str):
+    """Seeds IV history for a single ticker."""
+    return jsonify(_seed_iv_for_ticker(ticker.upper()))
+
+
+@app.post("/api/admin/seed-iv/all")
+def seed_iv_all():
+    """Nightly job — seeds IV history for all 16 ETFs from IBKR (yfinance fallback)."""
+    results = []
+    total_seeded = 0
+    errors = []
+    for ticker in sorted(ETF_TICKERS):
+        try:
+            r = _seed_iv_for_ticker(ticker)
+            results.append(r)
+            total_seeded += r["seeded_days"]
+            logger.info("seed-iv-all: %s — %d days from %s", ticker, r["seeded_days"], r["source"])
+        except Exception as exc:
+            logger.error("seed-iv-all: %s failed — %s", ticker, exc)
+            errors.append({"ticker": ticker, "error": str(exc)})
+    return jsonify({
+        "tickers_seeded": len(results),
+        "total_iv_rows": total_seeded,
+        "errors": errors,
+        "results": results,
+    })
 
 
 @app.get("/api/integrate/sta-fetch/<ticker>")

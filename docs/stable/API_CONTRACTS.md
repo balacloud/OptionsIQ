@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 19 (March 24, 2026)
+> **Last Updated:** Day 26 (April 20, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -255,9 +255,43 @@ Returns all recorded paper trades with mark-to-market P&L.
 
 ## POST /api/options/seed-iv/{ticker}
 
-Seeds IV history for a ticker from IBKR (or mock fallback).
+Seeds IV history for a single ticker from IBKR (yfinance fallback if disconnected).
 
-**Response:** `{"seeded_days": 231, "earliest_date": "2025-03-05", "latest_date": "2026-03-05"}`
+**Response:**
+```json
+{
+  "ticker": "XLK",
+  "seeded_days": 365,
+  "source": "ibkr" | "yfinance" | "none",
+  "earliest_date": "2024-11-01",
+  "latest_date": "2026-04-20"
+}
+```
+
+---
+
+## POST /api/admin/seed-iv/all
+
+Batch IV seeding for all 15 ETFs. Designed for nightly cron or manual trigger from UI.
+Uses IBKR `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` per ticker, yfinance fallback.
+
+**Response:**
+```json
+{
+  "tickers_seeded": 15,
+  "total_iv_rows": 5475,
+  "errors": [],
+  "results": [
+    {
+      "ticker": "XLK",
+      "seeded_days": 365,
+      "source": "ibkr",
+      "earliest_date": "2024-11-01",
+      "latest_date": "2026-04-20"
+    }
+  ]
+}
+```
 
 ---
 

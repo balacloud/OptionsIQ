@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 24 (April 15, 2026)
-> **Current Version:** v0.16.1
+> **Last Updated:** Day 26 (April 20, 2026)
+> **Current Version:** v0.18.0
 
 ---
 
@@ -57,6 +57,14 @@
 - [ ] Synthetic swing default warning banner (KI-022)
 - [ ] Create marketdata_provider.py — MarketData.app REST provider ($12/mo, pending support ticket)
 - [ ] Create analyze_service.py — extract from app.py (KI-001/023, Day 11 P2)
+
+## Phase 4c — Data Infrastructure (Day 26) ✅ COMPLETE
+- [x] Nightly IV seeding: `POST /api/admin/seed-iv/all` + `↓ Seed IV` button ✅ Day 26
+- [x] FOMC gate fix: `_days_until_next_fomc()` from constants fallback ✅ Day 26
+- [x] 7,492 IV rows seeded from IBKR — IVR gate reliable from day 1 ✅ Day 26
+- [x] TradeExplainer strike zone overlap fixed ✅ Day 26
+- [x] MasterVerdict passed gates visible as chips ✅ Day 26
+- [ ] Tradier integration — OI/volume for Liquidity gate (P1 Day 27)
 
 ## Phase 4b — System Audit + Hardening (Day 11-12) ✅ PHASE A+D COMPLETE
 - [x] Behavioral audit: 17 claims verified against code ✅ Day 11
@@ -187,3 +195,4 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 | v0.16.0 | Day 23 | First GO signals (XLF, XLV bear_call_spread). bull_put_spread. 6 bugs fixed. ExecutionCard + POST /api/orders/stage (later reverted Day 24). |
 | v0.16.1 | Day 24 | Structural cleanup: analyze_service.py extraction (app.py 965→320). 27 tests (5 files). ExecutionCard rewritten as IBKR Client Portal visual guide. TWS staging code reverted. README.md comprehensive rewrite. |
 | v0.17.0 | Day 25 | **Phase 8 UX Overhaul** — beginner-friendly frontend. DirectionGuide, TradeExplainer (number line + risk/reward bar), GateExplainer (plain English Q&A accordion), LearnTab (4 interactive lessons: Strikes/Directions/Spreads/Gates). MasterVerdict + TopThreeCards enhanced with plain English. MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. Zero backend changes. |
+| v0.18.0 | Day 26 | **Data infrastructure + gate fixes.** Nightly IV seeding (POST /api/admin/seed-iv/all + UI button). FOMC gate fixed (_days_until_next_fomc() from constants.py). 7,492 IV rows seeded. TradeExplainer strike zone overlap fixed. MasterVerdict passed gates visible. Tradier API reviewed (Lite free = full data API). Data_Strategy_Day26.md. |

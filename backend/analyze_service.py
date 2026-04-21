@@ -20,6 +20,7 @@ from constants import (
     ETF_DTE_SELLER_PASS_MIN,
     ETF_MIN_PREMIUM_DOLLAR,
     ETF_TICKERS,
+    FOMC_DATES,
     IVR_BUYER_PASS_PCT,
     MAX_LOSS_FAIL_PCT,
     MAX_LOSS_WARN_PCT,
@@ -28,6 +29,17 @@ from constants import (
 from gate_engine import GateEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _days_until_next_fomc() -> int:
+    """Days from today to the next scheduled FOMC meeting. Falls back to 999 if list exhausted."""
+    today = datetime.utcnow().date()
+    for date_str in sorted(FOMC_DATES):
+        meeting = datetime.strptime(date_str, "%Y-%m-%d").date()
+        if meeting >= today:
+            return (meeting - today).days
+    return 999
+
 
 # ─── Parsing helpers ─────────────────────────────────────────────────────────
 
@@ -519,7 +531,7 @@ def analyze_etf(payload: dict, ticker: str, *,
             underlying=underlying,
             spy_above=bool(_spy_above_raw) if _spy_above_raw is not None else True,
             spy_5d=float(spy_regime["spy_5day_return"] / 100.0) if spy_regime.get("spy_5day_return") is not None else None,
-            fomc_days_away=_i(payload.get("fomc_days_away"), None),
+            fomc_days_away=_i(payload.get("fomc_days_away"), None) or _days_until_next_fomc(),
             ivr_pct=ivr_data.get("ivr_pct"),
         )
     else:

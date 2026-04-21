@@ -263,6 +263,31 @@ body {
 .vg-value { color: var(--text-dim); }
 .vg-reason { color: var(--text-muted); font-style: italic; flex-basis: 100%; }
 
+/* Passed gates compact chip row */
+.verdict-passed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.vp-label {
+  font-size: 10px;
+  color: var(--green);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.vp-chip {
+  font-size: 10px;
+  color: var(--text-dim);
+  background: rgba(0,200,150,0.08);
+  border: 1px solid rgba(0,200,150,0.2);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
 /* ─── Direction Selector ─────────────────────────────────────────────────── */
 .direction-grid {
   display: grid;
@@ -766,6 +791,43 @@ tr:last-child td { border-bottom: none; }
 }
 .sector-refresh-btn:hover { border-color: var(--blue); }
 .sector-refresh-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.scanner-header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.seed-iv-btn {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.seed-iv-btn:hover { border-color: var(--green); color: var(--green); }
+.seed-iv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.seed-iv-toast {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  margin: 4px 0 0;
+}
+.seed-iv-success {
+  color: var(--green);
+  background: rgba(0,200,150,0.08);
+  border: 1px solid rgba(0,200,150,0.2);
+}
+.seed-iv-error {
+  color: var(--red);
+  background: rgba(255,68,68,0.08);
+  border: 1px solid rgba(255,68,68,0.2);
+}
 
 /* ─── ETF Grid ───────────────────────────────────────────────────────────── */
 .etf-grid {
@@ -1723,7 +1785,7 @@ tr:last-child td { border-bottom: none; }
 /* Number Line */
 .te-numberline-wrap {
   position: relative;
-  height: 90px;
+  height: 60px;
   margin: 4px 0;
 }
 .te-zone {
@@ -1834,6 +1896,52 @@ tr:last-child td { border-bottom: none; }
 .te-itm { background: rgba(0,200,150,0.15);  color: var(--green); }
 .te-atm { background: rgba(245,158,11,0.15); color: var(--amber); }
 .te-otm { background: rgba(255,68,68,0.15);  color: var(--red);   }
+
+/* Strike key — replaces inline chart labels */
+.te-strike-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 6px;
+}
+.te-sk-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.te-sk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.te-sk-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.te-sk-price {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.te-sk-sub {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+/* Dot colors matching marker colors */
+.te-sk-current .te-sk-dot  { background: var(--blue); }
+.te-sk-current .te-sk-price { color: var(--blue); }
+.te-sk-short .te-sk-dot    { background: var(--red); }
+.te-sk-short .te-sk-price  { color: var(--red); }
+.te-sk-long .te-sk-dot     { background: var(--blue); }
+.te-sk-long .te-sk-price   { color: var(--blue); }
+.te-sk-breakeven .te-sk-dot  { background: var(--amber); }
+.te-sk-breakeven .te-sk-price { color: var(--amber); }
 
 .te-legend {
   display: flex;

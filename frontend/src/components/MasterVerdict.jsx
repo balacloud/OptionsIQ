@@ -31,6 +31,7 @@ export default function MasterVerdict({ verdict, gates }) {
   // Show ALL fail gates inline (blocking and non-blocking) so user sees every red dot explained
   const blockingFails = gates.filter((g) => g.status === 'fail');
   const warnGates = gates.filter((g) => g.status === 'warn');
+  const passedGates = gates.filter((g) => g.status === 'pass');
 
   return (
     <div className={`verdict-hero ${heroClass}`}>
@@ -71,6 +72,18 @@ export default function MasterVerdict({ verdict, gates }) {
                   {g.computed_value && <span className="vg-value">{g.computed_value}</span>}
                   {g.reason && <span className="vg-reason">{g.reason}</span>}
                 </div>
+              ))}
+            </div>
+          )}
+
+          {/* Compact passed chip list */}
+          {passedGates.length > 0 && (
+            <div className="verdict-passed-row">
+              <span className="vp-label">✓ Passed:</span>
+              {passedGates.map((g) => (
+                <span key={g.id} className="vp-chip" title={g.computed_value || g.reason || ''}>
+                  {g.name}
+                </span>
               ))}
             </div>
           )}

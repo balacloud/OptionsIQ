@@ -5,83 +5,72 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Backend: Flask on port **5051**
 - Frontend: React on port **3050**
 - IB Gateway: 127.0.0.1:4001 (live account U11574928)
-- Database: SQLite at `backend/data/` (chain_cache.db + iv_store.db)
+- Database: SQLite at `backend/data/` (iv_history.db + chain_cache.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, optional
 
-## Current Phase (Day 24)
-v0.16.0. First GO signals confirmed (XLF + XLV bear_call_spread). bull_put_spread built.
-ExecutionCard.jsx + POST /api/orders/stage + ibkr_provider.stage_spread_order() done but
-NOT yet wired into App.jsx (KI-071). ibkr_provider now readonly=False.
-Next: wire ExecutionCard + CSS into App.jsx, live test stage order at market open (KI-070).
+## Current Phase (Day 26)
+v0.18.0. Data infrastructure complete. FOMC gate fixed (_days_until_next_fomc() from constants.py). IVR seeded: 7,492 rows across 20 tickers from IBKR. ↓ Seed IV button in UI. Strike zone label overlap fixed. Tradier Lite (free) confirmed as OI/volume solution.
+Next: Master Audit Framework (all 9 categories, Day 27 P0), then Tradier integration.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY23_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY23.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY26_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY26.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
 ## Key Source Files
 ```
 backend/
-  app.py              ~660 lines — ETF-only enforcement, _etf_payload(), direction_locked=[],
-                                   ETF behavioral checks, fomc_days_away default=999.
-                                   Still needs analyze_service.py split (KI-001/KI-023).
-  constants.py        DONE (Day 19) — all thresholds + Phase 7b bear constants + DIRECTION_TO_CHAIN_DIR
+  app.py              320 lines — THIN WRAPPERS (Day 24). Routes only, imports from analyze_service.py.
+                                   New Day 26: _seed_iv_for_ticker() helper, POST /api/admin/seed-iv/all.
+  analyze_service.py  DONE (Day 24+26) — 610+ lines. analyze_etf(), _days_until_next_fomc(),
+                                     _etf_payload(), apply_etf_gate_adjustments(), all helpers.
+                                     FOMC now computed from FOMC_DATES when payload missing.
+  constants.py        DONE (Day 19+26) — all thresholds + FOMC_DATES 2026-2027 (already present)
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
   ib_worker.py        DONE — single IB() thread, submit() queue, expires_at queue poisoning fix
-  yfinance_provider.py DONE — middle tier, BS greeks fill
+  yfinance_provider.py DONE — middle tier, BS greeks fill. get_historical_iv() returns HV20 proxy.
   data_service.py     DONE (Day 12) — provider cascade + SQLite WAL + CB + Alpaca tier
   ibkr_provider.py    DONE (Day 12) — try-finally cancelMktData. OI confirmed unavailable (platform).
+                                     get_historical_iv() confirmed working — returns daily IV bars.
+                                     readonly=True (Day 24: staging code reverted).
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      UPDATED (Day 21) — ETF gate tracks added: _run_etf_buy_call/put/sell_put.
-                                         etf_mode: bool param on run(). Math still frozen.
-                                         Callers must coerce ivr_data None→0.0 before gate_payload.
-  strategy_ranker.py  UPDATED (Day 23) — _rank_sell_put_spread() added (bull_put_spread, delta 0.30/0.15).
-                                         ETF sell_put now routes to spread builder (not naked put).
-                                         All 4 ETF directions return defined-risk strategies.
-  pnl_calculator.py   UPDATED (Day 21) — ETF: price-relative scenarios (-10% to +15%).
-                                          Stock: explicit None guards on all swing fields.
-  iv_store.py         FROZEN — math correct
-
+  gate_engine.py      UPDATED (Day 21) — ETF gate tracks. etf_mode param. Math frozen.
+  strategy_ranker.py  UPDATED (Day 23) — bull_put_spread. All 4 ETF spreads defined-risk.
+  pnl_calculator.py   UPDATED (Day 21) — ETF price-relative scenarios. Stock None guards.
+  iv_store.py         FROZEN — math correct. DB: backend/data/iv_history.db (7,492 rows seeded Day 26)
   sector_scan_service.py  DONE (Day 19) — STA consumer + L1 scan + L2 analyze + Phase 7b bear logic.
+  tests/              DONE (Day 24) — 27 tests (pytest). 5 files.
+  seed_iv_nightly.sh  NEW (Day 26) — cron script: curl POST /api/admin/seed-iv/all nightly 4:30pm ET
 
   # TO CREATE:
+  tradier_provider.py  P1 Day 27 — OI/volume supplement for Liquidity gate (Lite account = free)
   marketdata_provider.py  DEFERRED — MarketData.app no historical IV (confirmed), low priority
-  analyze_service.py      P3 — extract _merge_swing, _extract_iv_data, _behavioral_checks
 ```
 
 ## IBWorker Threading Rules (CRITICAL)
 - ALL IBKRProvider calls MUST go through `_ib_worker.submit(fn, *args, timeout=N)`
 - NEVER call ibkr_provider methods directly from Flask thread — asyncio event loop conflict → hang
 - gate_engine requires float for all keys — coerce `ivr_data` None values to 0.0 before gate_payload
+- Nightly seed job: must route through Flask → IBWorker.submit() (not direct cron → ib_insync)
 
 ## ETF-Only Mode (Day 21)
-- 16 ETFs: XLK, XLY, XLP, XLV, XLF, XLI, XLE, XLU, XLB, XLRE, XLC, MDY, IWM, SCHB, QQQ, TQQQ
+- 15 ETFs in constants.py ETF_TICKERS: XLK, XLY, XLP, XLV, XLF, XLI, XLE, XLU, XLB, XLRE, XLC, MDY, IWM, QQQ, TQQQ
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
-- `_etf_payload()` returns: real SPY regime data, all swing fields = None, `swing_data_quality: "etf"`, `signal: None`
-- `direction_locked: []` for all ETFs — direction from regime, not swing signal
+- `_etf_payload()` returns: real SPY regime data, all swing fields = None, `swing_data_quality: "etf"`
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
-- Behavioral checks: IVR context, SPY regime warning, delta discipline (no VCP references)
 
-## Direction-Aware Chain Fetch (implemented Day 3)
-```
-buy_call  → DTE 45-90 + strikes 8-20% ITM below underlying (delta ~0.68)
-buy_put   → DTE 45-90 + strikes 8-20% ITM above underlying (delta ~-0.68)
-sell_call → DTE 21-45 + strikes ATM ±6% (sell_call: -2% to +8%)
-sell_put  → DTE 21-45 + strikes ATM ±6% (sell_put: -8% to +2%)
-Fallback: if direction window yields <3 strikes, supplement from ±15% broad window
-```
-Structure cache: `IBKRProvider._struct_cache` — in-memory, 4h TTL, keyed by ticker.
-
-## Phase 7b: Sector Bear Market (Day 19)
-- bear_call_spread for Lagging ETFs: RS < 98 AND momentum < -0.5
-- DIRECTION_TO_CHAIN_DIR: maps display hints (bear_call_spread) → core directions (sell_call)
-- Broad Selloff: >50% sectors Weakening/Lagging AND SPY < 200 SMA
-- IVR < 40% → L2 soft warning (premium thin for credit spreads)
+## Data Gaps Status (post Day 26)
+| Gap | Status |
+|-----|--------|
+| IVR cold-start | ✅ FIXED — 7,492 rows seeded, all ETFs 365+ days |
+| FOMC = 999 | ✅ FIXED — _days_until_next_fomc() from constants.py |
+| OI always 0 | ❌ OPEN — Tradier Lite (free) is the fix, P1 Day 27 |
+| EODHD backfill | ⏸ PAUSED — free tier paywalls options endpoint, verify before paying |
 
 ## Four Directions
 | Direction | View | Gate Track | Strike |
@@ -93,11 +82,11 @@ Structure cache: `IBKRProvider._struct_cache` — in-memory, 4h TTL, keyed by ti
 
 DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 DTE.
 
-## Day 24 Priorities
-1. **P0:** KI-071 — Wire ExecutionCard into App.jsx AnalysisPanel + add CSS to index.css
-2. **P0:** KI-070 — Live test stage_spread_order at market open (transmit=False → TWS blotter)
-3. **P1:** KI-067 — QQQ sell_put returns ITM puts, fix strike window or struct_cache
-4. **P2:** KI-044 — API_CONTRACTS.md: add POST /api/orders/stage + ETF-only fields
+## Day 27 Priorities
+1. **P0:** Run MASTER_AUDIT_FRAMEWORK — all 9 categories (user confirmed)
+2. **P1:** Tradier integration — open Lite (free), wire OI/volume → Liquidity gate
+3. **P2:** KI-067 — QQQ sell_put ITM strike fix
+4. **P3:** KI-044 — API_CONTRACTS.md full sync
 
 ## Git Status
 - Local repo only — no remote origin configured yet
@@ -107,11 +96,13 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
-- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (8 categories, weekly trigger)
-- `docs/versioned/KNOWN_ISSUES_DAY21.md`
-- `docs/status/PROJECT_STATUS_DAY21_SHORT.md`
-- `docs/Research/Sector_Bear_Market_Day19.md`
-- `docs/Research/Sector_Behavioral_Audit_Day15.md`
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.2.
+- `docs/versioned/KNOWN_ISSUES_DAY26.md`
+- `docs/status/PROJECT_STATUS_DAY26_SHORT.md`
+- `docs/Research/Data_Strategy_Day26.md` — 3-option data plan (Nightly IB, Tradier, EODHD)
+- `docs/Research/Options_Data_Provider_Research_Day10.md` — evidence base (live-tested providers)
+- `docs/Research/UX_Research_Synthesis_Day25.md` — Phase 8 LLM research synthesis
 
 ## Memory Index
 - [feedback_test_before_plan.md](feedback_test_before_plan.md) — Always test APIs with live calls before making claims or planning
+- [feedback_save_plans.md](feedback_save_plans.md) — Always save plans/synthesis to docs/Research/ as .md files
