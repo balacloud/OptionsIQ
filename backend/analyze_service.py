@@ -473,7 +473,7 @@ def get_live_price(ticker: str, *, ib_worker, yf_provider) -> float:
 def analyze_etf(payload: dict, ticker: str, *,
                 data_svc, ib_worker, yf_provider, mock_provider,
                 strategy_ranker, pnl_calculator, iv_store,
-                spy_regime_fn) -> dict:
+                spy_regime_fn, md_provider=None) -> dict:
     """
     Main analysis orchestrator. Returns a dict (caller jsonifies).
     Extracted from app.py _analyze_options_inner() on Day 24.
@@ -546,6 +546,20 @@ def analyze_etf(payload: dict, ticker: str, *,
     strategies_preview = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=preview_dte)
     selected = strategies_preview[0] if strategies_preview else {}
 
+    # MarketData.app OI/volume supplement — fills the IBKR platform gap (OI always 0 via reqMktData).
+    # Non-blocking: if lookup fails or times out, gate_payload falls back to OI=0 (existing behaviour).
+    _md_oi_volume: dict = {}
+    if md_provider and selected and is_etf:
+        _side = "put" if direction in ("buy_put", "sell_put") else "call"
+        _md_result = md_provider.get_oi_volume(
+            ticker,
+            float(selected.get("strike", underlying)),
+            _side,
+            int(selected.get("dte", 21)),
+        )
+        if _md_result:
+            _md_oi_volume = _md_result
+
     ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
 
     gate_payload = {
@@ -556,8 +570,8 @@ def analyze_etf(payload: dict, ticker: str, *,
         "strike": float(selected.get("strike", underlying)),
         "premium": float(selected.get("premium", 0.0)),
         "theta_per_day": float(selected.get("theta_per_day", -0.2)),
-        "open_interest": float(selected.get("open_interest", 0.0)),
-        "volume": float(selected.get("volume", 0.0)),
+        "open_interest": float(_md_oi_volume.get("open_interest") or selected.get("open_interest", 0.0)),
+        "volume": float(_md_oi_volume.get("volume") or selected.get("volume", 0.0)),
         "bid": selected.get("bid"),
         "ask": selected.get("ask"),
         "max_gain_per_lot": float(selected.get("max_gain_per_lot") or -1.0),

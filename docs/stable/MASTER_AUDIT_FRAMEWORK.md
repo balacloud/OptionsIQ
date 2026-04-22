@@ -1,5 +1,5 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 25 (April 17, 2026)
+> **Last Updated:** Day 27 (April 21, 2026)
 > **Version:** v1.2
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
 > **Time estimate:** 30-45 mins per full audit. Run all 9 categories or specify one by name.
@@ -86,8 +86,8 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 [ ] "IVR flows into gate_engine for buy_call"
     → Read: sector_scan_service._analyze_etf() → iv_store.get_ivr() → gate_payload dict
 
-[ ] "sell_call builds a bear_call_spread, not a naked call"
-    → Read: strategy_ranker._rank_sell_call() — verify two legs built
+[ ] "sell_call builds a bear_call_spread (ranks 1+2); rank 3 is a far-OTM naked call with UNLIMITED RISK warning"
+    → Read: strategy_ranker._rank_sell_call() — verify ranks 1+2 have two legs, rank 3 has warning field
 
 [ ] "buy_put builds ITM put + bear put spread"
     → Read: strategy_ranker._rank_buy_put() — verify all 3 strategy types
@@ -293,10 +293,10 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 [ ] Live test coverage (update this table each audit):
     | Direction  | Live Tested? | Last Test | Bugs Found |
     |------------|-------------|-----------|------------|
-    | buy_call   | YES ✅      | Day 9     | none active |
-    | sell_put   | YES ✅      | Day 9     | none active |
-    | sell_call  | NO ❌       | Never     | KI-059     |
-    | buy_put    | NO ❌       | Never     | KI-059     |
+    | buy_call   | YES ✅      | Day 21 (XLU ETF) | none active |
+    | sell_put   | YES ✅      | Day 27 (XLK ETF) | none active |
+    | sell_call  | YES ✅      | Day 21 (XLU ETF) | none active |
+    | buy_put    | YES ✅      | Day 21 (XLU ETF) | none active |
 
 [ ] IVR direction adjustment in sector_scan_service:
     IVR > 50% + buy_call → bull_call_spread (verified Day 16 ✅)
@@ -381,6 +381,7 @@ Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction cover
 | Day 16 Quant Spot Check | Mar 20, 2026 | 3,7 | 2 findings | 0 | 1 (KI-059) | IVR adj confirmed, bear untested |
 | Day 17 Full Audit | Mar 22, 2026 | 1-8 | 10 checks | 0 | 2 found+fixed | KI-060 SPY None masking fixed, KI-061 IVR formula verified. Post-fix: 0C/2H remaining (KI-059, KI-044) |
 | Day 25 Category 9 Added | Apr 17, 2026 | 9 | New category | 0 | 0 | Frontend UX Accuracy audit added. Phase 8 UX overhaul introduced hardcoded GATE_KB + isBearish() zone logic — needs sync audit trigger. |
+| Day 27 Full Audit | Apr 21, 2026 | 1-9 | 5 findings | 0 | 1 found+fixed | bull_put_spread missing in pnl_calculator (P&L table all zeros for ETF sell_put) — FIXED. API_CONTRACTS updated (seed fields, OI source, ETF enforcement note). Direction table corrected (all 4 directions live tested Day 21+27). Post-fix: 0C/0H. |
 
 ---
 

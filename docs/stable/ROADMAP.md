@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 26 (April 20, 2026)
-> **Current Version:** v0.18.0
+> **Last Updated:** Day 27 (April 21, 2026)
+> **Current Version:** v0.19.0
 
 ---
 
@@ -58,13 +58,16 @@
 - [ ] Create marketdata_provider.py — MarketData.app REST provider ($12/mo, pending support ticket)
 - [ ] Create analyze_service.py — extract from app.py (KI-001/023, Day 11 P2)
 
-## Phase 4c — Data Infrastructure (Day 26) ✅ COMPLETE
+## Phase 4c — Data Infrastructure (Day 26–27) ✅ COMPLETE
 - [x] Nightly IV seeding: `POST /api/admin/seed-iv/all` + `↓ Seed IV` button ✅ Day 26
 - [x] FOMC gate fix: `_days_until_next_fomc()` from constants fallback ✅ Day 26
 - [x] 7,492 IV rows seeded from IBKR — IVR gate reliable from day 1 ✅ Day 26
 - [x] TradeExplainer strike zone overlap fixed ✅ Day 26
 - [x] MasterVerdict passed gates visible as chips ✅ Day 26
-- [ ] Tradier integration — OI/volume for Liquidity gate (P1 Day 27)
+- [x] MarketData.app OI/volume supplement: `marketdata_provider.py` wired ✅ Day 27
+- [x] FOMC calendar corrected: Apr 29 (was missing, had May 6) ✅ Day 27
+- [x] bull_put_spread P&L handler added (HIGH audit finding) ✅ Day 27
+- [x] Pre-trade research workflow: Daily_Trade_Prompts.md + CopyForChatGPT button ✅ Day 27
 
 ## Phase 4b — System Audit + Hardening (Day 11-12) ✅ PHASE A+D COMPLETE
 - [x] Behavioral audit: 17 claims verified against code ✅ Day 11
@@ -145,7 +148,13 @@ Interactive education page — no backend, pure frontend with mock data.
 - [ ] Live test all 4 directions to verify TradeExplainer zone colors (KI-076) — Day 26 P0
 See: `docs/Research/UX_Research_Synthesis_Day25.md`
 
-## Phase 9 — Order Execution (Day 23, in progress)
+## Phase 9 — Track Record + Daily Workflow (Day 28+)
+- [ ] ETF holdings earnings gate (KI-079) — top 3 holdings per ETF in constants.py
+- [ ] Paper trade P&L dashboard — win rate by verdict/direction/ETF, equity curve
+- [ ] Daily best setups page — auto-scan + top 2-3 setups surfaced in one view
+- [ ] Liquidity gate hard-fail on wide bid-ask >20% (KI-080)
+
+## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
 
 - [x] Research IBKR TWS API: transmit=False safety, BAG contract, ComboLeg structure ✅ Day 23
@@ -196,3 +205,4 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 | v0.16.1 | Day 24 | Structural cleanup: analyze_service.py extraction (app.py 965→320). 27 tests (5 files). ExecutionCard rewritten as IBKR Client Portal visual guide. TWS staging code reverted. README.md comprehensive rewrite. |
 | v0.17.0 | Day 25 | **Phase 8 UX Overhaul** — beginner-friendly frontend. DirectionGuide, TradeExplainer (number line + risk/reward bar), GateExplainer (plain English Q&A accordion), LearnTab (4 interactive lessons: Strikes/Directions/Spreads/Gates). MasterVerdict + TopThreeCards enhanced with plain English. MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. Zero backend changes. |
 | v0.18.0 | Day 26 | **Data infrastructure + gate fixes.** Nightly IV seeding (POST /api/admin/seed-iv/all + UI button). FOMC gate fixed (_days_until_next_fomc() from constants.py). 7,492 IV rows seeded. TradeExplainer strike zone overlap fixed. MasterVerdict passed gates visible. Tradier API reviewed (Lite free = full data API). Data_Strategy_Day26.md. |
+| v0.19.0 | Day 27 | **Full audit + pre-trade workflow.** Full audit (0C/0H): bull_put_spread P&L fixed (HIGH), API_CONTRACTS.md synced (MEDIUM), audit framework corrected (LOW). MarketData.app OI/volume supplement (marketdata_provider.py, load_dotenv ordering fix). FOMC calendar corrected (Apr 29 missing). CopyForChatGPT.jsx button. Daily_Trade_Prompts.md. start/stop script PID fixes. ChatGPT live test caught 3 gaps: KI-079 (ETF holdings earnings), KI-080 (bid-ask hard fail), KI-081 (CPI calendar). |

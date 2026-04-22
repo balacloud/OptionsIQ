@@ -13,6 +13,7 @@ import TopThreeCards from './components/TopThreeCards';
 import ExecutionCard from './components/ExecutionCard';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
+import CopyForChatGPT from './components/CopyForChatGPT';
 import LearnTab from './components/LearnTab';
 import useOptionsData from './hooks/useOptionsData';
 import useSectorData from './hooks/useSectorData';
@@ -108,6 +109,8 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
 
       <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
 
+      <CopyForChatGPT ticker={ticker} direction={direction} data={data} />
+
       {/* Trade Explainer — visual "what is this trade" */}
       {data?.top_strategies?.[0] && (
         <TradeExplainer
@@ -169,13 +172,33 @@ export default function App() {
     setSeedIVState({ loading: true, result: null, error: null });
     try {
       const res = await fetch('/api/admin/seed-iv/all', { method: 'POST' });
+      if (!res.ok) {
+        const text = await res.text();
+        setSeedIVState({ loading: false, result: null, error: `Seed failed (HTTP ${res.status}) — ${text.slice(0, 120)}` });
+        setTimeout(() => setSeedIVState(s => ({ ...s, error: null })), 8000);
+        return;
+      }
       const data = await res.json();
       setSeedIVState({ loading: false, result: data, error: null });
-      setTimeout(() => setSeedIVState(s => ({ ...s, result: null })), 6000);
+      setTimeout(() => setSeedIVState(s => ({ ...s, result: null })), 10000);
     } catch (e) {
-      setSeedIVState({ loading: false, result: null, error: 'Seed failed — is backend running?' });
-      setTimeout(() => setSeedIVState(s => ({ ...s, error: null })), 5000);
+      setSeedIVState({ loading: false, result: null, error: 'Seed failed — backend not reachable. Is it running?' });
+      setTimeout(() => setSeedIVState(s => ({ ...s, error: null })), 8000);
     }
+  };
+
+  const seedIVMessage = (result) => {
+    if (!result) return null;
+    if (result.pacing_warning) {
+      return { type: 'warn', text: 'IBKR pacing limit hit — nothing new pulled. Wait ~10 min and retry. Your existing data is intact.' };
+    }
+    const sources = result.sources_used?.length ? result.sources_used.join(' + ') : 'unknown';
+    const sourceLabel = sources.includes('ibkr') ? 'IBKR' : sources.includes('yfinance') ? 'yfinance (HV proxy)' : sources;
+    const errNote = result.errors?.length ? ` · ${result.errors.length} ticker${result.errors.length > 1 ? 's' : ''} failed` : '';
+    return {
+      type: result.errors?.length ? 'warn' : 'ok',
+      text: `✓ Seeded ${result.total_iv_rows} rows from ${sourceLabel} across ${result.tickers_seeded} ETFs${errNote}`,
+    };
   };
 
   // Auto-trigger sector scan on mount — swallow error, hook stores it in sectorHook.error
@@ -270,19 +293,20 @@ export default function App() {
                 className="seed-iv-btn"
                 onClick={handleSeedIV}
                 disabled={seedIVState.loading}
-                title="Pull 1 year of IV history from IBKR for all ETFs — seeds the IVR gate"
+                title="Pull 1 year of IV history from IBKR for all ETFs — seeds the IVR gate. Takes ~30s."
               >
-                {seedIVState.loading ? 'Seeding...' : '↓ Seed IV'}
+                {seedIVState.loading ? 'Seeding IVR… (~30s)' : '↓ Seed IV'}
               </button>
             </div>
           </div>
-          {seedIVState.result && (
-            <div className="seed-iv-toast seed-iv-success">
-              ✓ IV seeded — {seedIVState.result.total_iv_rows} rows across {seedIVState.result.tickers_seeded} ETFs
-            </div>
-          )}
+          {seedIVState.result && (() => {
+            const msg = seedIVMessage(seedIVState.result);
+            if (!msg) return null;
+            const cls = msg.type === 'ok' ? 'seed-iv-success' : 'seed-iv-warn';
+            return <div className={`seed-iv-toast ${cls}`}>{msg.text}</div>;
+          })()}
           {seedIVState.error && (
-            <div className="seed-iv-toast seed-iv-error">{seedIVState.error}</div>
+            <div className="seed-iv-toast seed-iv-error">⚠ {seedIVState.error}</div>
           )}
 
           {/* Filter bar */}

@@ -123,6 +123,15 @@ class PnLCalculator:
             intrinsic = min(max(0.0, scenario_price - short_strike), long_strike - short_strike)
             return (net_premium - intrinsic) * 100
 
+        if st == "bull_put_spread":
+            # Short the higher put (short_strike), long the lower put (long_strike).
+            # Profit = full credit when price >= short_strike; max loss when price <= long_strike.
+            short_strike = float(strategy["short_strike"])
+            long_strike = float(strategy["long_strike"])
+            net_premium = float(strategy["net_premium"])
+            intrinsic = min(max(0.0, short_strike - scenario_price), short_strike - long_strike)
+            return (net_premium - intrinsic) * 100
+
         if st == "sell_call":
             strike = float(strategy["strike"])
             premium = float(strategy["premium"])

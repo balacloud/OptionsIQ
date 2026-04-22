@@ -180,11 +180,11 @@ STA_TIMEOUT_SEC         = 3       # STA fetch timeout — never block main threa
 FOMC_DATES_2026 = [
     "2026-01-28",
     "2026-03-18",
-    "2026-05-06",
-    "2026-06-17",
+    "2026-04-29",  # Apr 28-29 meeting, announcement Apr 29 (was wrongly listed as May 6)
+    "2026-06-18",  # Jun 17-18 meeting, announcement Jun 18 (was Jun 17)
     "2026-07-29",
     "2026-09-16",
-    "2026-11-04",
+    "2026-11-05",  # Nov 4-5 meeting, announcement Nov 5 (was Nov 4)
     "2026-12-16",
 ]
 

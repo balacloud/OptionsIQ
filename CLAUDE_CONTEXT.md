@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 26 (April 20, 2026)
-> **Current Version:** v0.18.0
-> **Project Phase:** Data infrastructure complete. FOMC gate fixed. IVR seeded (7,492 rows, all 15 ETFs). Strike zone UX fixed. Tradier API reviewed (Lite free = OI/volume). Next: Master Audit Framework (all 9 categories), Tradier integration, KI-067 QQQ fix.
+> **Last Updated:** Day 27 (April 21, 2026)
+> **Current Version:** v0.19.0
+> **Project Phase:** Full audit complete (0C/0H). MarketData.app OI wired. FOMC dates corrected. bull_put_spread P&L fixed. Pre-trade research workflow live (CopyForChatGPT + Daily_Trade_Prompts.md). ChatGPT caught 3 real gaps in XLY trade — ETF holdings earnings gate (KI-079) is next P0. Phase 9: Paper Trade Dashboard + Daily Best Setups.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY26_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY26.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY27_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY27.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -63,8 +63,8 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | ETF-Only Pivot complete (Day 21) | _etf_payload(), ETF gate tracks, ETF-only enforcement (400 for non-ETFs), delta-based spread legs. All 4 directions tested live on XLU. |
-| Frontend | UX fixes (Day 26) | Strike zone label overlap fixed (key table). MasterVerdict passed gates visible as chips. ↓ Seed IV button added. Build clean (0 warnings). |
+| Backend | Audit clean + OI wired (Day 27) | MarketData.app OI supplement (marketdata_provider.py). FOMC dates corrected (Apr 29 was missing). bull_put_spread P&L handler added. load_dotenv() ordering fixed. |
+| Frontend | CopyForChatGPT button (Day 27) | One-click pre-filled ChatGPT stress test prompt. Stop/start script PID tracking fixed. Seed IV UI improved (source label, pacing warning). |
 | IBKR connection | WORKING | Live confirmed: AMD, XLE, XLK, IWM, TQQQ greeks live. account U11574928 |
 | Gate logic | Correct + Rule 3 fixed | gate_engine.py imports from constants.py — 60+ literals replaced |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
@@ -122,8 +122,8 @@ backend/
   tests/               DONE (Day 24) — 27 tests (pytest). 5 files: bs_calculator, spread_math,
                                    direction_routing, gate_engine_etf, etf_gate_postprocess.
 
-  # TO CREATE:
-  marketdata_provider.py  — MarketData.app REST provider ($12/mo — pending)
+  marketdata_provider.py  DONE (Day 27) — OI/volume supplement from MarketData.app REST API.
+                                          Non-blocking (5s timeout). Wired into analyze_etf().
 ```
 
 ---
@@ -218,25 +218,29 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY25.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY27.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
+2. **KI-079: No ETF holdings earnings gate** — TSLA/AMZN in XLY not tracked. ChatGPT caught this live. P0 for Day 28.
 
 Open (MEDIUM):
-2. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
-3. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, may self-correct with consistent IBKR seeding.
-4. **KI-044: API_CONTRACTS.md stale** — seed-iv routes updated Day 26. ETF-only fields still stale.
-5. **KI-075: GateExplainer GATE_KB may drift from gate_engine.py** — scheduled for Day 27 audit.
+3. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
+4. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, may self-correct with consistent IBKR seeding.
+5. **KI-044: API_CONTRACTS.md** — partially synced Day 27. Some ETF-specific fields still undocumented.
+6. **KI-075: GateExplainer GATE_KB may drift from gate_engine.py** — audit scheduled Category 9.
+7. **KI-076: TradeExplainer isBearish() not live-tested** — all 4 directions not verified live.
+8. **KI-080: Liquidity gate doesn't hard-fail on 20%+ bid-ask spread** — bad data drives bad strikes.
 
 Open (LOW):
-7. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034), fomc_days_away=999 (KI-008)
-8. API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
-9. deepcopy() overhead (KI-072), struct_cache unbounded (KI-073), no startup health check (KI-074)
-10. **KI-077: DirectionGuide sell_put "capped" label may mislead if naked recommended** — Day 25 new.
+9. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034)
+10. API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
+11. deepcopy() overhead (KI-072), struct_cache unbounded (KI-073), no startup health check (KI-074)
+12. **KI-077: DirectionGuide sell_put "capped" label may mislead** — LOW
+13. **KI-081: No CPI/NFP macro events calendar** — LOW
 
-Resolved (Day 26): KI-008 (FOMC gate), KI-076 (strike zone overlap), IVR cold-start (7,492 rows seeded)
-Resolved (Day 25): 0 — pure frontend UX session
+Resolved (Day 27): KI-078 (FOMC dates corrected — Apr 29 was missing, had May 6), bull_put_spread P&L (HIGH audit finding)
+Resolved (Day 26): KI-008 (FOMC gate fallback), KI-076 (strike zone overlap), IVR cold-start (7,492 rows seeded)
 
 Resolved (Day 24):
 - KI-071: ExecutionCard wired + redesigned as visual guide
@@ -274,54 +278,40 @@ Resolved (Day 24):
 | Day 23 | Apr 15, 2026 | **First GO signals + ExecutionCard (v0.16.0).** KI-069 fixed (OI=0→pass for ETFs). KI-068 fixed (direction normalization bear_call_spread→sell_call). bull_put_spread built (_rank_sell_put_spread). ETF sell_put max_loss re-evaluated using spread. ETF DTE seller 21-45→pass. PnLTable auto-open. MasterVerdict all fails inline. ExecutionCard.jsx + POST /api/orders/stage + ibkr_provider.stage_spread_order() — NOT yet wired into App.jsx (KI-071). |
 | Day 24 | Apr 15, 2026 | **Structural cleanup (v0.16.1).** analyze_service.py extracted (app.py 965→320 lines, analyze_service 604 lines). TWS staging code reverted (readonly=True, stage_spread_order removed, POST /api/orders/stage removed). 27 tests created (5 files: BS greeks, spread math, direction routing, gate engine, ETF post-processing). ExecutionCard rewritten as IBKR Client Portal visual guide (no API calls). KI-071/KI-070/KI-001 resolved. README.md comprehensively rewritten. |
 | Day 26 | Apr 20, 2026 | **Data infrastructure + gate fixes (v0.18.0).** FOMC gate fixed: _days_until_next_fomc() from constants.py — no longer 999 when STA offline (16 days to May 6). IVR seeding: POST /api/admin/seed-iv/all + ↓ Seed IV UI button — 7,492 rows across 20 tickers seeded from IBKR reqHistoricalData. seed_iv_nightly.sh cron script. Strike zone label overlap fixed (key table below chart). MasterVerdict passed gates visible as green chips. Data_Strategy_Day26.md created (3-option data plan). Tradier API reviewed: Lite free account = full options data API with OI, volume, Greeks (120 req/min). EODHD tested: paywalled on free tier — verify before paying. KI-008 resolved, 3 issues fixed total. |
+| Day 27 | Apr 21, 2026 | **Full audit + pre-trade workflow + bug fixes (v0.19.0).** Full MASTER_AUDIT_FRAMEWORK run (all 9 categories): 0C/0H. HIGH fixed: bull_put_spread P&L handler missing since Day 23 (all sell_put P&L rows were 0). MEDIUM fixed: API_CONTRACTS.md synced (pacing_warning, sources_used, alpaca, ETF enforcement, OI note). LOW fixed: MASTER_AUDIT_FRAMEWORK direction table + sell_call claim. MarketData.app integration: marketdata_provider.py + load_dotenv() ordering bug fixed. Pre-trade research: Daily_Trade_Prompts.md (7 prompts for Perplexity/ChatGPT/Gemini) + CopyForChatGPT.jsx button (pre-fills Prompt 4 from live analysis data). start/stop script reliability: -sTCP:LISTEN flag, webpack PID capture. ChatGPT live test of XLY trade caught: FOMC gate false negative (corrected constants.py Apr 29 date), ETF holdings earnings gap (new KI-079), liquidity hard-fail gap (new KI-080). MCP ecosystem researched — Perplexity + FMP MCPs recommended, no options-specific MCPs exist yet. |
 | Day 25 | Apr 17, 2026 | **Phase 8 UX Overhaul (v0.17.0).** Research-first: 3 multi-LLM prompts (GPT-4o + Gemini + Perplexity) synthesized before coding. New: DirectionGuide.jsx (educational 2×2 direction cards), TradeExplainer.jsx (percentage-based number line + risk/reward bar + ITM/ATM/OTM zones), GateExplainer.jsx (accordion Q&A, readiness bar, gate meters), LearnTab.jsx (4 interactive lessons: Strikes/Directions/Spreads/Gates). Enhanced: MasterVerdict (plain English subtitle), TopThreeCards (plain English per strategy). App.jsx wired with tab nav (Signal Board / Learn Options). 600 lines new CSS. Build clean (0 warnings, 0 errors). MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. 3 new KIs: KI-075 (GATE_KB drift), KI-076 (isBearish() untested live), KI-077 (sell_put capped label). Zero backend changes. |
 
 ---
 
-## Next Session Priorities (Day 27)
+## Next Session Priorities (Day 28)
 
-### P0 — Run MASTER_AUDIT_FRAMEWORK (all 9 categories)
-User confirmed: Day 27 starts with full audit. Categories: Gate Logic, Data Contracts, Threading, IVR Math, Behavioral, API Sync, Frontend UX Accuracy (Cat 9 — GATE_KB drift KI-075), Performance, and Documentation.
+### P0 — ETF Holdings Earnings Gate (KI-079)
+Add `ETF_KEY_EARNINGS` dict to `constants.py` — top 3 holdings + next earnings dates per ETF.
+Events gate in ETF mode checks: if any key holding reports before expiry date → WARN or FAIL.
+ChatGPT proved this is a real gap: XLY TSLA (Apr 22) + AMZN (Apr 29) not tracked, gate passed.
+**Start here. 1 day.**
 
-### P1 — Tradier integration
-Open Lite (free) account. Wire OI/volume into Liquidity gate via `tradier_provider.py`. Fixes the last permanent data gap — Liquidity gate stops permanently warning on liquid ETFs. Confirmed: full options chain API including OI, volume, Greeks. 120 req/min rate limit. Half-day build.
+### P1 — Paper Trade P&L Dashboard
+New endpoint: `GET /api/options/paper-trades/summary` — win rate by verdict color, direction, ETF; P&L distribution.
+New frontend tab: equity curve, win rate bars, "when system said GO, it was right N% of the time."
+This is the single thing that converts conceptual trust into evidence-based confidence for real trades.
 
-### P2 — KI-067: QQQ sell_put ITM strike fix
-QQQ sell_put returns puts above current price. Check struct_cache + strike window.
+### P2 — Daily Best Setups Page
+New "Today's Setups" tab: auto-runs sector scan, calls analyze for each Leading ETF, surfaces top 2-3 setups.
+One button: "Refresh setups." Removes friction of manually checking 16 ETFs.
 
-### P3 — KI-044: API_CONTRACTS.md full sync
-Remove stale ETF fields. Document ETF-only enforcement, Signal Board fields, swing_data_quality.
+### P3 — Liquidity Gate Hard-Fail on Wide Bid-Ask (KI-080)
+Add threshold to constants.py: bid-ask > 20% on top strategy → liquidity gate FAIL (not just warn).
+Prevents bad chain data from producing ATM strikes that look like OTM.
 
 ### Deferred
-- Phase 7c: Weakening → sell_call for cyclical sectors
+- KI-067: QQQ sell_put ITM strike fix
+- KI-081: CPI/NFP macro events calendar (LOW)
 - KI-077: DirectionGuide sell_put "capped" label (LOW)
-- EODHD backfill (verify format before paying $30)
-
----
-
-## ARCHIVED: Day 26 Priorities (completed)
-### P0 — Market-open smoke test of new UX components (KI-076)
-When market is open, run live analysis for all 4 directions (XLF or XLE):
-- TradeExplainer: verify profit zone is green on correct side for bear_call_spread + bull_put_spread
-- GateExplainer: verify Q&A answers match actual gate results shown
-- DirectionGuide: verify direction locking (BUY signal → sell_call disabled)
-- LearnTab: click through all 4 lessons, verify slider works, SVGs render
-
-### P1 — QQQ sell_put chain ITM issue (KI-067)
-QQQ sell_put direction returns put strikes above current price → ITM → wrong for credit spread.
-Check struct_cache entry for QQQ, verify sell_put strike window (should be 0-8% below underlying),
-clear cache and re-test.
-
-### P2 — API_CONTRACTS.md sync (KI-044)
-Remove POST /api/orders/stage (no longer exists). Add ETF-only fields.
-
-### Deferred
 - Phase 7c: Weakening → sell_call for cyclical sectors
-- Phase C/E/F audit items
-- KI-077: sell_put DirectionGuide "capped" label (LOW priority)
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY25.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY25_SHORT.md` — Day 25 summary
+- `docs/versioned/KNOWN_ISSUES_DAY27.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY27_SHORT.md` — Day 27 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
-- `docs/Research/UX_Research_Synthesis_Day25.md` — Phase 8 research synthesis
+- `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research

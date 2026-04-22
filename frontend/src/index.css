@@ -828,6 +828,46 @@ tr:last-child td { border-bottom: none; }
   background: rgba(255,68,68,0.08);
   border: 1px solid rgba(255,68,68,0.2);
 }
+.seed-iv-warn {
+  color: var(--amber, #f59e0b);
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.2);
+}
+
+/* ─── Copy for ChatGPT ───────────────────────────────────────────────────── */
+.copy-chatgpt-wrap {
+  margin: 10px 0 4px;
+}
+.copy-chatgpt-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+  letter-spacing: 0.01em;
+}
+.copy-chatgpt-btn:hover {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.copy-chatgpt-btn.copied {
+  background: rgba(0, 200, 150, 0.08);
+  border-color: rgba(0, 200, 150, 0.3);
+  color: var(--green);
+}
+.copy-chatgpt-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 5px;
+  padding: 0 2px;
+  line-height: 1.5;
+}
 
 /* ─── ETF Grid ───────────────────────────────────────────────────────────── */
 .etf-grid {

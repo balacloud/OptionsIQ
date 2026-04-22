@@ -79,9 +79,25 @@ fi
 echo "Starting OptionsIQ frontend on port 3050..."
 cd "$ROOT/frontend"
 npm install --silent
-PORT=3050 npm start &
-FRONTEND_PID=$!
-echo "  Frontend PID: $FRONTEND_PID"
+PORT=3050 npm start > /dev/null 2>&1 &
+# npm forks a child webpack/node process — $! is the npm wrapper, not the actual
+# server. Wait for the port to be LISTENING, then capture the real PID.
+echo -n "  Waiting for webpack dev server..."
+FRONTEND_PID=""
+for i in $(seq 1 30); do
+  sleep 1
+  REAL_PID=$(lsof -ti "TCP:3050" -sTCP:LISTEN 2>/dev/null | head -1)
+  if [ -n "$REAL_PID" ]; then
+    FRONTEND_PID=$REAL_PID
+    echo " ready (PID $FRONTEND_PID)"
+    break
+  fi
+  echo -n "."
+done
+if [ -z "$FRONTEND_PID" ]; then
+  echo " TIMEOUT — frontend may not have started, check manually"
+  FRONTEND_PID=$!  # fall back to npm PID
+fi
 
 # ── Save PIDs ─────────────────────────────────────────────────────────────────
 echo "$BACKEND_PID $FRONTEND_PID" > "$ROOT/.pids"

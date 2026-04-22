@@ -28,9 +28,11 @@ if [ -f "$PIDS_FILE" ]; then
   rm -f "$PIDS_FILE"
 fi
 
-# Belt-and-suspenders: kill anything still on the ports
+# Belt-and-suspenders: kill any process still LISTENING on our ports.
+# Use -sTCP:LISTEN to avoid killing browser connections (Chrome holds the port open
+# as a client when connected to the webpack dev server).
 for PORT in 5051 3050; do
-  PIDS=$(lsof -ti ":$PORT" 2>/dev/null)
+  PIDS=$(lsof -ti "TCP:$PORT" -sTCP:LISTEN 2>/dev/null)
   if [ -n "$PIDS" ]; then
     for PID in $PIDS; do
       _stop_pid "$PID"

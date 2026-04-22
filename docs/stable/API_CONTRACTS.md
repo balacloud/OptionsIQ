@@ -72,7 +72,7 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
   "direction": "buy_call",
   "track": "A",
   "underlying_price": 198.53,
-  "data_source": "ibkr_live" | "ibkr_closed" | "ibkr_cache" | "ibkr_stale" | "yfinance" | "mock",
+  "data_source": "ibkr_live" | "ibkr_closed" | "ibkr_cache" | "ibkr_stale" | "alpaca" | "yfinance" | "mock",
   "chain_profile": "smart",
   "min_dte": 14,
   "quality": "live" | "closed" | "cached" | "stale" | "yfinance" | "degraded" | "partial" | "mock",
@@ -141,6 +141,10 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
   "direction_locked": []
 }
 ```
+
+**ETF-only enforcement:** Non-ETF tickers return HTTP 400 `{"error": "XYZ is not in the ETF universe", "etf_universe": [...]}`.
+
+**OI/Volume source:** `open_interest` and `volume` in strategies are supplemented from MarketData.app REST API when available. Falls back to 0 if MarketData.app times out or is unreachable. IBKR `reqMktData` does not return per-contract OI (platform limitation KI-035).
 
 ---
 
@@ -272,14 +276,17 @@ Seeds IV history for a single ticker from IBKR (yfinance fallback if disconnecte
 
 ## POST /api/admin/seed-iv/all
 
-Batch IV seeding for all 15 ETFs. Designed for nightly cron or manual trigger from UI.
+Batch IV seeding for all 16 ETFs. Designed for nightly cron or manual trigger from UI.
 Uses IBKR `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` per ticker, yfinance fallback.
+2s pacing delay between tickers to stay within IBKR historical data rate limits.
 
 **Response:**
 ```json
 {
-  "tickers_seeded": 15,
-  "total_iv_rows": 5475,
+  "tickers_seeded": 16,
+  "total_iv_rows": 5840,
+  "sources_used": ["ibkr"],
+  "pacing_warning": false,
   "errors": [],
   "results": [
     {
@@ -292,6 +299,10 @@ Uses IBKR `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` per ticker, yfinance fa
   ]
 }
 ```
+
+**`pacing_warning: true`** means IBKR returned 0 rows for all tickers — hit the ~60 req/10min historical data limit. Wait ~10 min and retry. Existing IV data is intact (upsert, never deletes).
+
+**`sources_used`** lists which providers actually returned data: `["ibkr"]`, `["yfinance"]`, or `["ibkr", "yfinance"]` (mixed).
 
 ---
 

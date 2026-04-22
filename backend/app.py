@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import os
 import logging
+import time
 from pathlib import Path
+
+# load_dotenv MUST run before any project module imports — those modules read
+# os.getenv() at import time (module-level constants). Loading .env after the
+# imports means those constants are always empty string.
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 import requests as _requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from dotenv import load_dotenv
 
 from constants import STA_BASE_URL, ETF_TICKERS
 from sector_scan_service import scan_sectors, analyze_sector_etf, _spy_regime
@@ -16,6 +22,7 @@ from gate_engine import GateEngine
 from ib_worker import IBWorker
 from iv_store import IVStore
 from alpaca_provider import AlpacaNotAvailableError, AlpacaProvider
+from marketdata_provider import MarketDataProvider
 from mock_provider import MockProvider
 from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
@@ -23,7 +30,6 @@ from yfinance_provider import YFinanceProvider
 from analyze_service import analyze_etf, get_live_price, _extract_iv_data
 
 VERSION = "2.0"
-load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 # Golden Rule 7: ACCOUNT_SIZE must be explicit — no silent defaults.
 if not os.getenv("ACCOUNT_SIZE"):
@@ -58,6 +64,11 @@ data_svc = DataService(
     mock_provider=mock_provider,
     alpaca_provider=_alpaca_provider,
 )
+_md_provider = MarketDataProvider()
+if _md_provider.available():
+    logger.info("MarketDataProvider ready (OI/volume supplement for Liquidity gate)")
+else:
+    logger.warning("MarketDataProvider: MARKET_DATA_KEY not set — OI/volume will remain 0")
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -98,6 +109,7 @@ def analyze_options():
             yf_provider=_yf_provider, mock_provider=mock_provider,
             strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
             iv_store=iv_store, spy_regime_fn=_spy_regime,
+            md_provider=_md_provider,
         )
         return jsonify(result)
     except Exception as exc:
@@ -204,11 +216,13 @@ def seed_iv(ticker: str):
 
 @app.post("/api/admin/seed-iv/all")
 def seed_iv_all():
-    """Nightly job — seeds IV history for all 16 ETFs from IBKR (yfinance fallback)."""
+    """Nightly job — seeds IV history for all 16 ETFs from IBKR (yfinance fallback).
+    2s pacing delay between tickers to stay within IBKR historical data limits."""
     results = []
     total_seeded = 0
     errors = []
-    for ticker in sorted(ETF_TICKERS):
+    tickers = sorted(ETF_TICKERS)
+    for i, ticker in enumerate(tickers):
         try:
             r = _seed_iv_for_ticker(ticker)
             results.append(r)
@@ -217,9 +231,14 @@ def seed_iv_all():
         except Exception as exc:
             logger.error("seed-iv-all: %s failed — %s", ticker, exc)
             errors.append({"ticker": ticker, "error": str(exc)})
+        if i < len(tickers) - 1:
+            time.sleep(2)  # IBKR pacing: max ~60 historical requests per 10 min
+    sources = {r["source"] for r in results if r["source"] != "none"}
     return jsonify({
         "tickers_seeded": len(results),
         "total_iv_rows": total_seeded,
+        "sources_used": sorted(sources),
+        "pacing_warning": total_seeded == 0 and not errors,
         "errors": errors,
         "results": results,
     })
