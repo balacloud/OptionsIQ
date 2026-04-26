@@ -80,7 +80,10 @@ class GateEngine:
             if direction == "buy_call":
                 return self._run_etf_buy_call(payload)
             if direction == "sell_call":
-                return self._run_sell_call(payload)  # already ETF-clean
+                # _run_sell_call is ETF-clean; append holdings gate for ETF context
+                gates = self._run_sell_call(payload)
+                gates.append(self._etf_holdings_earnings_gate(payload))
+                return gates
             if direction == "buy_put":
                 return self._run_etf_buy_put(payload)
             return self._run_etf_sell_put(payload)   # sell_put ETF track
@@ -622,7 +625,7 @@ class GateEngine:
         if spread_pct is not None:
             computed += f", Spread {spread_pct:.2f}%"
 
-        return _gate(
+        result = _gate(
             "liquidity",
             "Liquidity Proxy",
             s,
@@ -631,6 +634,9 @@ class GateEngine:
             r,
             spread_fail_block,  # only block on wide spread; missing OI is a warn
         )
+        if spread_pct is not None:
+            result["spread_pct"] = spread_pct
+        return result
 
     # -------------------------------------------------------------------------
     # ETF Gate Tracks (no VCP / ADX / pivot / breakdown — pure quant signals)
@@ -717,17 +723,37 @@ class GateEngine:
         return _gate("dte", "DTE Selection", s, f"DTE {dte}, target {rec_dte}",
                      f"IVR-based: <{IVR_BUYER_PASS_PCT} → 60 DTE, >={IVR_BUYER_PASS_PCT} → 30 DTE", r, s == "fail")
 
+    def _etf_holdings_earnings_gate(self, p: dict) -> dict:
+        """Key holdings earnings risk — warns if a major ETF holding reports before expiry."""
+        at_risk = p.get("etf_holdings_at_risk", [])
+        if not at_risk:
+            return _gate("holdings_earnings", "Key Holdings Earnings", "pass",
+                         "none before expiry",
+                         "warn if any key holding reports inside DTE window",
+                         "No major holdings reporting before expiry", False)
+        count = len(at_risk)
+        names = ", ".join(f"{h['symbol']} ({h['days_away']}d)" for h in at_risk[:4])
+        r = f"{count} holding{'s' if count > 1 else ''} report before expiry: {names}"
+        return _gate("holdings_earnings", "Key Holdings Earnings", "warn",
+                     f"{count} at risk",
+                     "warn if any key holding reports inside DTE window",
+                     r, False)
+
     def _etf_fomc_gate(self, p: dict, dte: int) -> dict:
-        """FOMC proximity check — ETFs have no earnings, FOMC is the primary event."""
+        """FOMC proximity check — ETFs have no earnings, FOMC is the primary event.
+        Warns whenever FOMC falls inside the holding window (fomc_days < dte),
+        not just when FOMC is imminent from today.
+        """
         fomc_days = int(p.get("fomc_days_away", 999) or 999)
-        if 5 <= fomc_days <= 10:
-            s, r, block = "warn", "FOMC event near expiry — rate-sensitive ETFs may gap", False
-        elif fomc_days < 5:
-            s, r, block = "warn", "FOMC imminent — consider reducing size", False
+        inside_window = fomc_days < dte
+        if fomc_days < 5:
+            s, r, block = "warn", "FOMC imminent — consider reducing size or avoid entry", False
+        elif inside_window:
+            s, r, block = "warn", f"FOMC in {fomc_days}d falls inside holding window ({dte} DTE) — rate-sensitive ETFs may gap", False
         else:
-            s, r, block = "pass", "No FOMC event conflict", False
-        return _gate("events", "Event Calendar", s, f"FOMC {fomc_days}d",
-                     "FOMC >10d clear; 5–10d warn; <5d caution", r, block)
+            s, r, block = "pass", "No FOMC event inside holding window", False
+        return _gate("events", "Event Calendar", s, f"FOMC {fomc_days}d, DTE {dte}",
+                     "warn if FOMC < DTE; clear otherwise", r, block)
 
     def _etf_spy_regime_bull_gate(self, p: dict) -> dict:
         """SPY regime gate for bullish ETF buyers (buy_call)."""
@@ -784,8 +810,8 @@ class GateEngine:
         """
         ETF buy_call gate track.
         Replaces _run_track_a for ETFs — no VCP, ADX, pivot_confirm.
-        Gates: IVR buyer, HV/IV, theta burn, DTE (IVR-based), FOMC, liquidity,
-               SPY regime (bull), position sizing.
+        Gates: IVR buyer, HV/IV, theta burn, DTE (IVR-based), FOMC,
+               holdings earnings, liquidity, SPY regime (bull), position sizing.
         """
         dte = int(p.get("selected_expiry_dte", 0) or 0)
         return [
@@ -794,6 +820,7 @@ class GateEngine:
             self._etf_theta_gate(p),
             self._etf_dte_buyer_gate(p),
             self._etf_fomc_gate(p, dte),
+            self._etf_holdings_earnings_gate(p),
             self._liquidity_gate(p),
             self._etf_spy_regime_bull_gate(p),
             self._etf_position_size_gate(p),
@@ -803,8 +830,8 @@ class GateEngine:
         """
         ETF buy_put gate track.
         Replaces _run_buy_put for ETFs — no VCP, ADX, breakdown_confirm.
-        Gates: IVR buyer, HV/IV, theta burn, DTE (IVR-based), FOMC, liquidity,
-               SPY regime (bear), position sizing.
+        Gates: IVR buyer, HV/IV, theta burn, DTE (IVR-based), FOMC,
+               holdings earnings, liquidity, SPY regime (bear), position sizing.
         """
         dte = int(p.get("selected_expiry_dte", 0) or 0)
         return [
@@ -813,6 +840,7 @@ class GateEngine:
             self._etf_theta_gate(p),
             self._etf_dte_buyer_gate(p),
             self._etf_fomc_gate(p, dte),
+            self._etf_holdings_earnings_gate(p),
             self._liquidity_gate(p),
             self._etf_spy_regime_bear_gate(p),
             self._etf_position_size_gate(p),
@@ -870,7 +898,10 @@ class GateEngine:
         # Gate 4: FOMC event
         out.append(self._etf_fomc_gate(p, dte))
 
-        # Gate 5: Liquidity
+        # Gate 5: Holdings earnings risk
+        out.append(self._etf_holdings_earnings_gate(p))
+
+        # Gate 6: Liquidity
         out.append(self._liquidity_gate(p))
 
         # Gate 6: SPY regime — put sellers want stable/bull market

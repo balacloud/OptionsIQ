@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 27 (April 21, 2026)
-> **Current Version:** v0.19.0
+> **Last Updated:** Day 28 (April 22–26, 2026)
+> **Current Version:** v0.20.0
 
 ---
 
@@ -149,10 +149,13 @@ Interactive education page — no backend, pure frontend with mock data.
 See: `docs/Research/UX_Research_Synthesis_Day25.md`
 
 ## Phase 9 — Track Record + Daily Workflow (Day 28+)
-- [ ] ETF holdings earnings gate (KI-079) — top 3 holdings per ETF in constants.py
+- [x] ETF holdings earnings gate (KI-079) — ETF_KEY_HOLDINGS + COMPANY_EARNINGS + _etf_holdings_earnings_gate() ✅ Day 28
+- [x] Liquidity gate hard-fail on bid-ask >20% (KI-080) — SPREAD_DATA_FAIL_PCT + spread_pct on gate dict ✅ Day 28
+- [x] FOMC gate: warn when FOMC inside DTE window (fomc_days < dte), not just when imminent ✅ Day 28
+- [ ] Pre-analysis prompts in UI — Prompts 1–2 from Daily_Trade_Prompts.md as copyable panel (Day 29 P0)
 - [ ] Paper trade P&L dashboard — win rate by verdict/direction/ETF, equity curve
+- [ ] Credit-to-width ratio gate (KI-082) — MIN_CREDIT_WIDTH_RATIO = 0.20, fail if credit < 20% of width
 - [ ] Daily best setups page — auto-scan + top 2-3 setups surfaced in one view
-- [ ] Liquidity gate hard-fail on wide bid-ask >20% (KI-080)
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -206,3 +209,4 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 | v0.17.0 | Day 25 | **Phase 8 UX Overhaul** — beginner-friendly frontend. DirectionGuide, TradeExplainer (number line + risk/reward bar), GateExplainer (plain English Q&A accordion), LearnTab (4 interactive lessons: Strikes/Directions/Spreads/Gates). MasterVerdict + TopThreeCards enhanced with plain English. MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. Zero backend changes. |
 | v0.18.0 | Day 26 | **Data infrastructure + gate fixes.** Nightly IV seeding (POST /api/admin/seed-iv/all + UI button). FOMC gate fixed (_days_until_next_fomc() from constants.py). 7,492 IV rows seeded. TradeExplainer strike zone overlap fixed. MasterVerdict passed gates visible. Tradier API reviewed (Lite free = full data API). Data_Strategy_Day26.md. |
 | v0.19.0 | Day 27 | **Full audit + pre-trade workflow.** Full audit (0C/0H): bull_put_spread P&L fixed (HIGH), API_CONTRACTS.md synced (MEDIUM), audit framework corrected (LOW). MarketData.app OI/volume supplement (marketdata_provider.py, load_dotenv ordering fix). FOMC calendar corrected (Apr 29 missing). CopyForChatGPT.jsx button. Daily_Trade_Prompts.md. start/stop script PID fixes. ChatGPT live test caught 3 gaps: KI-079 (ETF holdings earnings), KI-080 (bid-ask hard fail), KI-081 (CPI calendar). |
+| v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |

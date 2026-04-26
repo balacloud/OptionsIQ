@@ -13,17 +13,20 @@ import time
 from datetime import datetime
 
 from constants import (
+    COMPANY_EARNINGS,
     DIRECTION_TO_CHAIN_DIR,
     ETF_DTE_HIGH_IVR,
     ETF_DTE_LOW_IVR,
     ETF_DTE_SELLER_PASS_MAX,
     ETF_DTE_SELLER_PASS_MIN,
+    ETF_KEY_HOLDINGS,
     ETF_MIN_PREMIUM_DOLLAR,
     ETF_TICKERS,
     FOMC_DATES,
     IVR_BUYER_PASS_PCT,
     MAX_LOSS_FAIL_PCT,
     MAX_LOSS_WARN_PCT,
+    SPREAD_DATA_FAIL_PCT,
     SPREAD_FAIL_PCT,
 )
 from gate_engine import GateEngine
@@ -39,6 +42,35 @@ def _days_until_next_fomc() -> int:
         if meeting >= today:
             return (meeting - today).days
     return 999
+
+
+def _etf_holdings_at_risk(ticker: str, expiry_date: str) -> list[dict]:
+    """
+    Returns key holdings for an ETF that report earnings before the option expiry.
+    Each entry: {"symbol": str, "earnings_date": str, "days_away": int}.
+    Returns [] for diversified ETFs (MDY/IWM/SCHB) or if expiry is missing/invalid.
+    Dates in COMPANY_EARNINGS are approximate — update quarterly.
+    """
+    holdings = ETF_KEY_HOLDINGS.get(ticker, [])
+    if not holdings or not expiry_date:
+        return []
+    today = datetime.utcnow().date()
+    try:
+        expiry = datetime.strptime(expiry_date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return []
+    at_risk = []
+    for symbol in holdings:
+        for d_str in sorted(COMPANY_EARNINGS.get(symbol, [])):
+            d = datetime.strptime(d_str, "%Y-%m-%d").date()
+            if d >= today and d <= expiry:
+                at_risk.append({
+                    "symbol": symbol,
+                    "earnings_date": d_str,
+                    "days_away": (d - today).days,
+                })
+                break  # only next upcoming per holding
+    return sorted(at_risk, key=lambda x: x["days_away"])
 
 
 # ─── Parsing helpers ─────────────────────────────────────────────────────────
@@ -384,13 +416,24 @@ def apply_etf_gate_adjustments(gates: list[dict], direction: str,
     Consolidates all ETF-specific gate post-processing into one function.
     Mutates `gates` in place.
     """
-    # 1. Liquidity fail → warn (OTM legs on ETFs have naturally wider spreads)
+    # 1. Liquidity fail → warn only if spread is in the "naturally wider ETF" range.
+    #    At >SPREAD_DATA_FAIL_PCT (20%) the bid-ask gap is wide enough that the
+    #    underlying delta/strike data is unreliable — keep blocking to prevent
+    #    bad data driving the wrong strike selection (KI-080).
     for g in gates:
         if g["id"] == "liquidity" and g["status"] == "fail":
             if "Spread too wide" in str(g.get("reason", "")):
-                g["status"] = "warn"
-                g["blocking"] = False
-                g["reason"] = "ETF OTM spread wider than stock threshold — review bid-ask before entry"
+                raw_spread = g.get("spread_pct")
+                if raw_spread is not None and raw_spread > SPREAD_DATA_FAIL_PCT:
+                    g["blocking"] = True
+                    g["reason"] = (
+                        f"Bid-ask spread {raw_spread:.1f}% — data unreliable at this width; "
+                        "do not trade until spread narrows"
+                    )
+                else:
+                    g["status"] = "warn"
+                    g["blocking"] = False
+                    g["reason"] = "ETF OTM spread wider than stock threshold — review bid-ask before entry"
 
     # 2. sell_call market_regime_seller → non-blocking
     if direction == "sell_call":
@@ -579,6 +622,10 @@ def analyze_etf(payload: dict, ticker: str, *,
         "risk_pct": risk_pct,
         "fomc_days_away": _i(payload.get("fomc_days_away"), 999),
         "lots": _f(payload.get("lots"), 1.0),
+        "etf_holdings_at_risk": (
+            _etf_holdings_at_risk(ticker, selected.get("expiry") or selected.get("expiry_display", ""))
+            if is_etf else []
+        ),
     }
 
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)

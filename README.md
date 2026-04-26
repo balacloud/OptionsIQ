@@ -4,7 +4,7 @@
 
 OptionsIQ pulls live options chain data from Interactive Brokers, runs a multi-gate quality framework, ranks the best strike/expiry combinations for vertical spreads, and gives you a step-by-step guide to place the trade on IBKR Client Portal. It covers all four option directions across 16 sector ETFs, with real-time SPY regime awareness and IV Rank scoring.
 
-> **v0.19.0** — Day 27 (April 21, 2026)
+> **v0.20.0** — Day 28 (April 22–26, 2026)
 
 ---
 
@@ -12,7 +12,7 @@ OptionsIQ pulls live options chain data from Interactive Brokers, runs a multi-g
 
 - **Sector ETF Scanner** — scans 16 sector ETFs (XLK, XLF, XLV, XLE, XLU, etc.) using STA's relative strength data to find which sectors are Leading, Weakening, Improving, or Lagging
 - **4-Direction Analysis** — buy call, sell call (bear call spread), buy put, sell put (bull put spread) — each with direction-aware chain fetching and gate evaluation
-- **Multi-Gate Quality Framework** — 9+ gates evaluate IV Rank, theta burn, DTE selection, liquidity, market regime, position sizing before any trade recommendation
+- **Multi-Gate Quality Framework** — 9+ gates evaluate IV Rank, theta burn, DTE selection, liquidity, market regime, position sizing, ETF holdings earnings risk, and FOMC proximity before any trade recommendation
 - **Defined-Risk Spreads** — automatically builds bear call spreads (delta 0.30/0.15) and bull put spreads (delta 0.30/0.15) with exact max profit, max loss, and breakeven
 - **IBKR Client Portal Guide** — when verdict is GO, shows step-by-step instructions to place the exact trade on IBKR's web platform
 - **Real-Time SPY Regime** — monitors SPY vs 200 SMA, 5-day return, and broad selloff detection (>50% sectors weakening + SPY below 200 SMA)
@@ -385,6 +385,10 @@ All tests run without IBKR — pure mock data, <1 second total.
 
 | Version | Day | Highlights |
 |---------|-----|-----------|
+| v0.20.0 | 28 | Gate robustness. ETF holdings earnings gate (KI-079). Spread hard-block >20% (KI-080). FOMC inside-window check. 29 tests. ChatGPT stress-test validated. |
+| v0.19.0 | 27 | Full audit (0C/0H). bull_put_spread P&L fix. MarketData.app OI supplement. CopyForChatGPT button. Daily_Trade_Prompts.md. FOMC dates corrected. |
+| v0.18.0 | 26 | IV seeding (7,492 rows). FOMC gate fixed. MasterVerdict chips. |
+| v0.17.0 | 25 | Phase 8 UX overhaul. DirectionGuide, TradeExplainer, GateExplainer, LearnTab. Beginner-friendly frontend. |
 | v0.16.1 | 24 | Structural cleanup: analyze_service.py extraction (app.py 965→320), 27 tests, ExecutionCard visual guide |
 | v0.16.0 | 23 | First GO signals (XLF, XLV bear_call_spread). bull_put_spread built. 6 bugs fixed. |
 | v0.15.1 | 22 | Live smoke test + 5 ETF gate fixes |

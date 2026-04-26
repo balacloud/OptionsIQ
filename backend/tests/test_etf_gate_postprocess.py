@@ -76,6 +76,40 @@ def test_sell_call_market_regime_non_blocking():
     assert gates[0]["blocking"] is False
 
 
+def test_spread_fail_15pct_downgraded_to_warn_for_etf():
+    """Spread 15% (wider than stock SPREAD_FAIL_PCT but below DATA_FAIL_PCT) → warn, non-blocking."""
+    gates = [{
+        "id": "liquidity",
+        "name": "Liquidity Proxy",
+        "status": "fail",
+        "blocking": True,
+        "reason": "Spread too wide for efficient execution",
+        "computed_value": "OI 1500, Vol/OI 0.25, Prem 1.50, Spread 15.00%",
+        "spread_pct": 15.0,
+    }]
+    apply_etf_gate_adjustments(gates, "sell_put", 25000.0, {}, [])
+    assert gates[0]["status"] == "warn"
+    assert gates[0]["blocking"] is False
+    assert "review bid-ask" in gates[0]["reason"]
+
+
+def test_spread_fail_27pct_stays_blocking_for_etf():
+    """Spread 27% (>SPREAD_DATA_FAIL_PCT=20%) → stays fail + blocking=True (data garbage, KI-080)."""
+    gates = [{
+        "id": "liquidity",
+        "name": "Liquidity Proxy",
+        "status": "fail",
+        "blocking": False,
+        "reason": "Spread too wide for efficient execution",
+        "computed_value": "OI 1500, Vol/OI 0.25, Prem 1.50, Spread 27.52%",
+        "spread_pct": 27.52,
+    }]
+    apply_etf_gate_adjustments(gates, "sell_put", 25000.0, {}, [])
+    assert gates[0]["status"] == "fail"
+    assert gates[0]["blocking"] is True
+    assert "data unreliable" in gates[0]["reason"]
+
+
 def test_dte_seller_promoted_within_etf_range():
     """DTE 30 within ETF sweet spot (21-45) should promote dte_seller warn → pass."""
     gates = [{
