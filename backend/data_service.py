@@ -239,6 +239,35 @@ class DataService:
 
         threading.Thread(target=_run, daemon=True).start()
 
+    def get_cache_stats(self, tickers: list[str]) -> dict:
+        """Return chain cache age/freshness per ticker for data provenance."""
+        from datetime import datetime as _dt
+        now = time.time()
+        result = {}
+        with self._conn() as conn:
+            for ticker in tickers:
+                rows = conn.execute(
+                    "SELECT cache_key, saved_at, expires_at FROM chain_cache WHERE cache_key LIKE ?",
+                    (f"{ticker.upper()}::%",),
+                ).fetchall()
+                if not rows:
+                    result[ticker] = {
+                        "status": "missing", "saved_at": None,
+                        "age_minutes": None, "expires_in_minutes": None, "entries": 0,
+                    }
+                else:
+                    latest = max(rows, key=lambda r: r["saved_at"])
+                    age_sec = now - latest["saved_at"]
+                    expires_in = latest["expires_at"] - now
+                    result[ticker] = {
+                        "status": "fresh" if expires_in > 0 else "stale",
+                        "saved_at": _dt.utcfromtimestamp(latest["saved_at"]).isoformat(timespec="seconds"),
+                        "age_minutes": round(age_sec / 60, 1),
+                        "expires_in_minutes": round(max(0.0, expires_in) / 60, 1),
+                        "entries": len(rows),
+                    }
+        return result
+
     # ─── Public API ───────────────────────────────────────────────────────────
 
     def get_chain(

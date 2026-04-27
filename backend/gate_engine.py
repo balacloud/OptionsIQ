@@ -15,7 +15,13 @@ from constants import (
     ETF_DTE_LOW_IVR,
     HV_IV_PASS_RATIO,
     HV_IV_WARN_RATIO,
+    HV_IV_SELL_PASS_RATIO,
+    HV_IV_SELL_WARN_RATIO,
     HV_LOW_REGIME_PCT,
+    VIX_LOW_VOL,
+    VIX_SWEET_SPOT_HIGH,
+    VIX_CRISIS,
+    VIX_STRESS,
     IV_ABS_BUYER_PASS_PCT,
     IV_ABS_BUYER_WARN_PCT,
     IV_ABS_LOW_HV_PASS_PCT,
@@ -213,7 +219,10 @@ class GateEngine:
         if earn_days <= dte:
             s, r = "fail", "Earnings inside expiry window"
             block = True
-        elif 5 <= fomc_days <= 10:
+        elif fomc_days < 5:
+            s, r = "warn", f"FOMC imminent ({fomc_days}d) — vol event inside holding window"
+            block = False
+        elif fomc_days <= 10:
             s, r = "warn", "FOMC event near expiry"
             block = False
         else:
@@ -299,7 +308,10 @@ class GateEngine:
         if earn_days <= dte:
             s, r = "fail", "Earnings inside expiry window"
             block = True
-        elif 5 <= fomc_days <= 10:
+        elif fomc_days < 5:
+            s, r = "warn", f"FOMC imminent ({fomc_days}d) — vol event inside holding window"
+            block = False
+        elif fomc_days <= 10:
             s, r = "warn", "FOMC event near expiry"
             block = False
         else:
@@ -353,7 +365,13 @@ class GateEngine:
             s, r = "fail", "IV too cheap — insufficient premium for call selling"
         out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
 
-        # Gate 2: Strike OTM check — sell_call strike must be above current price
+        # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
+        out.append(self._etf_hv_iv_seller_gate(p))
+
+        # Gate 3: VIX regime — block crisis, warn thin vol
+        out.append(self._vix_regime_gate(p))
+
+        # Gate 4: Strike OTM check — sell_call strike must be above current price
         strike = float(p.get("strike", 0.0) or 0.0)
         und = float(p.get("underlying_price", 0.0) or 0.0)
         if und > 0:
@@ -386,7 +404,10 @@ class GateEngine:
         if earn_days <= dte:
             s, r = "fail", "Earnings inside expiry window"
             block = True
-        elif 5 <= fomc_days <= 10:
+        elif fomc_days < 5:
+            s, r = "warn", f"FOMC imminent ({fomc_days}d) — vol event inside holding window"
+            block = False
+        elif fomc_days <= 10:
             s, r = "warn", "FOMC event near expiry"
             block = False
         else:
@@ -507,7 +528,10 @@ class GateEngine:
         if earn_days <= dte:
             s, r = "fail", "Earnings inside expiry window"
             block = True
-        elif 5 <= fomc_days <= 10:
+        elif fomc_days < 5:
+            s, r = "warn", f"FOMC imminent ({fomc_days}d) — vol event inside holding window"
+            block = False
+        elif fomc_days <= 10:
             s, r = "warn", "FOMC event near expiry"
             block = False
         else:
@@ -687,6 +711,47 @@ class GateEngine:
         return _gate("hv_iv", "HV/IV Ratio", s, f"IV/HV {ratio:.2f}",
                      f"<{HV_IV_PASS_RATIO} pass, {HV_IV_PASS_RATIO}–{HV_IV_WARN_RATIO} warn, >{HV_IV_WARN_RATIO} fail", r, s == "fail")
 
+    def _etf_hv_iv_seller_gate(self, p: dict) -> dict:
+        """Volatility Risk Premium gate for sellers (Sinclair).
+        Sellers need IV > HV — only then are they collecting overpriced premium.
+        HV/IV > 1.05 means realized vol is outpacing implied → no edge, don't sell.
+        """
+        current_iv = float(p.get("current_iv", 0.0))
+        hv_20 = float(p.get("hv_20", 0.0) or 0.0)
+        ratio = float(p.get("hv_iv_ratio", 0.0) or 0.0)
+        if ratio == 0.0 or current_iv == 0.0:
+            s, r = "warn", "Vol data unavailable — VRP unverified"
+        elif ratio < HV_IV_SELL_PASS_RATIO:
+            s, r = "pass", f"IV > HV — positive vol risk premium, good to sell"
+        elif ratio <= HV_IV_SELL_WARN_RATIO:
+            s, r = "warn", "IV barely above HV — thin premium edge, size down"
+        else:
+            s, r = "fail", f"HV exceeds IV — realized vol > implied, no edge selling"
+        return _gate("hv_iv_vrp", "Vol Risk Premium", s, f"HV/IV {ratio:.2f} (HV {hv_20:.1f}%, IV {current_iv:.1f}%)",
+                     f"<{HV_IV_SELL_PASS_RATIO} pass, {HV_IV_SELL_PASS_RATIO}–{HV_IV_SELL_WARN_RATIO} warn, >{HV_IV_SELL_WARN_RATIO} fail", r, s == "fail")
+
+    def _vix_regime_gate(self, p: dict) -> dict:
+        """VIX regime gate for sellers. Perplexity: 21-year tastylive study.
+        <15 = thin premiums (warn), 20-30 = sweet spot, >40 = negative expectancy (block).
+        """
+        vix = p.get("vix")
+        if vix is None:
+            return _gate("vix_regime", "VIX Regime", "warn", "VIX unavailable",
+                         f"<{VIX_LOW_VOL} warn, {VIX_LOW_VOL}–{VIX_SWEET_SPOT_HIGH} ok, >{VIX_CRISIS} block",
+                         "VIX data unavailable — regime unverified", False)
+        vix = float(vix)
+        if vix > VIX_CRISIS:
+            s, r = "fail", f"VIX {vix:.1f} — crisis regime, negative expectancy for short premium"
+        elif vix > VIX_STRESS:
+            s, r = "warn", f"VIX {vix:.1f} — stress regime, reduce size"
+        elif vix < VIX_LOW_VOL:
+            s, r = "warn", f"VIX {vix:.1f} — low vol, premiums too thin for reliable edge"
+        else:
+            s, r = "pass", f"VIX {vix:.1f} — favorable regime for premium selling"
+        return _gate("vix_regime", "VIX Regime", s, f"VIX {vix:.1f}",
+                     f"<{VIX_LOW_VOL} warn, {VIX_LOW_VOL}–{VIX_SWEET_SPOT_HIGH} pass, >{VIX_STRESS} warn, >{VIX_CRISIS} block",
+                     r, s == "fail")
+
     def _etf_theta_gate(self, p: dict) -> dict:
         """Theta burn gate for buyers — same math, no swing dependency."""
         premium = float(p.get("premium", 0.0) or 0.0)
@@ -865,7 +930,13 @@ class GateEngine:
         out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.1f}%",
                          f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
 
-        # Gate 2: Strike delta check — ETF sell_put should be OTM (delta < -0.30 abs)
+        # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
+        out.append(self._etf_hv_iv_seller_gate(p))
+
+        # Gate 3: VIX regime — block crisis, warn thin vol
+        out.append(self._vix_regime_gate(p))
+
+        # Gate 4: Strike delta check — ETF sell_put should be OTM (delta < -0.30 abs)
         strike = float(p.get("strike", 0.0) or 0.0)
         und = float(p.get("underlying_price", 0.0) or 0.0)
         if und > 0:

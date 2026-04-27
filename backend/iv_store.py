@@ -16,8 +16,10 @@ class IVStore:
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         return conn
 
     def _init_db(self) -> None:
@@ -65,12 +67,14 @@ class IVStore:
                 )
                 """
             )
-            # Migrate existing databases that predate entry_price / mark_price
+            # Migrate existing databases
             existing = {row[1] for row in conn.execute("PRAGMA table_info(paper_trades)").fetchall()}
             if "entry_price" not in existing:
                 conn.execute("ALTER TABLE paper_trades ADD COLUMN entry_price REAL")
             if "mark_price" not in existing:
                 conn.execute("ALTER TABLE paper_trades ADD COLUMN mark_price REAL")
+            if "verdict" not in existing:
+                conn.execute("ALTER TABLE paper_trades ADD COLUMN verdict TEXT")
 
     def store_iv(self, ticker: str, date: str, iv: float, source: str = "ibkr") -> None:
         ticker = ticker.upper().strip()
@@ -100,6 +104,39 @@ class IVStore:
             ).fetchall()
         ordered = list(reversed(rows))
         return [{"date": row["date"], "iv": float(row["iv"])} for row in ordered]
+
+    def get_iv_stats(self, ticker: str) -> dict:
+        """Row count + date range for data provenance. Returns nulls if empty."""
+        ticker = ticker.upper().strip()
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as rows, MIN(date) as first_date, MAX(date) as last_date "
+                "FROM iv_history WHERE ticker = ?",
+                (ticker,),
+            ).fetchone()
+        rows = int(row["rows"]) if row else 0
+        return {
+            "rows": rows,
+            "first_date": row["first_date"] if rows > 0 else None,
+            "last_date": row["last_date"] if rows > 0 else None,
+            "status": "ok" if rows >= 30 else ("sparse" if rows > 0 else "empty"),
+        }
+
+    def get_ohlcv_stats(self, ticker: str) -> dict:
+        """Row count for OHLCV data used in HV computation."""
+        ticker = ticker.upper().strip()
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as rows, MIN(date) as first_date, MAX(date) as last_date "
+                "FROM ohlcv_daily WHERE ticker = ?",
+                (ticker,),
+            ).fetchone()
+        rows = int(row["rows"]) if row else 0
+        return {
+            "rows": rows,
+            "first_date": row["first_date"] if rows > 0 else None,
+            "last_date": row["last_date"] if rows > 0 else None,
+        }
 
     def compute_ivr_pct(self, ticker: str, current_iv: float) -> float | None:
         history = self.get_iv_history(ticker, 252)
@@ -184,8 +221,8 @@ class IVStore:
                 """
                 INSERT INTO paper_trades
                 (ticker, direction, strategy_rank, strike, expiry, premium,
-                 lots, account_size, entry_price, mark_price)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 lots, account_size, entry_price, mark_price, verdict)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     trade["ticker"].upper().strip(),
@@ -198,6 +235,7 @@ class IVStore:
                     float(trade["account_size"]),
                     float(entry_price) if entry_price is not None else None,
                     float(trade["mark_price"]) if trade.get("mark_price") is not None else None,
+                    trade.get("verdict"),
                 ),
             )
             return int(cur.lastrowid)
@@ -207,9 +245,76 @@ class IVStore:
             rows = conn.execute(
                 """
                 SELECT id, ticker, direction, strategy_rank, strike, expiry,
-                       premium, lots, account_size, entry_price, mark_price, created_at
+                       premium, lots, account_size, entry_price, mark_price,
+                       verdict, created_at
                 FROM paper_trades
                 ORDER BY id DESC
                 """
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_paper_trades_summary(self) -> dict:
+        trades = list(reversed(self.list_paper_trades()))  # chronological
+        if not trades:
+            return {
+                "total_trades": 0, "wins": 0, "losses": 0, "win_rate": None,
+                "total_pnl": 0.0, "by_direction": {}, "by_ticker": {}, "by_verdict": {},
+                "equity_curve": [], "trades": [],
+            }
+
+        credit_dirs = {"sell_put", "sell_call"}
+        enriched = []
+        running_pnl = 0.0
+        equity_curve = []
+
+        for t in trades:
+            entry = t.get("entry_price")
+            mark  = t.get("mark_price")
+            lots  = float(t.get("lots", 1))
+            direction = t.get("direction", "")
+
+            pnl = None
+            if entry is not None and mark is not None:
+                if direction in credit_dirs:
+                    pnl = (entry - mark) * lots * 100   # credit: want premium to decay
+                else:
+                    pnl = (mark - entry) * lots * 100   # debit: want premium to rise
+                running_pnl += pnl
+                equity_curve.append({"date": t["created_at"][:10], "pnl": round(running_pnl, 2)})
+
+            enriched.append({**t, "pnl": round(pnl, 2) if pnl is not None else None})
+
+        wins   = sum(1 for t in enriched if t["pnl"] is not None and t["pnl"] > 0)
+        losses = sum(1 for t in enriched if t["pnl"] is not None and t["pnl"] < 0)
+        graded = wins + losses
+        win_rate = round(wins / graded * 100, 1) if graded > 0 else None
+
+        def group_by(key):
+            out = {}
+            for t in enriched:
+                k = t.get(key) or "unknown"
+                if k not in out:
+                    out[k] = {"count": 0, "wins": 0, "total_pnl": 0.0}
+                out[k]["count"] += 1
+                if t["pnl"] is not None:
+                    out[k]["total_pnl"] = round(out[k]["total_pnl"] + t["pnl"], 2)
+                    if t["pnl"] > 0:
+                        out[k]["wins"] += 1
+            for k in out:
+                c = out[k]["count"]
+                w = out[k]["wins"]
+                out[k]["win_rate"] = round(w / c * 100, 1) if c > 0 else None
+            return out
+
+        return {
+            "total_trades": len(trades),
+            "wins": wins,
+            "losses": losses,
+            "win_rate": win_rate,
+            "total_pnl": round(running_pnl, 2),
+            "by_direction": group_by("direction"),
+            "by_ticker":    group_by("ticker"),
+            "by_verdict":   group_by("verdict"),
+            "equity_curve": equity_curve,
+            "trades": list(reversed(enriched)),  # most recent first
+        }

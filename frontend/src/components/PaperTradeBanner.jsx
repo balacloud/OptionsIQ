@@ -14,6 +14,7 @@ export default function PaperTradeBanner({ ticker, direction, data }) {
         premium: s.premium,
         lots: 1,
         account_size: 50000,
+        verdict: data.verdict?.color || null,
       }),
     });
   };

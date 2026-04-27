@@ -132,6 +132,53 @@ def _chain_field_stats(chain: dict) -> dict:
 _spy_regime_cache: dict = {"data": None, "ts": 0}
 _SPY_REGIME_TTL = 120  # 2 min
 
+# ─── VIX (5-min cache) ───────────────────────────────────────────────────────
+
+_vix_cache: dict = {"value": None, "source": None, "ts": 0}
+_VIX_TTL = 300  # 5 min
+
+
+def _fetch_vix() -> tuple[float | None, str]:
+    """Fetch live VIX via yfinance ^VIX. 5-min cache. Returns (value, source)."""
+    now = time.monotonic()
+    if _vix_cache["value"] is not None and (now - _vix_cache["ts"]) < _VIX_TTL:
+        return _vix_cache["value"], _vix_cache["source"]
+    try:
+        import yfinance as yf
+        hist = yf.Ticker("^VIX").history(period="1d", interval="1m")
+        if not hist.empty:
+            val = float(hist["Close"].dropna().iloc[-1])
+            _vix_cache.update({"value": val, "source": "yfinance_intraday", "ts": now})
+            return val, "yfinance_intraday"
+        daily = yf.Ticker("^VIX").history(period="5d", interval="1d")
+        if not daily.empty:
+            val = float(daily["Close"].dropna().iloc[-1])
+            _vix_cache.update({"value": val, "source": "yfinance_daily", "ts": now})
+            return val, "yfinance_daily"
+    except Exception:
+        pass
+    return None, "unavailable"
+
+
+def get_vix_status() -> dict:
+    """Returns cached VIX state for data provenance — does NOT trigger a new fetch."""
+    now = time.monotonic()
+    val = _vix_cache.get("value")
+    ts = _vix_cache.get("ts", 0)
+    age = round(now - ts) if ts else None
+    if val is None:
+        status = "null"
+    elif age is not None and age > _VIX_TTL * 2:
+        status = "stale"
+    else:
+        status = "ok"
+    return {
+        "status": status,
+        "value": round(val, 2) if val is not None else None,
+        "source": _vix_cache.get("source"),
+        "age_seconds": age,
+    }
+
 
 def _fetch_spy_regime(spy_regime_fn):
     """Fetch real SPY regime from STA, with 2-min cache. Never fabricate."""
@@ -604,6 +651,7 @@ def analyze_etf(payload: dict, ticker: str, *,
             _md_oi_volume = _md_result
 
     ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
+    vix_value, vix_source = _fetch_vix()
 
     gate_payload = {
         **ivr_for_gates,
@@ -613,14 +661,21 @@ def analyze_etf(payload: dict, ticker: str, *,
         "strike": float(selected.get("strike", underlying)),
         "premium": float(selected.get("premium", 0.0)),
         "theta_per_day": float(selected.get("theta_per_day", -0.2)),
-        "open_interest": float(_md_oi_volume.get("open_interest") or selected.get("open_interest", 0.0)),
-        "volume": float(_md_oi_volume.get("volume") or selected.get("volume", 0.0)),
+        "open_interest": float(_md_oi_volume.get("open_interest") or selected.get("open_interest") or 0.0),
+        "volume": float(_md_oi_volume.get("volume") or selected.get("volume") or 0.0),
+        "oi_status": (
+            "ok" if _md_oi_volume.get("open_interest") or (selected.get("open_interest") or 0) > 0
+            else "zero_ibkr" if selected.get("open_interest") == 0
+            else "missing"
+        ),
+        "oi_source": "marketdata" if _md_oi_volume.get("open_interest") else ("ibkr" if (selected.get("open_interest") or 0) > 0 else "unavailable"),
         "bid": selected.get("bid"),
         "ask": selected.get("ask"),
         "max_gain_per_lot": float(selected.get("max_gain_per_lot") or -1.0),
         "account_size": account_size,
         "risk_pct": risk_pct,
         "fomc_days_away": _i(payload.get("fomc_days_away"), 999),
+        "vix": vix_value,
         "lots": _f(payload.get("lots"), 1.0),
         "etf_holdings_at_risk": (
             _etf_holdings_at_risk(ticker, selected.get("expiry") or selected.get("expiry_display", ""))
@@ -670,6 +725,7 @@ def analyze_etf(payload: dict, ticker: str, *,
         "put_call_ratio": _put_call_ratio(chain),
         "max_pain_strike": _max_pain(chain),
         "recommended_dte": recommended_dte,
+        "vix": {"value": round(vix_value, 2) if vix_value else None, "source": vix_source},
         "direction_locked": [] if is_etf else (
             ["sell_call", "buy_put"] if swing_data.get("signal") == "BUY" else
             ["buy_call", "sell_put"] if swing_data.get("signal") == "SELL" else []

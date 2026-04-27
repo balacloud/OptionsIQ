@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 28 (April 22–26, 2026)
-> **Current Version:** v0.20.0
-> **Project Phase:** Gate robustness round. KI-079 (ETF holdings earnings) + KI-080 (spread hard-block) + FOMC window gate all resolved. Two ChatGPT stress tests validated live. KI-082 (credit-to-width ratio) logged. Day 29: Pre-analysis prompts in UI, Paper Trade Dashboard.
+> **Last Updated:** Day 29 (April 27, 2026)
+> **Current Version:** v0.21.0
+> **Project Phase:** Data observability + gate hardening. KI-082 resolved (credit-to-width 33%). HV/IV VRP gate + VIX regime gate added. Best Setups, Data Health, Paper Trade Dashboard, Pre-Analysis Prompts all shipped. Tab state retention fixed. KI-083 (XLE OHLCV corrupted), KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. Day 30: fix OHLCV data quality, VIX in RegimeBar, app.py size cleanup.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY28_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY28.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY29_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY29.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -222,26 +222,30 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY28.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY29.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
+2. **KI-083: XLE OHLCV data corruption** — stray rows at ~$100 in $57-63 range → HV-20 = 413%. VRP gate corrupted for XLE. Delete bad rows, re-seed. DISCOVERED via data health tab.
 
 Open (MEDIUM):
-2. **KI-082: No credit-to-width ratio gate** — $0.05 credit on $1-wide spread approved. Need MIN_CREDIT_WIDTH_RATIO=0.20.
-3. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
-4. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap, may self-correct with consistent IBKR seeding.
-5. **KI-044: API_CONTRACTS.md** — partially synced Day 27. Some ETF-specific fields still undocumented.
-6. **KI-075: GateExplainer GATE_KB may drift from gate_engine.py** — audit scheduled Category 9.
-7. **KI-076: TradeExplainer isBearish() not live-tested** — all 4 directions not verified live.
+3. **KI-084: XLC + XLRE no OHLCV data** — 0 bars, HV-20 null, VRP gate cannot run. Seed OHLCV via IBKR.
+4. **KI-086: app.py 470 lines — Rule 4 violation** — _seed_iv_for_ticker + _run_one belong in service modules.
+5. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts. Lower priority.
+6. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap.
+7. **KI-044: API_CONTRACTS.md** — now synced for /api/best-setups + /api/data-health (Day 29).
+8. **KI-075: GateExplainer GATE_KB may drift** — audit scheduled Category 9.
+9. **KI-076: TradeExplainer isBearish() not live-tested** — all 4 directions not verified live.
 
 Open (LOW):
-8. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034)
-9. API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
-10. deepcopy() overhead (KI-072), struct_cache unbounded (KI-073), no startup health check (KI-074)
-11. **KI-077: DirectionGuide sell_put "capped" label may mislead** — LOW
-12. **KI-081: No CPI/NFP macro events calendar** — LOW
+10. **KI-085: VIX value not shown in UI** — value in analyze result but not in RegimeBar.
+11. Alpaca OI/volume missing (KI-038), OHLCV temporal gap (KI-034)
+12. API URL hardcoded (KI-013/KI-050), account_size hardcoded PaperTradeBanner (KI-049)
+13. deepcopy() overhead (KI-072), struct_cache unbounded (KI-073), no startup health check (KI-074)
+14. **KI-077: DirectionGuide sell_put "capped" label may mislead** — LOW
+15. **KI-081: No CPI/NFP macro events calendar** — LOW
 
+Resolved (Day 29): KI-082 (credit-to-width gate), IVR key mismatch, signal board display:grid fix
 Resolved (Day 28): KI-079 (ETF holdings earnings gate), KI-080 (spread hard-block >20%), FOMC window gate
 Resolved (Day 27): KI-078 (FOMC dates corrected), bull_put_spread P&L (HIGH audit finding)
 Resolved (Day 26): KI-008 (FOMC gate fallback), KI-076 (strike zone overlap), IVR cold-start (7,492 rows seeded)
@@ -284,35 +288,41 @@ Resolved (Day 24):
 | Day 26 | Apr 20, 2026 | **Data infrastructure + gate fixes (v0.18.0).** FOMC gate fixed: _days_until_next_fomc() from constants.py — no longer 999 when STA offline (16 days to May 6). IVR seeding: POST /api/admin/seed-iv/all + ↓ Seed IV UI button — 7,492 rows across 20 tickers seeded from IBKR reqHistoricalData. seed_iv_nightly.sh cron script. Strike zone label overlap fixed (key table below chart). MasterVerdict passed gates visible as green chips. Data_Strategy_Day26.md created (3-option data plan). Tradier API reviewed: Lite free account = full options data API with OI, volume, Greeks (120 req/min). EODHD tested: paywalled on free tier — verify before paying. KI-008 resolved, 3 issues fixed total. |
 | Day 27 | Apr 21, 2026 | **Full audit + pre-trade workflow + bug fixes (v0.19.0).** Full MASTER_AUDIT_FRAMEWORK run (all 9 categories): 0C/0H. HIGH fixed: bull_put_spread P&L handler missing since Day 23 (all sell_put P&L rows were 0). MEDIUM fixed: API_CONTRACTS.md synced (pacing_warning, sources_used, alpaca, ETF enforcement, OI note). LOW fixed: MASTER_AUDIT_FRAMEWORK direction table + sell_call claim. MarketData.app integration: marketdata_provider.py + load_dotenv() ordering bug fixed. Pre-trade research: Daily_Trade_Prompts.md (7 prompts for Perplexity/ChatGPT/Gemini) + CopyForChatGPT.jsx button (pre-fills Prompt 4 from live analysis data). start/stop script reliability: -sTCP:LISTEN flag, webpack PID capture. ChatGPT live test of XLY trade caught: FOMC gate false negative (corrected constants.py Apr 29 date), ETF holdings earnings gap (new KI-079), liquidity hard-fail gap (new KI-080). MCP ecosystem researched — Perplexity + FMP MCPs recommended, no options-specific MCPs exist yet. |
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
+| Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 25 | Apr 17, 2026 | **Phase 8 UX Overhaul (v0.17.0).** Research-first: 3 multi-LLM prompts (GPT-4o + Gemini + Perplexity) synthesized before coding. New: DirectionGuide.jsx (educational 2×2 direction cards), TradeExplainer.jsx (percentage-based number line + risk/reward bar + ITM/ATM/OTM zones), GateExplainer.jsx (accordion Q&A, readiness bar, gate meters), LearnTab.jsx (4 interactive lessons: Strikes/Directions/Spreads/Gates). Enhanced: MasterVerdict (plain English subtitle), TopThreeCards (plain English per strategy). App.jsx wired with tab nav (Signal Board / Learn Options). 600 lines new CSS. Build clean (0 warnings, 0 errors). MASTER_AUDIT_FRAMEWORK v1.2: Category 9 (Frontend UX Accuracy) added. 3 new KIs: KI-075 (GATE_KB drift), KI-076 (isBearish() untested live), KI-077 (sell_put capped label). Zero backend changes. |
 
 ---
 
-## Next Session Priorities (Day 29)
+## Next Session Priorities (Day 30)
 
-### P0 — Pre-Analysis Prompts in UI
-Show Prompts 1–2 from `Daily_Trade_Prompts.md` directly in the OptionsIQ frontend as a "Pre-Analysis Research" panel with copy buttons, pre-filled with selected ETF and today's date. Completes the full loop: pre-research → analysis → post-stress test (CopyForChatGPT) without leaving the app. Low-effort frontend, high workflow friction reduction.
+### P0 — Fix XLE OHLCV Corruption (KI-083, HIGH)
+Delete corrupted ohlcv rows for XLE (close > 80.0 is clearly wrong — XLE trades ~$57-65). Re-seed OHLCV from IBKR or yfinance. Also audit other ETFs for similar corruption. Without this fix, XLE's HV-20 = 413% → VRP gate always blocks XLE sellers on bad data.
+```sql
+DELETE FROM ohlcv_daily WHERE ticker = 'XLE' AND close > 80.0;
+```
+Then: GET /api/options/seed-iv/XLE with IBKR connected.
 
-### P1 — Paper Trade P&L Dashboard
-New endpoint: `GET /api/options/paper-trades/summary` — win rate by verdict color, direction, ETF; P&L distribution.
-New frontend tab: equity curve, win rate bars, "when system said GO, it was right N% of the time."
-This is the single thing that converts conceptual trust into evidence-based confidence for real trades.
+### P1 — Fix XLC + XLRE OHLCV Gap (KI-084, MEDIUM)
+XLC and XLRE have 370+ rows of IV history but 0 OHLCV rows — HV-20 cannot be computed, VRP gate silently skips for sellers. Fix: run analyze for these two ETFs with IBKR connected (triggers get_ohlcv_daily() in _extract_iv_data), or add explicit OHLCV seeding.
 
-### P2 — Credit-to-Width Ratio Gate (KI-082)
-Add `MIN_CREDIT_WIDTH_RATIO = 0.20` to `constants.py`. Gate fails sell_put/sell_call when credit < 20% of spread width ($0.20 on $1-wide, $1.00 on $5-wide). Requires strategy_ranker to pass `spread_width` and `credit_received` to gate_payload.
+### P2 — VIX Display in RegimeBar (KI-085, LOW)
+VIX value is in the analyze result (`result.vix.value`) and gates use it, but it's never shown to the user. Add small badge to RegimeBar: "VIX: 19.4" with color coding (<15 gray, 15-30 green, >30 orange, >40 red).
 
-### P3 — Daily Best Setups Page
-New "Today's Setups" tab: auto-runs sector scan, calls analyze for each Leading ETF, surfaces top 2-3 setups.
-One button: "Refresh setups." Removes friction of manually checking 16 ETFs.
+### P3 — app.py Size Cleanup (KI-086, MEDIUM)
+app.py is 470 lines (Rule 4: max 150). Move `_seed_iv_for_ticker()` to analyze_service.py. Move `_run_one()` closure from /api/best-setups into a `best_setups_service.py`. Makes both testable in isolation.
+
+### P4 — Skew Computation (Perplexity-confirmed, LOW effort)
+`put_iv_30delta - call_iv_30delta` from existing IBKR chain data (impliedVol per contract). No new data source needed — chain already has per-contract IV. Add to _extract_iv_data(), surface in analyze result + Data Health field resolution.
 
 ### Deferred
 - KI-067: QQQ sell_put ITM strike fix
 - KI-081: CPI/NFP macro events calendar (LOW)
 - KI-077: DirectionGuide sell_put "capped" label (LOW)
 - Phase 7c: Weakening → sell_call for cyclical sectors
+- Test all 4 new gates live with IBKR connected (VRP, VIX, updated IVR threshold)
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY28.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY28_SHORT.md` — Day 28 summary
+- `docs/versioned/KNOWN_ISSUES_DAY29.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY29_SHORT.md` — Day 29 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research

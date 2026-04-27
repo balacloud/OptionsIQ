@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 26 (April 20, 2026)
+> **Last Updated:** Day 29 (April 27, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -410,3 +410,95 @@ Level 2: Single ETF + IV/OI/spread overlay from IBKR chain.
 | earnings_days_away | GET localhost:5001/api/earnings/{ticker} | `days_until` (NOT `days_away`) |
 | spy_above_200sma | GET localhost:5001/api/stock/SPY | `priceHistory[-1].close > mean(priceHistory[-200:].close)` |
 | spy_5day_return | GET localhost:5001/api/stock/SPY | `(priceHistory[-1].close - priceHistory[-6].close) / priceHistory[-6].close × 100` |
+
+---
+
+## GET /api/best-setups
+
+Scans all ETFs using their sector-suggested direction in parallel (max 6 workers). Returns GO/CAUTION setups ranked by gate pass rate.
+
+**Response:**
+```json
+{
+  "as_of": "2026-04-27T20:00:00Z",
+  "candidates_scanned": 8,
+  "setups": [...],
+  "all_results": [
+    {
+      "ticker": "XLK",
+      "direction": "sell_put",
+      "quadrant": "Leading",
+      "name": "Tech",
+      "verdict_color": "green",
+      "verdict_label": "GO",
+      "pass_rate": 90,
+      "gates_passed": 9,
+      "gates_total": 10,
+      "failed_gates": [],
+      "ivr": 85.2,
+      "premium": 1.45,
+      "premium_per_lot": 145.0,
+      "strike_display": "$185 / $180",
+      "expiry_display": "May 16",
+      "credit_to_width_ratio": 0.38,
+      "strategy_type": "bull_put_spread",
+      "vix": 19.4,
+      "error": null
+    }
+  ]
+}
+```
+
+---
+
+## GET /api/data-health
+
+Full data provenance report — source status, IV history per ETF, chain cache per ETF, field-level source resolution. No IBKR calls; reads cached/DB state only. Fast (<200ms).
+
+**Response:**
+```json
+{
+  "as_of": "2026-04-27T20:17:06+00:00",
+  "sources": {
+    "ibkr": {
+      "status": "connected|disconnected",
+      "connected": false,
+      "mode": "live|mock",
+      "error": null,
+      "circuit_breaker": { "open": false, "failures": 0, "seconds_remaining": 0 }
+    },
+    "vix": { "status": "ok|stale|null", "value": 19.4, "source": "yfinance_intraday", "age_seconds": 120 },
+    "spy_regime": { "status": "ok|null|error", "above_200sma": true, "five_day_return": 0.73, "source": "sta" },
+    "fomc": { "status": "ok", "next_date": "2026-04-29", "days_away": 2, "source": "constants" },
+    "alpaca": { "status": "ok|unavailable" },
+    "marketdata_app": { "status": "ok|unavailable" }
+  },
+  "iv_history": {
+    "XLK": {
+      "rows": 390, "first_date": "2024-10-04", "last_date": "2026-04-27",
+      "status": "ok|sparse|empty", "hv_20": 23.0, "hv_status": "ok|insufficient_bars|no_ohlcv",
+      "ohlcv_rows": 80
+    }
+  },
+  "chain_cache": {
+    "XLK": {
+      "status": "fresh|stale|missing",
+      "saved_at": "2026-04-27T17:23:32",
+      "age_minutes": 5.2,
+      "expires_in_minutes": 0.0,
+      "entries": 6
+    }
+  },
+  "field_resolution": {
+    "XLK": {
+      "chain_implied_vol": { "source": "ibkr_stale → yfinance", "status": "stale", "note": "IBKR stale 185m — yfinance on next analyze" },
+      "oi_volume":         { "source": "MarketData.app", "status": "ok", "note": "REST supplement" },
+      "hv_20":             { "source": "ohlcv_db (80 bars)", "status": "ok", "note": "22.68% annualised" },
+      "ivr":               { "source": "iv_history_db (390 rows)", "status": "ok", "note": "percentile rank — requires current_iv from chain" },
+      "vix":               { "source": "unavailable", "status": "null", "note": "not yet fetched this session" },
+      "spy_regime":        { "source": "sta", "status": "ok", "note": "above_200sma=True, 5d=0.73%" },
+      "fomc":              { "source": "constants", "status": "warn", "note": "2 days to next meeting (2026-04-29)" }
+    }
+  }
+}
+```

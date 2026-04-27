@@ -12,11 +12,18 @@ Last updated: Day 3 (March 5, 2026)
 # ---------------------------------------------------------------------------
 IVR_BUYER_PASS_PCT      = 30.0   # IVR < 30 = cheap IV, good time to buy
 IVR_BUYER_WARN_PCT      = 50.0   # IVR 30–50 = moderate (warn buyers)
-IVR_SELLER_PASS_PCT     = 50.0   # IVR >= 50 = rich premium, good time to sell
-IVR_SELLER_MIN_PCT      = 30.0   # IVR 30–50 = minimum viable for selling
+IVR_SELLER_PASS_PCT     = 35.0   # IVR >= 35 = rich premium, good time to sell
+                                  # Lowered from 50: tastylive data shows IVR>50 sacrifices 60-70%
+                                  # of trade frequency for negligible benefit over IVR>35
+                                  # Source: Perplexity synthesis 2026-04-27
+IVR_SELLER_MIN_PCT      = 25.0   # IVR 25–35 = minimum viable for selling (was 30)
 HV_LOW_REGIME_PCT       = 15.0   # HV < 15% = special low-vol exception
-HV_IV_PASS_RATIO        = 1.20   # HV/IV < 1.20 = not overpaying for IV
-HV_IV_WARN_RATIO        = 1.30   # HV/IV 1.20–1.30 = borderline
+HV_IV_PASS_RATIO        = 1.20   # HV/IV < 1.20 = not overpaying for IV (buyers)
+HV_IV_WARN_RATIO        = 1.30   # HV/IV 1.20–1.30 = borderline (buyers)
+HV_IV_SELL_PASS_RATIO   = 1.05   # HV/IV < 1.05 = IV ≥ HV → positive VRP (sellers)
+HV_IV_SELL_WARN_RATIO   = 1.15   # HV/IV 1.05–1.15 = thin VRP (sellers)
+                                  # Sinclair: only sell when IV > HV (vol risk premium positive)
+                                  # Source: multi-LLM synthesis 2026-04-22
 
 # Absolute IV fallback thresholds (used when IVR history < 30 days)
 IV_ABS_BUYER_PASS_PCT   = 20.0   # Absolute IV < 20% = cheap, good for buyers
@@ -31,6 +38,15 @@ THETA_BURN_WARN_PCT     = 12.0   # 8–12% = borderline
 THETA_BURN_FAIL_PCT     = 12.0   # > 12% = too much decay
 
 # ---------------------------------------------------------------------------
+# VIX regime buckets (Perplexity empirical — tastylive 21-year study)
+# ---------------------------------------------------------------------------
+VIX_LOW_VOL             = 15.0   # < 15 = thin premiums, CAUTION for sellers
+VIX_SWEET_SPOT_LOW      = 15.0   # 15–20 = acceptable
+VIX_SWEET_SPOT_HIGH     = 30.0   # 20–30 = sweet spot for credit spreads
+VIX_STRESS              = 30.0   # 30–40 = reduce size
+VIX_CRISIS              = 40.0   # > 40 = BLOCK new short-premium positions
+
+# ---------------------------------------------------------------------------
 # Gate thresholds — Liquidity
 # ---------------------------------------------------------------------------
 SPREAD_WARN_PCT         = 5.0    # Bid-ask spread > 5% of mid = warn
@@ -40,6 +56,9 @@ SPREAD_DATA_FAIL_PCT    = 20.0   # > 20% = data garbage; hard-block even for ETF
 MIN_OPEN_INTEREST       = 1000   # OI < 1000 = illiquid, fail
 MIN_VOLUME_OI_RATIO     = 0.10   # Volume/OI < 10% = low activity, warn
 MIN_PREMIUM_DOLLAR      = 2.00   # Premium < $2.00 = not worth the spread risk
+MIN_CREDIT_WIDTH_RATIO  = 0.33   # Credit < 33% of spread width = thin premium, negative expectancy
+                                  # Source: tastylive empirical (Perplexity synthesis 2026-04-22)
+                                  # EV math: 75% WR @ 33% credit beats 90% WR @ 15% credit
 
 # ---------------------------------------------------------------------------
 # Gate thresholds — Strike / Position

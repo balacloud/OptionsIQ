@@ -14,7 +14,11 @@ import ExecutionCard from './components/ExecutionCard';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
 import CopyForChatGPT from './components/CopyForChatGPT';
+import PreAnalysisPrompts from './components/PreAnalysisPrompts';
 import LearnTab from './components/LearnTab';
+import PaperTradeDashboard from './components/PaperTradeDashboard';
+import BestSetups from './components/BestSetups';
+import DataProvenance from './components/DataProvenance';
 import useOptionsData from './hooks/useOptionsData';
 import useSectorData from './hooks/useSectorData';
 import './index.css';
@@ -95,6 +99,7 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
           setDirection={setDirection}
           locked={[]}
         />
+        <PreAnalysisPrompts ticker={ticker} direction={direction} />
         <button
           className="analyze-btn"
           style={{ marginTop: 10, width: '100%' }}
@@ -165,7 +170,7 @@ export default function App() {
   const [direction, setDirection]         = useState('buy_call');
   const [filter, setFilter]               = useState('all');
   const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
-  const [activeTab, setActiveTab]         = useState('signals'); // 'signals' | 'learn'
+  const [activeTab, setActiveTab]         = useState('signals'); // 'signals' | 'learn' | 'dashboard'
   const [seedIVState, setSeedIVState]     = useState({ loading: false, result: null, error: null });
 
   const handleSeedIV = async () => {
@@ -271,12 +276,33 @@ export default function App() {
         >
           Learn Options
         </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'dashboard' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          Dashboard
+        </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'setups' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('setups')}
+        >
+          Best Setups
+        </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'data' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('data')}
+        >
+          Data Health
+        </button>
       </div>
 
-      {/* Learn tab */}
-      {activeTab === 'learn' && <LearnTab />}
+      {/* Always-mounted tabs — display:none preserves state across switches */}
+      <div style={{ display: activeTab === 'learn' ? 'block' : 'none' }}><LearnTab /></div>
+      <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}><PaperTradeDashboard /></div>
+      <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups /></div>
+      <div style={{ display: activeTab === 'data' ? 'block' : 'none' }}><DataProvenance /></div>
 
-      {activeTab !== 'learn' && <div className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>
+      <div style={{ display: activeTab === 'signals' ? undefined : 'none' }} className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>
         {/* ── Left: ETF Scanner ── */}
         <div className="scanner-panel">
           <div className="scanner-header">
@@ -397,7 +423,7 @@ export default function App() {
             <div className="analysis-empty-msg">Select an ETF to run gate analysis</div>
           </div>
         )}
-      </div>}
+      </div>
     </div>
   );
 }

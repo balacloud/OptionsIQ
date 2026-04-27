@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 28 (April 22–26, 2026)
-> **Current Version:** v0.20.0
+> **Last Updated:** Day 29 (April 27, 2026)
+> **Current Version:** v0.21.0
 
 ---
 
@@ -152,10 +152,19 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] ETF holdings earnings gate (KI-079) — ETF_KEY_HOLDINGS + COMPANY_EARNINGS + _etf_holdings_earnings_gate() ✅ Day 28
 - [x] Liquidity gate hard-fail on bid-ask >20% (KI-080) — SPREAD_DATA_FAIL_PCT + spread_pct on gate dict ✅ Day 28
 - [x] FOMC gate: warn when FOMC inside DTE window (fomc_days < dte), not just when imminent ✅ Day 28
-- [ ] Pre-analysis prompts in UI — Prompts 1–2 from Daily_Trade_Prompts.md as copyable panel (Day 29 P0)
-- [ ] Paper trade P&L dashboard — win rate by verdict/direction/ETF, equity curve
-- [ ] Credit-to-width ratio gate (KI-082) — MIN_CREDIT_WIDTH_RATIO = 0.20, fail if credit < 20% of width
-- [ ] Daily best setups page — auto-scan + top 2-3 setups surfaced in one view
+- [x] Pre-analysis prompts in UI — PreAnalysisPrompts.jsx copyable panel in analyze tab ✅ Day 29
+- [x] Paper trade P&L dashboard — PaperTradeDashboard.jsx, SQLite-backed, win rate + equity curve ✅ Day 29
+- [x] Credit-to-width ratio gate (KI-082) — MIN_CREDIT_WIDTH_RATIO=0.33, _credit_width() in strategy_ranker ✅ Day 29
+- [x] Best Setups page — BestSetups.jsx, parallel ETF scan, manual Run Scan button, watchlist ✅ Day 29
+- [x] HV/IV VRP seller gate — _etf_hv_iv_seller_gate(), Sinclair volatility risk premium ✅ Day 29
+- [x] VIX regime gate — _vix_regime_gate(), <15 warn, >30 warn, >40 fail ✅ Day 29
+- [x] Data Health tab — DataProvenance.jsx + GET /api/data-health, field-level provenance ✅ Day 29
+- [x] Tab state retention — always-mount pattern (display:none vs unmount) ✅ Day 29
+- [ ] Fix XLE OHLCV corruption (KI-083) — delete bad rows, re-seed from IBKR/yfinance
+- [ ] Fix XLC + XLRE OHLCV gap (KI-084) — seed OHLCV bars for HV-20 computation
+- [ ] VIX display in RegimeBar (KI-085) — value in result but not shown in UI
+- [ ] Skew computation — put_iv_30delta - call_iv_30delta from existing IBKR chain data
+- [ ] app.py size violation (KI-086) — move _seed_iv_for_ticker + _run_one to service modules
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -210,3 +219,4 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 | v0.18.0 | Day 26 | **Data infrastructure + gate fixes.** Nightly IV seeding (POST /api/admin/seed-iv/all + UI button). FOMC gate fixed (_days_until_next_fomc() from constants.py). 7,492 IV rows seeded. TradeExplainer strike zone overlap fixed. MasterVerdict passed gates visible. Tradier API reviewed (Lite free = full data API). Data_Strategy_Day26.md. |
 | v0.19.0 | Day 27 | **Full audit + pre-trade workflow.** Full audit (0C/0H): bull_put_spread P&L fixed (HIGH), API_CONTRACTS.md synced (MEDIUM), audit framework corrected (LOW). MarketData.app OI/volume supplement (marketdata_provider.py, load_dotenv ordering fix). FOMC calendar corrected (Apr 29 missing). CopyForChatGPT.jsx button. Daily_Trade_Prompts.md. start/stop script PID fixes. ChatGPT live test caught 3 gaps: KI-079 (ETF holdings earnings), KI-080 (bid-ask hard fail), KI-081 (CPI calendar). |
 | v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |
+| v0.21.0 | Day 29 | **Data observability + gate hardening.** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive empirical), _credit_width() in strategy_ranker, bear_call/bull_put R1/R2 wired. HV/IV VRP gate: _etf_hv_iv_seller_gate() (Sinclair — sell only when IV>HV). VIX regime gate: <15 warn, >30 warn, >40 fail. IVR thresholds: 50→35 (tastylive 60-70% frequency improvement). FOMC imminent fix (<5 days now warns, was falling through). Data Health tab: GET /api/data-health with field-level provenance per ETF (7 fields × 15 ETFs). Best Setups tab: parallel scan, manual trigger, IVR watchlist. Pre-analysis prompts + Paper Trade Dashboard shipped. Tab state retention (display:none vs unmount). IVR key mismatch fixed (was always null). Signal board display:grid override fixed. KI-083/084 discovered via data health (XLE OHLCV corrupted, XLC/XLRE missing). |

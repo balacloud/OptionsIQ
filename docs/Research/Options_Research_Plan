@@ -18,6 +18,7 @@ A personal, standalone options analysis tool that:
 5. Shows P&L table across 6 price scenarios
 6. Records paper trades
 
+
 **Four supported directions** (all from the user's learning foundation):
 
 | Market View | Direction | Type | Gate Track |
@@ -457,6 +458,7 @@ IB_WORKER_TIMEOUT_FULL = 32    # full profile
 - [ ] bs_calculator.py (Black-Scholes greeks + price)
 - [ ] Fix mock_provider.py (dynamic pricing, not hardcoded AME)
 - [ ] Fix iv_store.py schema (add `entry_price`, `mark_price` to paper_trades table)
+
 
 ### Phase 2 — Data Layer (Day 1-2)
 - [ ] ibkr_provider.py: wrap in IBWorker dedicated thread

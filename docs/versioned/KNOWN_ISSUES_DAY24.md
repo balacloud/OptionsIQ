@@ -48,6 +48,19 @@ POST /api/orders/stage removed (no longer exists). Needs cleanup.
 
 ### KI-049: account_size hardcoded in PaperTradeBanner.jsx (LOW)
 
+### KI-072: deepcopy() on every cache hit in data_service.py (LOW)
+Originally found Day 11 (E1). `deepcopy()` called on full chain profile on every cache hit.
+10-50ms overhead per request. Consider shallow copy or immutability contract.
+File: `backend/data_service.py` (lines ~264, 300 at time of finding — verify current line numbers).
+
+### KI-073: _struct_cache grows unbounded in ibkr_provider.py (LOW)
+Originally found Day 11 (E2). Dict grows with every new ticker, never trimmed.
+File: `backend/ibkr_provider.py`. Fix: LRU eviction (max 50 tickers) or periodic cleanup.
+
+### KI-074: No IBWorker health check at startup (LOW)
+Originally found Day 11 (E3). App starts without checking IB Gateway — first request discovers failure.
+Fix: Add `_ib_worker.is_connected()` check at startup, log warning if IB Gateway is down.
+
 ---
 
 ## Summary
@@ -57,6 +70,7 @@ POST /api/orders/stage removed (no longer exists). Needs cleanup.
 | Critical | 0 |
 | High | 1 (KI-059 deferred) |
 | Medium | 3 (KI-067, KI-064, KI-044) |
-| Low | 5 |
-| **Total** | **9** |
+| Low | 8 |
+| **Total** | **12** |
 | **Resolved Day 24** | **3** (KI-071, KI-070, KI-001/KI-023) |
+| **Added Day 25** | **3** (KI-072, KI-073, KI-074 — recovered from Day 11 Phase E deferred) |

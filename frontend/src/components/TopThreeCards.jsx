@@ -153,6 +153,16 @@ export default function TopThreeCards({ strategies, gates, pnlTable }) {
                 <div className="val">{rank1.dte}d</div>
               </div>
             )}
+            {rank1.credit_to_width_ratio != null && (
+              <div className="strategy-detail-item">
+                <label>Credit / Width</label>
+                <div className="val" style={{
+                  color: rank1.credit_to_width_ratio < 0.33 ? '#e05252' : '#00c896'
+                }}>
+                  {(rank1.credit_to_width_ratio * 100).toFixed(0)}%
+                </div>
+              </div>
+            )}
           </div>
 
           {/* P&L at target / stop */}

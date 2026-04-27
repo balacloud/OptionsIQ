@@ -98,7 +98,12 @@ export default function ETFCard({ etf, onAnalyze, onDeepDive }) {
             </button>
           </>
         ) : (
-          <span className={`etf-action-label ${action.cls}`}>{action.text}</span>
+          <div className="etf-action-row">
+            <span className={`etf-action-label ${action.cls}`}>{action.text}</span>
+            <button className="etf-btn-override" onClick={() => onDeepDive && onDeepDive(etf)}>
+              Analyze →
+            </button>
+          </div>
         )}
       </div>
     </div>

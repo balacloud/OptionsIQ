@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import logging
 import time
+import concurrent.futures
 from pathlib import Path
 
 # load_dotenv MUST run before any project module imports — those modules read
@@ -28,6 +29,7 @@ from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
 from yfinance_provider import YFinanceProvider
 from analyze_service import analyze_etf, get_live_price, _extract_iv_data
+from data_health_service import build_data_health
 
 VERSION = "2.0"
 
@@ -164,6 +166,11 @@ def save_paper_trade():
             return jsonify({"success": False, "error": f"Missing field: {key}"}), 400
     trade_id = iv_store.save_paper_trade(payload)
     return jsonify({"success": True, "trade_id": trade_id})
+
+
+@app.get("/api/options/paper-trades/summary")
+def paper_trades_summary():
+    return jsonify(iv_store.get_paper_trades_summary())
 
 
 @app.get("/api/options/paper-trades")
@@ -353,6 +360,98 @@ def sectors_scan():
     if result.get("error"):
         return jsonify(result), 503
     return jsonify(result)
+
+
+@app.get("/api/best-setups")
+def best_setups():
+    """
+    Scan all ETFs using their sector-suggested direction, run gate analysis in parallel,
+    return top GO/CAUTION results ranked by gate pass rate.
+    Max 8 parallel workers — IBKR pacing safe.
+    """
+    scan = scan_sectors(iv_store=iv_store)
+    if scan.get("error"):
+        return jsonify({"error": scan["error"]}), 503
+
+    candidates = [
+        s for s in scan.get("sectors", [])
+        if s.get("suggested_direction") and s.get("action") == "ANALYZE"
+    ]
+
+    account_size = float(os.getenv("ACCOUNT_SIZE", 25000))
+
+    def _run_one(s):
+        ticker = s["etf"]
+        direction = s["suggested_direction"]
+        payload = {
+            "ticker": ticker,
+            "direction": direction,
+            "account_size": account_size,
+            "risk_pct": float(os.getenv("RISK_PCT", 0.01)),
+            "planned_hold_days": 21,
+        }
+        try:
+            result = analyze_etf(
+                payload, ticker,
+                data_svc=data_svc, ib_worker=_ib_worker,
+                yf_provider=_yf_provider, mock_provider=mock_provider,
+                strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
+                iv_store=iv_store, spy_regime_fn=_spy_regime,
+                md_provider=_md_provider,
+            )
+            verdict = result.get("verdict", {})
+            gates = result.get("gates", [])
+            passed = sum(1 for g in gates if g.get("status") == "pass")
+            total = len(gates)
+            failed = [g.get("name") or g.get("label", "?") for g in gates if g.get("status") == "fail"]
+            top = (result.get("top_strategies") or [{}])[0]
+            return {
+                "ticker": ticker,
+                "direction": direction,
+                "quadrant": s.get("quadrant"),
+                "name": s.get("name"),
+                "verdict_color": verdict.get("color"),
+                "verdict_label": verdict.get("label"),
+                "pass_rate": round(passed / total * 100) if total else 0,
+                "gates_passed": passed,
+                "gates_total": total,
+                "failed_gates": failed,
+                "ivr": result.get("ivr_data", {}).get("ivr_pct"),
+                "premium": top.get("premium"),
+                "premium_per_lot": top.get("premium_per_lot"),
+                "strike_display": top.get("strike_display"),
+                "expiry_display": top.get("expiry_display"),
+                "credit_to_width_ratio": top.get("credit_to_width_ratio"),
+                "strategy_type": top.get("strategy_type"),
+                "vix": (result.get("vix") or {}).get("value"),
+                "error": None,
+            }
+        except Exception as exc:
+            logger.warning("best-setups: %s/%s failed — %s", ticker, direction, exc)
+            return {"ticker": ticker, "direction": direction, "quadrant": s.get("quadrant"), "error": str(exc)}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(_run_one, candidates))
+
+    order = {"green": 0, "yellow": 1, "red": 2, None: 3}
+    good = [r for r in results if not r.get("error") and r.get("verdict_color") in ("green", "yellow")]
+    good.sort(key=lambda r: (order.get(r["verdict_color"], 3), -r.get("pass_rate", 0)))
+
+    return jsonify({
+        "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "candidates_scanned": len(candidates),
+        "setups": good[:8],
+        "all_results": results,
+    })
+
+
+@app.get("/api/data-health")
+def data_health():
+    """Data provenance — live status of every data source. No IBKR calls; reads cached state."""
+    return jsonify(build_data_health(
+        iv_store=iv_store, data_svc=data_svc,
+        ib_worker=_ib_worker, md_provider=_md_provider, alpaca_provider=_alpaca_provider,
+    ))
 
 
 @app.get("/api/sectors/analyze/<ticker>")

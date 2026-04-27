@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from constants import MIN_CREDIT_WIDTH_RATIO
+
 
 def _f(v, default: float = 0.0) -> float:
     try:
@@ -20,6 +22,19 @@ def _spread_pct(c: dict) -> float | None:
     if mid <= 0:
         return None
     return round(((askf - bidf) / mid) * 100, 2)
+
+
+def _credit_width(net_credit: float, width: float) -> tuple[float | None, str | None]:
+    """Returns (ratio, warning_or_None). warning is set when credit < 33% of width."""
+    if width <= 0:
+        return None, None
+    ratio = net_credit / width
+    if ratio < MIN_CREDIT_WIDTH_RATIO:
+        return round(ratio, 3), (
+            f"Credit-to-width {ratio:.0%} < 33% minimum — thin premium, negative expectancy. "
+            "Consider a wider spread or skip this setup."
+        )
+    return round(ratio, 3), None
 
 
 def _fmt_exp(expiry: str) -> str:
@@ -137,6 +152,7 @@ class StrategyRanker:
             long_p = _f(protection_15.get("mid", protection_15.get("last", 0.0)), 0.0)
             net_credit = max(0.01, short_p - long_p)
             width = max(0.0, long_strike - short_strike)
+            cw_ratio, cw_warn = _credit_width(net_credit, width)
             results.append({
                 "rank": 1,
                 "label": f"{int(short_strike)}/{int(long_strike)} Bear Call · {_fmt_exp(short_30['expiry'])}",
@@ -153,8 +169,9 @@ class StrategyRanker:
                 "max_gain_per_lot": round(net_credit * 100, 2),
                 "max_loss_per_lot": round(max(0.0, (width - net_credit) * 100), 2),
                 "spread_pct": _spread_pct(short_30),
+                "credit_to_width_ratio": cw_ratio,
                 "why": "Highest credit. Defined risk. Sell ATM-adjacent call, buy OTM protection. Profit if stock stays flat or falls.",
-                "warning": None,
+                "warning": cw_warn,
                 "short_strike": short_strike,
                 "long_strike": long_strike,
                 "net_premium": net_credit,
@@ -181,6 +198,7 @@ class StrategyRanker:
                 long_p = _f(prot_leg.get("mid", prot_leg.get("last", 0.0)), 0.0)
                 net_credit = max(0.01, short_p - long_p)
                 width = max(0.0, prot_strike - s20_strike)
+                cw_ratio, cw_warn = _credit_width(net_credit, width)
                 results.append({
                     "rank": len(results) + 1,
                     "label": f"{int(s20_strike)}/{int(prot_strike)} Bear Call · {_fmt_exp(short_20['expiry'])}",
@@ -197,8 +215,9 @@ class StrategyRanker:
                     "max_gain_per_lot": round(net_credit * 100, 2),
                     "max_loss_per_lot": round(max(0.0, (width - net_credit) * 100), 2),
                     "spread_pct": _spread_pct(short_20),
+                    "credit_to_width_ratio": cw_ratio,
                     "why": "Higher probability of profit. Less credit but stock has wider buffer before touching short strike.",
-                    "warning": None,
+                    "warning": cw_warn,
                     "short_strike": s20_strike,
                     "long_strike": prot_strike,
                     "net_premium": net_credit,
@@ -298,6 +317,7 @@ class StrategyRanker:
             long_p = _f(protection_15.get("mid", protection_15.get("last", 0.0)), 0.0)
             net_credit = max(0.01, short_p - long_p)
             width = max(0.0, short_strike - long_strike)
+            cw_ratio, cw_warn = _credit_width(net_credit, width)
             results.append({
                 "rank": 1,
                 "label": f"{int(short_strike)}/{int(long_strike)} Bull Put · {_fmt_exp(short_30['expiry'])}",
@@ -314,8 +334,9 @@ class StrategyRanker:
                 "max_gain_per_lot": round(net_credit * 100, 2),
                 "max_loss_per_lot": round(max(0.0, (width - net_credit) * 100), 2),
                 "spread_pct": _spread_pct(short_30),
+                "credit_to_width_ratio": cw_ratio,
                 "why": "Highest credit. Defined risk. Sell OTM put below support, buy lower protection. Profit if ETF holds above short strike.",
-                "warning": None,
+                "warning": cw_warn,
                 "short_strike": short_strike,
                 "long_strike": long_strike,
                 "net_premium": net_credit,
@@ -341,6 +362,7 @@ class StrategyRanker:
                 long_p = _f(prot_leg.get("mid", prot_leg.get("last", 0.0)), 0.0)
                 net_credit = max(0.01, short_p - long_p)
                 width = max(0.0, s20_strike - prot_strike)
+                cw_ratio, cw_warn = _credit_width(net_credit, width)
                 results.append({
                     "rank": len(results) + 1,
                     "label": f"{int(s20_strike)}/{int(prot_strike)} Bull Put · {_fmt_exp(short_20['expiry'])}",
@@ -357,8 +379,9 @@ class StrategyRanker:
                     "max_gain_per_lot": round(net_credit * 100, 2),
                     "max_loss_per_lot": round(max(0.0, (width - net_credit) * 100), 2),
                     "spread_pct": _spread_pct(short_20),
+                    "credit_to_width_ratio": cw_ratio,
                     "why": "Higher probability of profit. Less credit but wider buffer before short strike is tested.",
-                    "warning": None,
+                    "warning": cw_warn,
                     "short_strike": s20_strike,
                     "long_strike": prot_strike,
                     "net_premium": net_credit,
