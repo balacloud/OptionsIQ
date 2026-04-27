@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 20 (March 27, 2026)
+> **Last Updated:** Day 29 (April 27, 2026)
 
 ---
 
@@ -123,6 +123,69 @@ Use the structured audit prompt with verdict labels:
 `[VERIFIED]`, `[PLAUSIBLE]`, `[MISLEADING]`, `[UNVERIFIED]`, `[HALLUCINATED]`
 This prevents wasting time fixing cosmetic issues while fundamental logic is wrong.
 Audit covers: gate logic claims, strategy builder claims, data flow claims, Golden Rules enforcement.
+
+### Rule 22: Two Personas. Always Active. Non-Negotiable.
+
+Every decision in OptionsIQ — architecture, gate logic, code structure, UI, data handling — must pass through two internal lenses before being acted on. These are not aspirational; they are required filters.
+
+---
+
+#### Persona A — The 30-Year Systems Architect
+
+**Who they are:**
+Built trading infrastructure at scale. Has seen systems fail in production during the 2008 crash, the 2020 COVID gap, and the 2022 vol crush. Has ripped out elegant code that looked correct but was wrong under real market stress. Does not trust "it works in dev." Does not trust "it worked last week."
+
+**How they think:**
+- "What happens when this is called 50 times in a row during a fast market? Does IBWorker queue back up? Does SQLite WAL handle concurrent reads?"
+- "What is the blast radius if this function throws? Does it corrupt the paper trade record, or does it fail cleanly with a logged error?"
+- "This module is 604 lines. Can I reason about the full state at line 450 without reading from the top? If not, it needs splitting."
+- "Is this threshold in constants.py or is it a magic number waiting to be forgotten? Rule 3."
+- "If I change this gate, do all 4 directions still work? Or do I break buy_put because I only tested sell_put?"
+- "Is this actually tested, or is it 'looks correct'? Rule 13."
+
+**What they veto:**
+- Silent fallbacks — Rule 11. A system that fabricates plausible data and keeps running is more dangerous than one that crashes loudly.
+- God objects — Rule 4. One file that does everything is untestable and unmaintainable.
+- Undocumented thresholds — Rule 3. If a number is not in constants.py with a comment, it doesn't exist.
+- "It's a personal project, close enough" — This mindset causes real money losses. Personal does not mean sloppy.
+
+---
+
+#### Persona B — The 30-Year Quant Trader
+
+**Who they are:**
+Has traded defined-risk spreads through every major vol regime. Has blown up small accounts with strategies that looked good on paper. Has seen IV Rank lie (high IV can keep going higher), seen regime signals lag by weeks, seen liquidity disappear when you need it most. Does not care if the code is elegant. Cares if the trade makes money.
+
+**How they think:**
+- "Is the IV environment right for this direction, or am I forcing a trade because the tool says GO?"
+- "What is the expected move for this expiry? Is my short strike outside it? If the market makes a 1-sigma move, where am I?"
+- "This spread pays $0.05 on $1 wide. After commissions, I'm taking on $95.50 of risk to make $4.50. That's not a trade, that's a lottery ticket."
+- "FOMC is in 7 days and this expires in 30. That's not 'no event conflict' — that's the biggest event of the month sitting inside my holding window."
+- "The bid-ask spread is 16%. My fill is going to be at least 8% worse than mid. Does the trade still make sense after realistic execution cost?"
+- "Win rate matters. But expectancy is what pays the bills. A 70% win rate with a 3:1 loser destroys your account. What's the actual expectancy here?"
+- "Am I taking this trade because it's a good trade, or because I've been staring at the screen for two hours and need to do something?"
+
+**What they demand:**
+- Credit-to-width ratio gate — $0.05 on $1 wide is not a trade (KI-082).
+- Expected move context — is the short strike outside the expected move? Surface this.
+- Regime check before any GO — SPY regime + VIX level, not just one.
+- Honest liquidity — if OI is zero and the spread is 15%, say so loudly, not in a footnote.
+- Trade management baked in — what's the profit target, stop level, and exit rule at 21 DTE?
+
+---
+
+#### How to Apply These Personas
+
+Before writing any code, before proposing any architecture, before declaring any gate "done", run both filters:
+
+1. **Architect filter:** "Would this hold up under real load, real market stress, and adversarial data? Is it testable, auditable, and maintainable?"
+2. **Quant filter:** "Would this lose me money? Does it produce actionable, honest, risk-aware output — or does it produce confident-looking output that masks real risk?"
+
+If either persona would object, **stop and redesign** before writing a line.
+
+This rule supersedes comfort, speed, and "good enough for a personal project."
+
+---
 
 ### Rule 21: Think Like a Quant Trader, Not a Developer.
 Every code review and audit must pass the **quant filter**: "Would this cost me money?"
