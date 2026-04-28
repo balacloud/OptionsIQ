@@ -170,7 +170,7 @@ export default function App() {
   const [direction, setDirection]         = useState('buy_call');
   const [filter, setFilter]               = useState('all');
   const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
-  const [activeTab, setActiveTab]         = useState('signals'); // 'signals' | 'learn' | 'dashboard'
+  const [activeTab, setActiveTab]         = useState('setups'); // 'setups' is the home screen
   const [seedIVState, setSeedIVState]     = useState({ loading: false, result: null, error: null });
   const [dashRefreshTick, setDashRefreshTick] = useState(0);
 
@@ -243,6 +243,16 @@ export default function App() {
     runAnalysis(etf.etf, coreDir);
   }, [runAnalysis]);
 
+  // Select from Best Setups → switch to signal board with ETF pre-analyzed
+  const handleSelectFromSetups = useCallback((ticker, direction) => {
+    const fakeEtf = { etf: ticker, suggested_direction: direction };
+    setSelectedETF(fakeEtf);
+    setDirection(direction);
+    setL2ETF(null);
+    runAnalysis(ticker, direction);
+    setActiveTab('signals');
+  }, [runAnalysis]);
+
   // L2 detail expand
   const handleL2 = useCallback((etf) => {
     if (etf.etf === l2ETF) { setL2ETF(null); sectorHook.clearDetail(); return; }
@@ -305,7 +315,7 @@ export default function App() {
       {/* Always-mounted tabs — display:none preserves state across switches */}
       <div style={{ display: activeTab === 'learn' ? 'block' : 'none' }}><LearnTab /></div>
       <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}><PaperTradeDashboard refreshTick={dashRefreshTick} /></div>
-      <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups /></div>
+      <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups onSelect={handleSelectFromSetups} /></div>
       <div style={{ display: activeTab === 'data' ? 'block' : 'none' }}><DataProvenance /></div>
 
       <div style={{ display: activeTab === 'signals' ? undefined : 'none' }} className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>

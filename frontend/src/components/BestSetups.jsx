@@ -13,12 +13,18 @@ const VERDICT_STYLE = {
   red:    { bg: 'rgba(220,60,60,0.10)',  border: 'rgba(220,60,60,0.35)',  badge: '#e05252', label: 'BLOCKED' },
 };
 
-function SetupCard({ s }) {
+function SetupCard({ s, onSelect }) {
   const vs = VERDICT_STYLE[s.verdict_color] || VERDICT_STYLE.yellow;
   const cwOk = s.credit_to_width_ratio != null && s.credit_to_width_ratio >= 0.33;
+  const clickable = !!onSelect;
 
   return (
-    <div className="bs-card" style={{ background: vs.bg, borderColor: vs.border }}>
+    <div
+      className={`bs-card ${clickable ? 'bs-card-clickable' : ''}`}
+      style={{ background: vs.bg, borderColor: vs.border }}
+      onClick={clickable ? () => onSelect(s.ticker, s.direction) : undefined}
+      title={clickable ? `Analyze ${s.ticker} ${DIR_LABELS[s.direction]}` : undefined}
+    >
       <div className="bs-card-top">
         <div className="bs-ticker">{s.ticker}</div>
         <div className="bs-dir">{DIR_LABELS[s.direction] || s.direction}</div>
@@ -54,11 +60,15 @@ function SetupCard({ s }) {
           <span className="bs-stat-val">{s.pass_rate}%</span>
         </div>
       </div>
+
+      {clickable && (
+        <div className="bs-card-cta">Analyze → Paper Trade</div>
+      )}
     </div>
   );
 }
 
-export default function BestSetups() {
+export default function BestSetups({ onSelect }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
@@ -80,7 +90,8 @@ export default function BestSetups() {
       });
   };
 
-  // No auto-load — user triggers scan manually to avoid hitting IBKR on every tab visit
+  // Auto-scan on first mount — this is the home screen
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return (
     <div className="bs-loading">
@@ -150,7 +161,7 @@ export default function BestSetups() {
         <div className="bs-section">
           <div className="bs-section-title" style={{ color: '#00c896' }}>GO — Ready to Trade</div>
           <div className="bs-grid">
-            {go.map(s => <SetupCard key={`${s.ticker}-${s.direction}`} s={s} />)}
+            {go.map(s => <SetupCard key={`${s.ticker}-${s.direction}`} s={s} onSelect={onSelect} />)}
           </div>
         </div>
       )}
@@ -159,7 +170,7 @@ export default function BestSetups() {
         <div className="bs-section">
           <div className="bs-section-title" style={{ color: '#f5a623' }}>CAUTION — Review Before Trading</div>
           <div className="bs-grid">
-            {caution.map(s => <SetupCard key={`${s.ticker}-${s.direction}`} s={s} />)}
+            {caution.map(s => <SetupCard key={`${s.ticker}-${s.direction}`} s={s} onSelect={onSelect} />)}
           </div>
         </div>
       )}

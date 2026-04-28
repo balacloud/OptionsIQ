@@ -2991,3 +2991,9 @@ tr:last-child td { border-bottom: none; }
 .pt-refresh-btn { background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; font-size: 12px; padding: 0; }
 .pt-refresh-btn:hover { color: rgba(255,255,255,0.7); }
 .pt-section-hint { font-size: 11px; color: rgba(255,255,255,0.3); font-weight: 400; }
+
+/* Best Setups — clickable cards */
+.bs-card-clickable { cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
+.bs-card-clickable:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+.bs-card-cta { margin-top: 10px; font-size: 11px; color: rgba(255,255,255,0.4); text-align: right; letter-spacing: 0.04em; }
+.bs-card-clickable:hover .bs-card-cta { color: rgba(255,255,255,0.7); }
