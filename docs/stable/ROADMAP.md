@@ -178,6 +178,25 @@ Place spread orders directly into TWS via IB Gateway — analysis → execution 
 - [x] TWS staging code reverted (readonly=True, stage_spread_order removed) ✅ Day 24
 - [ ] (Future) whatIf commission estimate before staging
 
+## Backtesting — Research Deferred (Day 29)
+
+Explicitly researched and deferred. Rationale documented here to avoid re-asking.
+
+**Why full options backtesting is not on the roadmap:**
+1. **No historical chain data** — backtesting requires full chain snapshots (strikes + IVs + bid/ask) at historical timestamps. IBKR has it per contract but pulling 16 ETFs × 365 days × full chains = enormous quota + storage. yfinance has no historical chain data. MarketData.app has some but at additional cost.
+2. **Path dependency** — options P&L depends on *when* you exit, not just entry/expiry. A sell_put closed at 50% profit at 14 DTE is radically different from holding to expiry. Any backtest ignoring intraday management gives misleading win rates.
+3. **IV regime dependency** — the same gate rules produce opposite results in 2022 (VIX 35, high IV) vs 2024 (VIX 13, suppressed IV). A backtest without regime labels is noise, not signal.
+
+**Better alternatives already in the system:**
+- **Paper Trade Dashboard** — forward paper trading from today using the exact live gate logic. More honest than a backtest: no look-ahead, real fills, real IV regime.
+- **Gate pass rate history** — `iv_history.db` has 7,492 rows of historical IV per ETF + OHLCV. Computable: "when IVR>35 + HV/IV<1.05, what was the ETF's 21-day return?" — no options chain needed.
+
+**Decision:** Let the paper trade dashboard accumulate 30-60 real trades. That win rate data is worth more than a backtest on imperfect historical chains.
+
+**If reconsidered later:** Start with `gate_pass_rate_history` using existing iv_history.db + ohlcv_daily. No new data source needed. Scope: ~2 days. Do NOT attempt full options chain backtesting without a paid historical data subscription.
+
+---
+
 ## Post-v1.0 (Backlog)
 - [ ] Real-time chain refresh, P&L history chart, multi-ticker watchlist, CSV export
 - [ ] Persistent structure cache in SQLite

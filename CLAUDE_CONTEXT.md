@@ -320,6 +320,7 @@ app.py is 470 lines (Rule 4: max 150). Move `_seed_iv_for_ticker()` to analyze_s
 - KI-077: DirectionGuide sell_put "capped" label (LOW)
 - Phase 7c: Weakening → sell_call for cyclical sectors
 - Test all 4 new gates live with IBKR connected (VRP, VIX, updated IVR threshold)
+- **Backtesting** — explicitly deferred. No historical chain data available without paid subscription. Paper trade dashboard + gate_pass_rate_history from iv_history.db are the better path. Full rationale in ROADMAP.md "Backtesting — Research Deferred" section.
 
 ### Reference
 - `docs/versioned/KNOWN_ISSUES_DAY29.md` — current issue list
