@@ -28,7 +28,7 @@ from mock_provider import MockProvider
 from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
 from yfinance_provider import YFinanceProvider
-from analyze_service import analyze_etf, get_live_price, _extract_iv_data
+from analyze_service import analyze_etf, get_live_price, _extract_iv_data, get_vix_status, _fetch_vix
 from data_health_service import build_data_health
 
 VERSION = "2.0"
@@ -168,6 +168,24 @@ def save_paper_trade():
     return jsonify({"success": True, "trade_id": trade_id})
 
 
+@app.patch("/api/options/paper-trade/<int:trade_id>")
+def update_paper_trade(trade_id: int):
+    """Update mark price and/or mark a trade as closed."""
+    body = request.get_json(silent=True) or {}
+    mark_price = body.get("mark_price")
+    closed = bool(body.get("closed", False))
+    if mark_price is None and not closed:
+        return jsonify({"success": False, "error": "Provide mark_price or closed=true"}), 400
+    ok = iv_store.update_paper_trade(trade_id, mark_price=mark_price, closed=closed)
+    return jsonify({"success": ok})
+
+
+@app.delete("/api/options/paper-trade/<int:trade_id>")
+def delete_paper_trade(trade_id: int):
+    ok = iv_store.delete_paper_trade(trade_id)
+    return jsonify({"success": ok})
+
+
 @app.get("/api/options/paper-trades/summary")
 def paper_trades_summary():
     return jsonify(iv_store.get_paper_trades_summary())
@@ -188,7 +206,7 @@ def list_paper_trades():
 
 
 def _seed_iv_for_ticker(symbol: str) -> dict:
-    """Seed IV history for one ticker. IBKR if connected, yfinance fallback."""
+    """Seed IV history + OHLCV for one ticker. IBKR if connected, yfinance fallback."""
     connected = _ib_worker.is_connected() and _ib_worker.provider is not None
     hist = []
     source = "none"
@@ -206,12 +224,37 @@ def _seed_iv_for_ticker(symbol: str) -> dict:
             logger.warning("seed-iv yfinance fallback failed for %s: %s", symbol, exc)
     for row in hist:
         iv_store.store_iv(symbol, row["date"], row["iv"], source=source)
+
+    # Also seed OHLCV — needed for HV-20 and McMillan stress check
+    ohlcv_rows = 0
+    ohlcv_source = "none"
+    if connected:
+        try:
+            bars = _ib_worker.submit(_ib_worker.provider.get_ohlcv_daily, symbol, 90, timeout=30.0)
+            if bars:
+                iv_store.store_ohlcv(symbol, bars)
+                ohlcv_rows = len(bars)
+                ohlcv_source = "ibkr"
+        except Exception as exc:
+            logger.warning("seed-iv OHLCV IBKR failed for %s: %s", symbol, exc)
+    if ohlcv_rows == 0:
+        try:
+            bars = _yf_provider.get_ohlcv_daily(symbol, 90) if hasattr(_yf_provider, "get_ohlcv_daily") else []
+            if bars:
+                iv_store.store_ohlcv(symbol, bars)
+                ohlcv_rows = len(bars)
+                ohlcv_source = "yfinance"
+        except Exception as exc:
+            logger.warning("seed-iv OHLCV yfinance fallback failed for %s: %s", symbol, exc)
+
     return {
         "ticker": symbol,
         "seeded_days": len(hist),
         "source": source,
         "earliest_date": hist[0]["date"] if hist else None,
         "latest_date": hist[-1]["date"] if hist else None,
+        "ohlcv_rows": ohlcv_rows,
+        "ohlcv_source": ohlcv_source,
     }
 
 
@@ -359,6 +402,8 @@ def sectors_scan():
     result = scan_sectors(iv_store=iv_store)
     if result.get("error"):
         return jsonify(result), 503
+    _fetch_vix()  # warm cache if cold; 5-min TTL means this is cheap on repeat calls
+    result["vix"] = get_vix_status()
     return jsonify(result)
 
 

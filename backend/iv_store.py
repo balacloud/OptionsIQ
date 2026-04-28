@@ -351,3 +351,31 @@ class IVStore:
             "equity_curve": equity_curve,
             "trades": list(reversed(enriched)),  # most recent first
         }
+
+    def update_paper_trade(self, trade_id: int, mark_price: float | None = None,
+                           closed: bool = False) -> bool:
+        """Update mark price and/or close a trade. Returns True if row found."""
+        with self._conn() as conn:
+            if closed and mark_price is not None:
+                cur = conn.execute(
+                    "UPDATE paper_trades SET mark_price=?, verdict='closed' WHERE id=?",
+                    (float(mark_price), int(trade_id)),
+                )
+            elif closed:
+                cur = conn.execute(
+                    "UPDATE paper_trades SET verdict='closed' WHERE id=?",
+                    (int(trade_id),),
+                )
+            elif mark_price is not None:
+                cur = conn.execute(
+                    "UPDATE paper_trades SET mark_price=? WHERE id=?",
+                    (float(mark_price), int(trade_id)),
+                )
+            else:
+                return False
+        return cur.rowcount > 0
+
+    def delete_paper_trade(self, trade_id: int) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM paper_trades WHERE id=?", (int(trade_id),))
+        return cur.rowcount > 0

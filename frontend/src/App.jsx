@@ -67,7 +67,7 @@ function QualityBanner({ data }) {
   );
 }
 
-function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose }) {
+function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged }) {
   return (
     <div className="analysis-panel">
       <div className="analysis-panel-header">
@@ -157,7 +157,7 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
         </div>
       )}
 
-      <PaperTradeBanner ticker={ticker} direction={direction} data={data} />
+      <PaperTradeBanner ticker={ticker} direction={direction} data={data} onLogged={onTradeLogged} />
     </div>
   );
 }
@@ -172,6 +172,12 @@ export default function App() {
   const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
   const [activeTab, setActiveTab]         = useState('signals'); // 'signals' | 'learn' | 'dashboard'
   const [seedIVState, setSeedIVState]     = useState({ loading: false, result: null, error: null });
+  const [dashRefreshTick, setDashRefreshTick] = useState(0);
+
+  const handleTradeLogged = () => {
+    setDashRefreshTick(t => t + 1);
+    setActiveTab('dashboard');
+  };
 
   const handleSeedIV = async () => {
     setSeedIVState({ loading: true, result: null, error: null });
@@ -298,7 +304,7 @@ export default function App() {
 
       {/* Always-mounted tabs — display:none preserves state across switches */}
       <div style={{ display: activeTab === 'learn' ? 'block' : 'none' }}><LearnTab /></div>
-      <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}><PaperTradeDashboard /></div>
+      <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}><PaperTradeDashboard refreshTick={dashRefreshTick} /></div>
       <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups /></div>
       <div style={{ display: activeTab === 'data' ? 'block' : 'none' }}><DataProvenance /></div>
 
@@ -413,6 +419,7 @@ export default function App() {
             error={error}
             onAnalyze={handleReanalyze}
             onClose={() => setSelectedETF(null)}
+            onTradeLogged={handleTradeLogged}
           />
         )}
 
