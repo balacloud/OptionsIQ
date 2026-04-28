@@ -8,16 +8,16 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (iv_history.db + chain_cache.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, optional
 
-## Current Phase (Day 26)
-v0.18.0. Data infrastructure complete. FOMC gate fixed (_days_until_next_fomc() from constants.py). IVR seeded: 7,492 rows across 20 tickers from IBKR. ↓ Seed IV button in UI. Strike zone label overlap fixed. Tradier Lite (free) confirmed as OI/volume solution.
-Next: Master Audit Framework (all 9 categories, Day 27 P0), then Tradier integration.
+## Current Phase (Day 30)
+v0.22.0. McMillan Rolling Stress Check shipped (Gemini book-audit inspired). compute_max_21d_move() + _historical_stress_gate() on sell_put and sell_call tracks. OHLCV corruption fixed: XLE (18 bad rows deleted, HV 413%→17%) + IWM (17 bad rows deleted, worst_dd 65%→9.2%). Tests: 33.
+Next: Seed OHLCV for XLRE/SCHB (KI-084/087), VIX in RegimeBar (KI-085), skew gate.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY26_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY26.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY30_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY30.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -39,17 +39,14 @@ backend/
                                      readonly=True (Day 24: staging code reverted).
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      UPDATED (Day 21) — ETF gate tracks. etf_mode param. Math frozen.
-  strategy_ranker.py  UPDATED (Day 23) — bull_put_spread. All 4 ETF spreads defined-risk.
-  pnl_calculator.py   UPDATED (Day 21) — ETF price-relative scenarios. Stock None guards.
-  iv_store.py         FROZEN — math correct. DB: backend/data/iv_history.db (7,492 rows seeded Day 26)
+  gate_engine.py      DONE (Day 21+28+30) — ETF gate tracks. FOMC gate. Holdings earnings gate. McMillan stress gate.
+  strategy_ranker.py  DONE (Day 23+29) — bull_put_spread. Credit-to-width ratio gate (MIN_CREDIT_WIDTH_RATIO=0.33).
+  pnl_calculator.py   DONE (Day 27) — bull_put_spread handler added. All 6 strategy types covered.
+  iv_store.py         DONE (Day 30) — get_iv_stats(), get_ohlcv_stats(), compute_max_21d_move() added.
   sector_scan_service.py  DONE (Day 19) — STA consumer + L1 scan + L2 analyze + Phase 7b bear logic.
-  tests/              DONE (Day 24) — 27 tests (pytest). 5 files.
-  seed_iv_nightly.sh  NEW (Day 26) — cron script: curl POST /api/admin/seed-iv/all nightly 4:30pm ET
-
-  # TO CREATE:
-  tradier_provider.py  P1 Day 27 — OI/volume supplement for Liquidity gate (Lite account = free)
-  marketdata_provider.py  DEFERRED — MarketData.app no historical IV (confirmed), low priority
+  marketdata_provider.py  DONE (Day 27) — OI/volume supplement from MarketData.app. Non-blocking.
+  data_health_service.py  DONE (Day 29) — GET /api/data-health, field-level provenance per ETF.
+  tests/              DONE (Day 24+28+30) — 33 tests (pytest). 5 files.
 ```
 
 ## IBWorker Threading Rules (CRITICAL)
@@ -82,11 +79,11 @@ backend/
 
 DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 DTE.
 
-## Day 27 Priorities
-1. **P0:** Run MASTER_AUDIT_FRAMEWORK — all 9 categories (user confirmed)
-2. **P1:** Tradier integration — open Lite (free), wire OI/volume → Liquidity gate
-3. **P2:** KI-067 — QQQ sell_put ITM strike fix
-4. **P3:** KI-044 — API_CONTRACTS.md full sync
+## Day 31 Priorities
+1. **P1:** Seed OHLCV for XLC, XLRE, SCHB (KI-084/087) — run analyze with IBKR to trigger OHLCV seeding
+2. **P2:** VIX in RegimeBar (KI-085) — small badge showing live VIX with color coding
+3. **P3:** Skew gate — put_iv_30delta - call_iv_30delta from existing chain data
+4. **P4:** app.py cleanup (KI-086) — move _seed_iv_for_ticker + _run_one to service modules
 
 ## Git Status
 - Remote: https://github.com/balacloud/OptionsIQ.git (configured Day 26)
@@ -98,11 +95,10 @@ DTE window: 14-120 days. Buyer sweet spot: 45-90 DTE. Seller sweet spot: 21-45 D
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.2.
-- `docs/versioned/KNOWN_ISSUES_DAY26.md`
-- `docs/status/PROJECT_STATUS_DAY26_SHORT.md`
-- `docs/Research/Data_Strategy_Day26.md` — 3-option data plan (Nightly IB, Tradier, EODHD)
-- `docs/Research/Options_Data_Provider_Research_Day10.md` — evidence base (live-tested providers)
-- `docs/Research/UX_Research_Synthesis_Day25.md` — Phase 8 LLM research synthesis
+- `docs/versioned/KNOWN_ISSUES_DAY30.md`
+- `docs/status/PROJECT_STATUS_DAY30_SHORT.md`
+- `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (new Day 27)
+- `docs/Research/Options_Book_Based_Review.md` — Gemini: Natenberg/Sinclair/Taleb/McMillan audit of OptionsIQ (Day 30)
 
 ## Memory Index
 - [feedback_test_before_plan.md](feedback_test_before_plan.md) — Always test APIs with live calls before making claims or planning

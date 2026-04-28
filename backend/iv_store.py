@@ -214,6 +214,39 @@ class IVStore:
         hv = float(np.std(np.array(returns), ddof=1) * math.sqrt(252) * 100)
         return round(hv, 2)
 
+    def compute_max_21d_move(self, ticker: str) -> dict:
+        """
+        McMillan Stress Check: worst 21-day drawdown and best 21-day rally
+        in available OHLCV history. Returns percentages as decimals (e.g. 0.08 = 8%).
+        Uses rolling window over all available bars (may be < 252 if history is short).
+        """
+        ticker = ticker.upper().strip()
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT close FROM ohlcv_daily WHERE ticker = ? ORDER BY date ASC",
+                (ticker,),
+            ).fetchall()
+        closes = [float(r["close"]) for r in rows if r["close"] and float(r["close"]) > 0]
+        n = len(closes)
+        if n < 22:
+            return {"max_drawdown_pct": None, "max_rally_pct": None, "bars_available": n}
+        worst_dd = 0.0
+        best_rally = 0.0
+        for i in range(n - 21):
+            start = closes[i]
+            window = closes[i : i + 22]
+            low = min(window)
+            high = max(window)
+            dd = (start - low) / start  # fraction dropped
+            rally = (high - start) / start  # fraction rallied
+            worst_dd = max(worst_dd, dd)
+            best_rally = max(best_rally, rally)
+        return {
+            "max_drawdown_pct": round(worst_dd, 4),
+            "max_rally_pct": round(best_rally, 4),
+            "bars_available": n,
+        }
+
     def save_paper_trade(self, trade: dict) -> int:
         entry_price = trade.get("entry_price") or trade.get("premium")
         with self._conn() as conn:

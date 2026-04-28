@@ -434,7 +434,10 @@ class GateEngine:
                 s, r = "fail", "Strong bull market — elevated call assignment risk"
             out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, f"200SMA {spy_above}, 5d {spy_5d:.2%}", f"flat/weak (5d<{SPY_SELLCALL_5D_PASS:.0%}) pass; strong bull (5d>={SPY_SELLCALL_5D_WARN:.0%}) fail", r, s == "fail"))
 
-        # Gate 7: Risk defined — spread (defined max loss) is better than naked
+        # Gate 7: McMillan Historical Stress Check
+        out.append(self._historical_stress_gate(p, "sell_call"))
+
+        # Gate 8: Risk defined — spread (defined max loss) is better than naked
         max_gain = float(p.get("max_gain_per_lot", -1.0) or -1.0)
         premium = float(p.get("premium", 0.0) or 0.0)
         if max_gain > 0:
@@ -871,6 +874,72 @@ class GateEngine:
         return _gate("position_size", "Position Sizing", s, f"lots_allowed={lots}",
                      "lots>=1 pass; 0 warn", r, False)
 
+    def _historical_stress_gate(self, p: dict, direction: str) -> dict:
+        """
+        McMillan Rolling Stress Check: warn if short strike is inside the historical
+        worst-21-day danger zone. Non-blocking — informational risk flag.
+        sell_put:  checks downside (worst 21-day drawdown).
+        sell_call: checks upside (best 21-day rally).
+        """
+        bars = int(p.get("stress_bars_available", 0) or 0)
+        und = float(p.get("underlying_price", 0.0) or 0.0)
+        strike = float(p.get("strike", 0.0) or 0.0)
+
+        if bars < 22 or und <= 0:
+            return _gate(
+                "stress_check", "McMillan Stress Check", "warn",
+                f"{bars} bars (need ≥22)", "insufficient data",
+                "Not enough OHLCV history to run stress check", False,
+            )
+
+        if direction == "sell_put":
+            dd = p.get("max_21d_drawdown_pct")
+            if dd is None:
+                return _gate("stress_check", "McMillan Stress Check", "warn",
+                             "no drawdown data", "—", "Stress data unavailable", False)
+            danger_floor = und * (1.0 - float(dd))
+            if strike >= danger_floor:
+                return _gate(
+                    "stress_check", "McMillan Stress Check", "warn",
+                    f"strike {strike:.2f} ≥ danger floor {danger_floor:.2f}",
+                    f"worst 21d drop: {dd:.1%}",
+                    f"Short strike inside historical worst drawdown zone ({dd:.1%} drop → ${danger_floor:.2f})",
+                    False,
+                )
+            return _gate(
+                "stress_check", "McMillan Stress Check", "pass",
+                f"strike {strike:.2f} < floor {danger_floor:.2f}",
+                f"worst 21d drop: {dd:.1%}",
+                f"Strike below historical worst-case floor ({dd:.1%} drop → ${danger_floor:.2f})",
+                False,
+            )
+
+        if direction == "sell_call":
+            rally = p.get("max_21d_rally_pct")
+            if rally is None:
+                return _gate("stress_check", "McMillan Stress Check", "warn",
+                             "no rally data", "—", "Stress data unavailable", False)
+            danger_ceiling = und * (1.0 + float(rally))
+            if strike <= danger_ceiling:
+                return _gate(
+                    "stress_check", "McMillan Stress Check", "warn",
+                    f"strike {strike:.2f} ≤ danger ceiling {danger_ceiling:.2f}",
+                    f"worst 21d rally: {rally:.1%}",
+                    f"Short call strike inside historical worst-rally zone ({rally:.1%} up → ${danger_ceiling:.2f})",
+                    False,
+                )
+            return _gate(
+                "stress_check", "McMillan Stress Check", "pass",
+                f"strike {strike:.2f} > ceiling {danger_ceiling:.2f}",
+                f"worst 21d rally: {rally:.1%}",
+                f"Strike above historical worst-case ceiling ({rally:.1%} rally → ${danger_ceiling:.2f})",
+                False,
+            )
+
+        # Fallback for unexpected direction
+        return _gate("stress_check", "McMillan Stress Check", "warn",
+                     "n/a", "sell tracks only", "Stress check applies to sell tracks only", False)
+
     def _run_etf_buy_call(self, p: dict) -> list[dict]:
         """
         ETF buy_call gate track.
@@ -994,7 +1063,10 @@ class GateEngine:
                              f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
                              f"above 200SMA and 5d>{SPY_SELLPUT_5D_WARN:.0%}", r, s == "fail"))
 
-        # Gate 7: Max loss check
+        # Gate 7: McMillan Historical Stress Check
+        out.append(self._historical_stress_gate(p, "sell_put"))
+
+        # Gate 8: Max loss check
         premium = float(p.get("premium", 0.0) or 0.0)
         lots = max(1.0, float(p.get("lots", 1.0) or 1.0))
         account = float(p.get("account_size", DEFAULT_ACCOUNT_SIZE))

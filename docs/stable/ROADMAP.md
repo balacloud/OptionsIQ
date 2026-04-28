@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 29 (April 27, 2026)
-> **Current Version:** v0.21.0
+> **Last Updated:** Day 30 (April 28, 2026)
+> **Current Version:** v0.22.0
 
 ---
 
@@ -160,9 +160,11 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] VIX regime gate — _vix_regime_gate(), <15 warn, >30 warn, >40 fail ✅ Day 29
 - [x] Data Health tab — DataProvenance.jsx + GET /api/data-health, field-level provenance ✅ Day 29
 - [x] Tab state retention — always-mount pattern (display:none vs unmount) ✅ Day 29
-- [ ] Fix XLE OHLCV corruption (KI-083) — delete bad rows, re-seed from IBKR/yfinance
-- [ ] Fix XLC + XLRE OHLCV gap (KI-084) — seed OHLCV bars for HV-20 computation
-- [ ] VIX display in RegimeBar (KI-085) — value in result but not shown in UI
+- [x] Fix XLE OHLCV corruption (KI-083) — deleted 18 rows (close > 80.0), HV-20 now 16.96% ✅ Day 30
+- [x] Fix IWM OHLCV corruption — deleted 17 rows (close < 150), worst_dd now 9.2% (was 65%) ✅ Day 30
+- [x] McMillan Rolling Stress Check — compute_max_21d_move() + _historical_stress_gate() on sell tracks ✅ Day 30
+- [ ] Fix XLC + XLRE + SCHB OHLCV gap (KI-084/087) — seed OHLCV bars for HV-20 + stress check
+- [ ] VIX display in RegimeBar (KI-085)
 - [ ] Skew computation — put_iv_30delta - call_iv_30delta from existing IBKR chain data
 - [ ] app.py size violation (KI-086) — move _seed_iv_for_ticker + _run_one to service modules
 
@@ -239,3 +241,4 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 | v0.19.0 | Day 27 | **Full audit + pre-trade workflow.** Full audit (0C/0H): bull_put_spread P&L fixed (HIGH), API_CONTRACTS.md synced (MEDIUM), audit framework corrected (LOW). MarketData.app OI/volume supplement (marketdata_provider.py, load_dotenv ordering fix). FOMC calendar corrected (Apr 29 missing). CopyForChatGPT.jsx button. Daily_Trade_Prompts.md. start/stop script PID fixes. ChatGPT live test caught 3 gaps: KI-079 (ETF holdings earnings), KI-080 (bid-ask hard fail), KI-081 (CPI calendar). |
 | v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |
 | v0.21.0 | Day 29 | **Data observability + gate hardening.** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive empirical), _credit_width() in strategy_ranker, bear_call/bull_put R1/R2 wired. HV/IV VRP gate: _etf_hv_iv_seller_gate() (Sinclair — sell only when IV>HV). VIX regime gate: <15 warn, >30 warn, >40 fail. IVR thresholds: 50→35 (tastylive 60-70% frequency improvement). FOMC imminent fix (<5 days now warns, was falling through). Data Health tab: GET /api/data-health with field-level provenance per ETF (7 fields × 15 ETFs). Best Setups tab: parallel scan, manual trigger, IVR watchlist. Pre-analysis prompts + Paper Trade Dashboard shipped. Tab state retention (display:none vs unmount). IVR key mismatch fixed (was always null). Signal board display:grid override fixed. KI-083/084 discovered via data health (XLE OHLCV corrupted, XLC/XLRE missing). |
+| v0.22.0 | Day 30 | **McMillan Stress Check + OHLCV data cleanup.** Gemini/McMillan book-audit driven. compute_max_21d_move() in iv_store.py — worst 21-day drawdown + best 21-day rally from OHLCV history. _historical_stress_gate() in gate_engine.py — WARN (non-blocking) if sell_put short strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. Wired into _run_etf_sell_put and _run_sell_call. Stress fields (max_21d_drawdown_pct, max_21d_rally_pct, stress_bars_available) added to gate_payload in analyze_service.py. Data cleanup: deleted 18 corrupted XLE rows (close>80, ~2x real price) — HV-20 went 413%→17%. Deleted 17 corrupted IWM rows (close<150) — worst_dd went 65%→9.2%. Tests: 29→33. KI-087 logged (XLRE/SCHB 0 OHLCV). |

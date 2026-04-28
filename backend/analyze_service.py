@@ -637,6 +637,9 @@ def analyze_etf(payload: dict, ticker: str, *,
     selected = strategies_preview[0] if strategies_preview else {}
 
     # MarketData.app OI/volume supplement — fills the IBKR platform gap (OI always 0 via reqMktData).
+    # McMillan Stress Check — worst 21-day move from OHLCV history
+    _stress = iv_store.compute_max_21d_move(ticker) if iv_store else {"max_drawdown_pct": None, "max_rally_pct": None, "bars_available": 0}
+
     # Non-blocking: if lookup fails or times out, gate_payload falls back to OI=0 (existing behaviour).
     _md_oi_volume: dict = {}
     if md_provider and selected and is_etf:
@@ -681,6 +684,9 @@ def analyze_etf(payload: dict, ticker: str, *,
             _etf_holdings_at_risk(ticker, selected.get("expiry") or selected.get("expiry_display", ""))
             if is_etf else []
         ),
+        "max_21d_drawdown_pct": _stress.get("max_drawdown_pct"),
+        "max_21d_rally_pct": _stress.get("max_rally_pct"),
+        "stress_bars_available": _stress.get("bars_available", 0),
     }
 
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)
