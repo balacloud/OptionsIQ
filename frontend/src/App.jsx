@@ -313,7 +313,9 @@ export default function App() {
       </div>
 
       {/* Always-mounted tabs — display:none preserves state across switches */}
-      <div style={{ display: activeTab === 'learn' ? 'block' : 'none' }}><LearnTab /></div>
+      <div style={{ display: activeTab === 'learn' ? 'block' : 'none' }}>
+        <LearnTab ticker={selectedETF?.etf} direction={direction} data={data} />
+      </div>
       <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}><PaperTradeDashboard refreshTick={dashRefreshTick} /></div>
       <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups onSelect={handleSelectFromSetups} /></div>
       <div style={{ display: activeTab === 'data' ? 'block' : 'none' }}><DataProvenance /></div>

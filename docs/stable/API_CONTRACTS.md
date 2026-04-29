@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 29 (April 27, 2026)
+> **Last Updated:** Day 31 (April 29, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -257,6 +257,27 @@ Returns all recorded paper trades with mark-to-market P&L.
 
 ---
 
+## PATCH /api/options/paper-trade/{id}
+
+Update the mark-to-market price for a paper trade (mark it to a new underlying price).
+
+**Request body:**
+```json
+{ "current_underlying": 54.80 }
+```
+
+**Response:** `{"success": true}`
+
+---
+
+## DELETE /api/options/paper-trade/{id}
+
+Remove a paper trade record permanently.
+
+**Response:** `{"success": true}`
+
+---
+
 ## POST /api/options/seed-iv/{ticker}
 
 Seeds IV history for a single ticker from IBKR (yfinance fallback if disconnected).
@@ -339,9 +360,12 @@ Level 1: All sector ETFs with quadrant, direction, action. Consumes STA `/api/se
   },
   "market_regime": "NORMAL",
   "timestamp": "2026-03-20T15:30:00+00:00",
-  "sta_status": "ok"
+  "sta_status": "ok",
+  "vix": { "status": "ok", "value": 19.4, "source": "yfinance_intraday", "age_seconds": 45 }
 }
 ```
+
+**Note (Day 31):** `vix` field added to response. `_fetch_vix()` called in this route to ensure VIX cache is warm for RegimeBar display.
 
 **Error (STA offline):** 503 `{"error": "STA not reachable at ..."}`
 
