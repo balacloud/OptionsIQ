@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 31 (April 29, 2026)
+> **Last Updated:** Day 32 (April 29, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -467,6 +467,9 @@ Scans all ETFs using their sector-suggested direction in parallel (max 6 workers
       "credit_to_width_ratio": 0.38,
       "strategy_type": "bull_put_spread",
       "vix": 19.4,
+      "iv_hv_ratio": 1.12,
+      "hv_20": 18.3,
+      "current_iv": 20.5,
       "error": null
     }
   ]

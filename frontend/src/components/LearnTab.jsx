@@ -217,7 +217,15 @@ function PanelZones({ ctx }) {
   const ABOVE_LINE_TOP = AX_Y - 28;   // top of upward line for above-axis markers
   const BELOW_LINE_BOT = AX_Y + 28;   // bottom of downward line for below-axis markers
   const BE_LINE_BOT    = AX_Y + 42;   // BE line goes even further so its label clears short
-  const TOTAL_H = 102;
+  const TOTAL_H = 116;
+
+  // Collision detection: if BE and short strike are within 38px, offset BE label
+  const beTooClose = Math.abs(bx - sx) < 38;
+  const beTextX     = beTooClose ? (bx < sx ? bx - 5 : bx + 5) : bx;
+  const beAnchor    = beTooClose ? (bx < sx ? 'end' : 'start') : 'middle';
+  // If long strike and current price are within 38px, offset long label
+  const lxTooClose  = Math.abs(lx - px) < 38;
+  const lxAnchor    = lxTooClose ? (lx < px ? 'end' : 'start') : 'middle';
 
   // ATM band width in pixels
   const atmW = Math.max(10, IW * 0.025);
@@ -250,31 +258,32 @@ function PanelZones({ ctx }) {
         style={{ overflow: 'visible', display: 'block', margin: '4px 0' }}
       >
         {/* ── ITM / ATM / OTM zone bands ─────────────────────── */}
+        {/* Zone text: edge-anchored short labels so they never collide with strike markers */}
         {isCallMode ? (
           <>
             {/* ITM = left of price (call) */}
             <rect x={PAD} y={ZONE_Y} width={Math.max(0, px - PAD - atmW / 2)} height={ZONE_H} rx="5" fill={itmFill} />
-            <text x={(PAD + px - atmW / 2) / 2} y={ZONE_Y + ZONE_H / 2 + 4} textAnchor="middle"
-              fill="#FF4444" fontSize="9" fontWeight="700" letterSpacing="0.06em">ITM</text>
+            <text x={PAD + 5} y={ZONE_Y + 10} textAnchor="start"
+              fill="#FF4444" fontSize="8" fontWeight="700" opacity="0.85">ITM</text>
             {/* ATM sliver */}
             <rect x={px - atmW / 2} y={ZONE_Y} width={atmW} height={ZONE_H} rx="2" fill={atmFill} />
             {/* OTM = right of price (call) */}
             <rect x={px + atmW / 2} y={ZONE_Y} width={Math.max(0, W - PAD - px - atmW / 2)} height={ZONE_H} rx="5" fill={otmFill} />
-            <text x={(px + atmW / 2 + W - PAD) / 2} y={ZONE_Y + ZONE_H / 2 + 4} textAnchor="middle"
-              fill="#00C896" fontSize="9" fontWeight="700" letterSpacing="0.04em">OTM — strikes live here</text>
+            <text x={W - PAD - 5} y={ZONE_Y + 10} textAnchor="end"
+              fill="#00C896" fontSize="8" fontWeight="700" opacity="0.85">OTM — strikes here</text>
           </>
         ) : (
           <>
             {/* OTM = left of price (put) */}
             <rect x={PAD} y={ZONE_Y} width={Math.max(0, px - PAD - atmW / 2)} height={ZONE_H} rx="5" fill={otmFill} />
-            <text x={(PAD + px - atmW / 2) / 2} y={ZONE_Y + ZONE_H / 2 + 4} textAnchor="middle"
-              fill="#00C896" fontSize="9" fontWeight="700">OTM puts here</text>
+            <text x={PAD + 5} y={ZONE_Y + 10} textAnchor="start"
+              fill="#00C896" fontSize="8" fontWeight="700" opacity="0.85">OTM — strikes here</text>
             {/* ATM sliver */}
             <rect x={px - atmW / 2} y={ZONE_Y} width={atmW} height={ZONE_H} rx="2" fill={atmFill} />
             {/* ITM = right of price (put) */}
             <rect x={px + atmW / 2} y={ZONE_Y} width={Math.max(0, W - PAD - px - atmW / 2)} height={ZONE_H} rx="5" fill={itmFill} />
-            <text x={(px + atmW / 2 + W - PAD) / 2} y={ZONE_Y + ZONE_H / 2 + 4} textAnchor="middle"
-              fill="#FF4444" fontSize="9" fontWeight="700">ITM ← flipped for puts!</text>
+            <text x={W - PAD - 5} y={ZONE_Y + 10} textAnchor="end"
+              fill="#FF4444" fontSize="8" fontWeight="700" opacity="0.85">ITM ← flipped for puts</text>
           </>
         )}
 
@@ -310,18 +319,18 @@ function PanelZones({ ctx }) {
         {/* ── Marker: Long strike — ABOVE axis (green) ───────── */}
         <line x1={lx} y1={ABOVE_LINE_TOP} x2={lx} y2={AX_Y + 4} stroke="#00C896" strokeWidth="2" />
         <circle cx={lx} cy={AX_Y} r="5" fill="#00C896" stroke="rgba(13,17,23,0.9)" strokeWidth="2" />
-        <text x={lx} y={ABOVE_LINE_TOP - 11} fill="#00C896" fontSize="9" fontWeight="700" textAnchor="middle" fontFamily={mono}>${longStrike}</text>
-        <text x={lx} y={ABOVE_LINE_TOP - 2}  fill="rgba(255,255,255,0.4)" fontSize="7.5" textAnchor="middle">BUY {isCallMode ? 'C' : 'P'}</text>
+        <text x={lx} y={ABOVE_LINE_TOP - 11} fill="#00C896" fontSize="9" fontWeight="700" textAnchor={lxAnchor} fontFamily={mono}>${longStrike}</text>
+        <text x={lx} y={ABOVE_LINE_TOP - 2}  fill="rgba(255,255,255,0.4)" fontSize="7.5" textAnchor={lxAnchor}>BUY {isCallMode ? 'C' : 'P'}</text>
 
         {/* ── Marker: Short strike — BELOW axis (red) ────────── */}
         <line x1={sx} y1={AX_Y - 4} x2={sx} y2={BELOW_LINE_BOT} stroke="#FF4444" strokeWidth="2" />
         <circle cx={sx} cy={AX_Y} r="5" fill="#FF4444" stroke="rgba(13,17,23,0.9)" strokeWidth="2" />
-        <text x={sx} y={BELOW_LINE_BOT + 10} fill="#FF4444" fontSize="9" fontWeight="700" textAnchor="middle" fontFamily={mono}>${shortStrike}</text>
-        <text x={sx} y={BELOW_LINE_BOT + 19} fill="rgba(255,255,255,0.4)" fontSize="7.5" textAnchor="middle">SELL {isCallMode ? 'C' : 'P'}</text>
+        <text x={sx} y={BELOW_LINE_BOT + 11} fill="#FF4444" fontSize="9" fontWeight="700" textAnchor="middle" fontFamily={mono}>${shortStrike}</text>
+        <text x={sx} y={BELOW_LINE_BOT + 21} fill="rgba(255,255,255,0.4)" fontSize="7.5" textAnchor="middle">SELL {isCallMode ? 'C' : 'P'}</text>
 
-        {/* ── Marker: Breakeven — BELOW axis (amber, dashed, further down) */}
+        {/* ── Marker: Breakeven — collision-aware offset when near short strike */}
         <line x1={bx} y1={AX_Y - 2} x2={bx} y2={BE_LINE_BOT} stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="3,2.5" />
-        <text x={bx} y={BE_LINE_BOT + 10} fill="#F59E0B" fontSize="8.5" fontWeight="700" textAnchor="middle" fontFamily={mono}>BE ${breakeven}</text>
+        <text x={beTextX} y={BE_LINE_BOT + 11} fill="#F59E0B" fontSize="8.5" fontWeight="700" textAnchor={beAnchor} fontFamily={mono}>BE ${breakeven}</text>
       </svg>
 
       <div className="lt-divider" />

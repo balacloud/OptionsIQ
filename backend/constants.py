@@ -20,8 +20,8 @@ IVR_SELLER_MIN_PCT      = 25.0   # IVR 25–35 = minimum viable for selling (was
 HV_LOW_REGIME_PCT       = 15.0   # HV < 15% = special low-vol exception
 HV_IV_PASS_RATIO        = 1.20   # HV/IV < 1.20 = not overpaying for IV (buyers)
 HV_IV_WARN_RATIO        = 1.30   # HV/IV 1.20–1.30 = borderline (buyers)
-HV_IV_SELL_PASS_RATIO   = 1.05   # HV/IV < 1.05 = IV ≥ HV → positive VRP (sellers)
-HV_IV_SELL_WARN_RATIO   = 1.15   # HV/IV 1.05–1.15 = thin VRP (sellers)
+HV_IV_SELL_PASS_RATIO   = 1.05   # IV/HV >= 1.05 = IV ≥ HV by 5%+ → positive VRP (sellers)
+                                  # hv_iv_ratio field = current_iv / hv_20 (IV/HV, not HV/IV)
                                   # Sinclair: only sell when IV > HV (vol risk premium positive)
                                   # Source: multi-LLM synthesis 2026-04-22
 

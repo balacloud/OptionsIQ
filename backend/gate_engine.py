@@ -16,7 +16,6 @@ from constants import (
     HV_IV_PASS_RATIO,
     HV_IV_WARN_RATIO,
     HV_IV_SELL_PASS_RATIO,
-    HV_IV_SELL_WARN_RATIO,
     HV_LOW_REGIME_PCT,
     VIX_LOW_VOL,
     VIX_SWEET_SPOT_HIGH,
@@ -717,21 +716,23 @@ class GateEngine:
     def _etf_hv_iv_seller_gate(self, p: dict) -> dict:
         """Volatility Risk Premium gate for sellers (Sinclair).
         Sellers need IV > HV — only then are they collecting overpriced premium.
-        HV/IV > 1.05 means realized vol is outpacing implied → no edge, don't sell.
+        hv_iv_ratio = IV/HV (current_iv / hv_20). >= 1.05 = IV well above HV → sellers have edge.
         """
         current_iv = float(p.get("current_iv", 0.0))
         hv_20 = float(p.get("hv_20", 0.0) or 0.0)
-        ratio = float(p.get("hv_iv_ratio", 0.0) or 0.0)
+        ratio = float(p.get("hv_iv_ratio", 0.0) or 0.0)  # IV/HV
         if ratio == 0.0 or current_iv == 0.0:
             s, r = "warn", "Vol data unavailable — VRP unverified"
-        elif ratio < HV_IV_SELL_PASS_RATIO:
-            s, r = "pass", f"IV > HV — positive vol risk premium, good to sell"
-        elif ratio <= HV_IV_SELL_WARN_RATIO:
+        elif ratio >= HV_IV_SELL_PASS_RATIO:  # IV/HV >= 1.05: IV well above HV → sellers have edge
+            s, r = "pass", "IV > HV — positive vol risk premium, good to sell"
+        elif ratio >= 1.0:  # IV/HV 1.0–1.05: IV just above HV → thin edge
             s, r = "warn", "IV barely above HV — thin premium edge, size down"
-        else:
-            s, r = "fail", f"HV exceeds IV — realized vol > implied, no edge selling"
-        return _gate("hv_iv_vrp", "Vol Risk Premium", s, f"HV/IV {ratio:.2f} (HV {hv_20:.1f}%, IV {current_iv:.1f}%)",
-                     f"<{HV_IV_SELL_PASS_RATIO} pass, {HV_IV_SELL_PASS_RATIO}–{HV_IV_SELL_WARN_RATIO} warn, >{HV_IV_SELL_WARN_RATIO} fail", r, s == "fail")
+        else:  # IV/HV < 1.0: HV exceeds IV → no seller edge
+            s, r = "fail", "HV exceeds IV — realized vol > implied, no edge selling"
+        return _gate("hv_iv_vrp", "Vol Risk Premium", s,
+                     f"IV/HV {ratio:.2f} (IV {current_iv:.1f}%, HV {hv_20:.1f}%)",
+                     f"IV/HV >={HV_IV_SELL_PASS_RATIO} pass, 1.0–{HV_IV_SELL_PASS_RATIO} warn, <1.0 fail",
+                     r, s == "fail")
 
     def _vix_regime_gate(self, p: dict) -> dict:
         """VIX regime gate for sellers. Perplexity: 21-year tastylive study.

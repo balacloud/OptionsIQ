@@ -2865,8 +2865,8 @@ tr:last-child td { border-bottom: none; }
 .bs-empty-sub { font-size: 13px; color: var(--text-dim); max-width: 420px; margin: 0 auto; line-height: 1.6; }
 
 .bs-watch-table { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.bs-watch-header { display: grid; grid-template-columns: 60px 100px 60px 50px 100px 1fr; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.04); font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
-.bs-watch-row { display: grid; grid-template-columns: 60px 100px 60px 50px 100px 1fr; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--border); font-size: 13px; align-items: center; }
+.bs-watch-header { display: grid; grid-template-columns: 60px 100px 60px 50px 46px 90px 1fr; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.04); font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+.bs-watch-row { display: grid; grid-template-columns: 60px 100px 60px 50px 46px 90px 1fr; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--border); font-size: 13px; align-items: center; }
 .bs-watch-row:hover { background: rgba(255,255,255,0.03); }
 .bs-watch-ticker { font-weight: 700; color: var(--text); }
 .bs-watch-dir { color: var(--text-dim); font-size: 12px; }

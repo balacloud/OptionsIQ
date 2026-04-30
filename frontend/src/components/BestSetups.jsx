@@ -183,10 +183,13 @@ export default function BestSetups({ onSelect }) {
           </div>
           <div className="bs-watch-table">
             <div className="bs-watch-header">
-              <span>ETF</span><span>Direction</span><span>Gates</span><span>IVR</span><span>Quadrant</span><span>Why Blocked</span>
+              <span>ETF</span><span>Direction</span><span>Gates</span><span>IVR</span><span>IV/HV</span><span>Quadrant</span><span>Why Blocked</span>
             </div>
             {blocked.slice(0, 8).map(s => {
-              const failedGates = (s.failed_gates || []).join(', ');
+              const ratio = s.iv_hv_ratio;
+              const ratioOk = ratio != null && ratio >= 1.05;
+              const ratioThin = ratio != null && ratio >= 1.0 && ratio < 1.05;
+              const ratioColor = ratioOk ? '#00c896' : ratioThin ? '#f5a623' : '#e05252';
               return (
                 <div key={`${s.ticker}-${s.direction}`} className="bs-watch-row">
                   <span className="bs-watch-ticker">{s.ticker}</span>
@@ -197,6 +200,9 @@ export default function BestSetups({ onSelect }) {
                     </span>
                   </span>
                   <span className="bs-watch-ivr">{s.ivr != null ? `${Number(s.ivr).toFixed(0)}%` : '—'}</span>
+                  <span style={{ color: ratio != null ? ratioColor : 'rgba(255,255,255,0.3)', fontSize: 11 }}>
+                    {ratio != null ? ratio.toFixed(2) : '—'}
+                  </span>
                   <span className="bs-watch-quad">{s.quadrant || '—'}</span>
                   <span className="bs-watch-reason">
                     {(s.failed_gates || []).length > 0 ? (s.failed_gates || []).join(', ') : (s.verdict_label || 'BLOCKED')}
