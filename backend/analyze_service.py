@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 
+import requests as _requests
+
 from constants import (
+    STA_BASE_URL,
     COMPANY_EARNINGS,
     DIRECTION_TO_CHAIN_DIR,
     ETF_DTE_HIGH_IVR,
@@ -136,27 +140,43 @@ _SPY_REGIME_TTL = 120  # 2 min
 
 _vix_cache: dict = {"value": None, "source": None, "ts": 0}
 _VIX_TTL = 300  # 5 min
+_vix_lock = threading.Lock()  # prevents parallel cache stampede during Best Setups scan
 
 
 def _fetch_vix() -> tuple[float | None, str]:
-    """Fetch live VIX via yfinance ^VIX. 5-min cache. Returns (value, source)."""
+    """Fetch live VIX. STA primary (no rate limits), yfinance fallback. 5-min cache."""
     now = time.monotonic()
     if _vix_cache["value"] is not None and (now - _vix_cache["ts"]) < _VIX_TTL:
         return _vix_cache["value"], _vix_cache["source"]
-    try:
-        import yfinance as yf
-        hist = yf.Ticker("^VIX").history(period="1d", interval="1m")
-        if not hist.empty:
-            val = float(hist["Close"].dropna().iloc[-1])
-            _vix_cache.update({"value": val, "source": "yfinance_intraday", "ts": now})
-            return val, "yfinance_intraday"
-        daily = yf.Ticker("^VIX").history(period="5d", interval="1d")
-        if not daily.empty:
-            val = float(daily["Close"].dropna().iloc[-1])
-            _vix_cache.update({"value": val, "source": "yfinance_daily", "ts": now})
-            return val, "yfinance_daily"
-    except Exception:
-        pass
+    with _vix_lock:
+        # Re-check after acquiring lock — another thread may have just populated it
+        if _vix_cache["value"] is not None and (now - _vix_cache["ts"]) < _VIX_TTL:
+            return _vix_cache["value"], _vix_cache["source"]
+        # 1. Try STA /api/stock/%5EVIX — already connected, no rate limits
+        try:
+            r = _requests.get(f"{STA_BASE_URL}/api/stock/%5EVIX", timeout=3)
+            val = r.json().get("currentPrice")
+            if val is not None:
+                val = float(val)
+                _vix_cache.update({"value": val, "source": "sta", "ts": now})
+                return val, "sta"
+        except Exception:
+            pass
+        # 2. Fall back to yfinance
+        try:
+            import yfinance as yf
+            hist = yf.Ticker("^VIX").history(period="1d", interval="1m")
+            if not hist.empty:
+                val = float(hist["Close"].dropna().iloc[-1])
+                _vix_cache.update({"value": val, "source": "yfinance_intraday", "ts": now})
+                return val, "yfinance_intraday"
+            daily = yf.Ticker("^VIX").history(period="5d", interval="1d")
+            if not daily.empty:
+                val = float(daily["Close"].dropna().iloc[-1])
+                _vix_cache.update({"value": val, "source": "yfinance_daily", "ts": now})
+                return val, "yfinance_daily"
+        except Exception:
+            pass
     return None, "unavailable"
 
 
@@ -313,9 +333,19 @@ def _extract_iv_data(ticker: str, chain: dict, provider, *,
             history = iv_store.get_iv_history(ticker, 252)
 
     ivr_pct = iv_store.compute_ivr_pct(ticker, current_iv) if current_iv is not None else None
-    bars = _call_provider(provider.get_ohlcv_daily, ticker, 60) if hasattr(provider, "get_ohlcv_daily") else []
-    if bars:
-        iv_store.store_ohlcv(ticker, bars)
+    # Only fetch OHLCV via IBWorker (reqHistoricalData) if our SQLite data is stale (>2 days old).
+    # Fetching on every call saturates IBWorker with historical data requests during parallel
+    # Best Setups scans, causing chain fetch timeouts and circuit breaker trips.
+    _ohlcv_stats = iv_store.get_ohlcv_stats(ticker) if iv_store else {}
+    _ohlcv_last = _ohlcv_stats.get("last_date")
+    from datetime import date as _date
+    _ohlcv_stale = (_ohlcv_last is None) or (
+        (_date.today() - _date.fromisoformat(_ohlcv_last)).days > 2
+    )
+    if _ohlcv_stale and hasattr(provider, "get_ohlcv_daily"):
+        bars = _call_provider(provider.get_ohlcv_daily, ticker, 60)
+        if bars:
+            iv_store.store_ohlcv(ticker, bars)
     hv_20 = iv_store.compute_hv(ticker, 20)
     ratio = round((current_iv / hv_20), 2) if (current_iv and hv_20) else None
 
@@ -458,7 +488,8 @@ def _etf_behavioral_checks(gates: list[dict], swing_data: dict) -> list[dict]:
 
 def apply_etf_gate_adjustments(gates: list[dict], direction: str,
                                account_size: float, gate_payload: dict,
-                               strategies_preview: list[dict]) -> None:
+                               strategies_preview: list[dict],
+                               data_source: str = "ibkr_live") -> None:
     """
     Consolidates all ETF-specific gate post-processing into one function.
     Mutates `gates` in place.
@@ -467,11 +498,22 @@ def apply_etf_gate_adjustments(gates: list[dict], direction: str,
     #    At >SPREAD_DATA_FAIL_PCT (20%) the bid-ask gap is wide enough that the
     #    underlying delta/strike data is unreliable — keep blocking to prevent
     #    bad data driving the wrong strike selection (KI-080).
+    #    Exception: ibkr_stale chains carry end-of-day spreads from the previous
+    #    session which are always artificially wide (no active market). Blocking on
+    #    that data punishes the morning scan unfairly — downgrade to WARN instead.
     for g in gates:
         if g["id"] == "liquidity" and g["status"] == "fail":
             if "Spread too wide" in str(g.get("reason", "")):
                 raw_spread = g.get("spread_pct")
-                if raw_spread is not None and raw_spread > SPREAD_DATA_FAIL_PCT:
+                if data_source == "ibkr_stale":
+                    g["status"] = "warn"
+                    g["blocking"] = False
+                    spread_str = f"{raw_spread:.1f}%" if raw_spread is not None else "unknown"
+                    g["reason"] = (
+                        f"Spread {spread_str} from previous session cache — "
+                        "refresh chain before trading to get live bid-ask"
+                    )
+                elif raw_spread is not None and raw_spread > SPREAD_DATA_FAIL_PCT:
                     g["blocking"] = True
                     g["reason"] = (
                         f"Bid-ask spread {raw_spread:.1f}% — data unreliable at this width; "
@@ -692,7 +734,7 @@ def analyze_etf(payload: dict, ticker: str, *,
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)
 
     if is_etf:
-        apply_etf_gate_adjustments(gates, direction, account_size, gate_payload, strategies_preview)
+        apply_etf_gate_adjustments(gates, direction, account_size, gate_payload, strategies_preview, data_source)
 
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")

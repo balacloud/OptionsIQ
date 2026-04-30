@@ -179,7 +179,7 @@ IB_WORKER_TIMEOUT_SMART = 40      # Timeout for smart profile chain fetch (sec);
 IB_WORKER_TIMEOUT_FULL  = 50      # Timeout for full profile chain fetch (sec)
 IB_CHAIN_RETRY_ATTEMPTS = 2       # Retry attempts on timeout
 IB_CHAIN_RETRY_BACKOFF  = 0.6     # Backoff between retries (sec)
-IB_CB_FAILURE_THRESHOLD = 2       # Circuit breaker: open after N failures
+IB_CB_FAILURE_THRESHOLD = 5       # Circuit breaker: open after N failures (raised from 2 — parallel Best Setups scan triggers cascading timeouts that tripped the old threshold)
 IB_CB_COOLDOWN_SEC      = 45      # Circuit breaker cooldown (sec)
 
 # ---------------------------------------------------------------------------

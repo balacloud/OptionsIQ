@@ -428,12 +428,22 @@ def best_setups():
     def _run_one(s):
         ticker = s["etf"]
         direction = s["suggested_direction"]
+        # Pre-fetch underlying price from STA to bypass IBKR reqMktData snapshot call.
+        # Without this, all 8 parallel scans call get_underlying_price() simultaneously
+        # via IBWorker, fail (bid/ask/last all None in 1.2s window), and trip the circuit breaker.
+        last_close = None
+        try:
+            sta_stock = _requests.get(f"{STA_BASE_URL}/api/stock/{ticker}", timeout=3)
+            last_close = sta_stock.json().get("currentPrice")
+        except Exception:
+            pass
         payload = {
             "ticker": ticker,
             "direction": direction,
             "account_size": account_size,
             "risk_pct": float(os.getenv("RISK_PCT", 0.01)),
             "planned_hold_days": 21,
+            **({"last_close": last_close} if last_close else {}),
         }
         try:
             result = analyze_etf(
@@ -450,13 +460,18 @@ def best_setups():
             total = len(gates)
             failed = [g.get("name") or g.get("label", "?") for g in gates if g.get("status") == "fail"]
             top = (result.get("top_strategies") or [{}])[0]
+            # Normalize color: gate_engine returns "amber" but frontend expects "yellow" for CAUTION
+            raw_color = verdict.get("color", "red")
+            color = "yellow" if raw_color == "amber" else raw_color
+            label_map = {"green": "GO", "yellow": "CAUTION", "red": "BLOCKED"}
             return {
                 "ticker": ticker,
                 "direction": direction,
                 "quadrant": s.get("quadrant"),
                 "name": s.get("name"),
-                "verdict_color": verdict.get("color"),
-                "verdict_label": verdict.get("label"),
+                "verdict_color": color,
+                "verdict_label": label_map.get(color, "BLOCKED"),
+                "data_source": result.get("data_source"),
                 "pass_rate": round(passed / total * 100) if total else 0,
                 "gates_passed": passed,
                 "gates_total": total,
@@ -478,7 +493,10 @@ def best_setups():
             logger.warning("best-setups: %s/%s failed — %s", ticker, direction, exc)
             return {"ticker": ticker, "direction": direction, "quadrant": s.get("quadrant"), "error": str(exc)}
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+    # max_workers=1: IBWorker is single-threaded — parallel workers just create a queue
+    # where later requests race against their 40s expiry. Sequential gives every ETF
+    # the full IBWorker without contention. Scan takes ~3-4 min but data quality is real.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         results = list(pool.map(_run_one, candidates))
 
     order = {"green": 0, "yellow": 1, "red": 2, None: 3}

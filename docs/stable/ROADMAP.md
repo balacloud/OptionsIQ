@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 32 (April 29, 2026)
-> **Current Version:** v0.24.0
+> **Last Updated:** Day 33 (April 30, 2026)
+> **Current Version:** v0.25.0
 
 ---
 
@@ -171,6 +171,8 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] VRP gate inversion fix — _etf_hv_iv_seller_gate() operators flipped, IV/HV >= 1.05 now passes ✅ Day 32
 - [x] IV/HV ratio column in Best Setups watchlist — color-coded (green/amber/red) ✅ Day 32
 - [x] LearnTab PanelZones SVG collision fix — corner-anchored band text + BE offset detection ✅ Day 32
+- [x] Best Setups scan reliability overhaul (8 fixes) — sequential scan, STA price/VIX, OHLCV skip, CB threshold, verdict normalization ✅ Day 33
+- [ ] KI-088: L3 analyze_etf() STA underlying price fallback — eliminate stale banner
 - [ ] Skew computation — put_iv_30delta - call_iv_30delta from existing IBKR chain data
 - [ ] app.py size violation (KI-086) — move _seed_iv_for_ticker + _run_one to service modules
 
