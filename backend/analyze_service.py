@@ -48,6 +48,40 @@ def _days_until_next_fomc() -> int:
     return 999
 
 
+def _resolve_underlying_hint(ticker: str, payload: dict) -> float | None:
+    """
+    Resolve the underlying spot price hint for an analysis call.
+
+    Order of precedence:
+      1. payload['last_close'] — if explicitly provided by caller (e.g. _run_one)
+      2. STA /api/stock/{ticker} currentPrice — STA is the canonical price source
+      3. None — let downstream IBKR path fetch via get_underlying_price()
+
+    Returning a hint bypasses ibkr_provider's internal reqMktData(snapshot=True) call,
+    which is unreliable in the 1.2s window when the connection has been idle. (KI-088)
+    """
+    explicit = payload.get("last_close")
+    if explicit is not None:
+        try:
+            val = float(explicit)
+            if val > 0:
+                return val
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        resp = _requests.get(f"{STA_BASE_URL}/api/stock/{ticker}", timeout=3)
+        price = resp.json().get("currentPrice")
+        if price is not None:
+            val = float(price)
+            if val > 0:
+                return val
+    except Exception as exc:
+        logger.debug("STA underlying price unavailable for %s: %s", ticker, exc)
+
+    return None
+
+
 def _etf_holdings_at_risk(ticker: str, expiry_date: str) -> list[dict]:
     """
     Returns key holdings for an ETF that report earnings before the option expiry.
@@ -623,11 +657,7 @@ def analyze_etf(payload: dict, ticker: str, *,
     except Exception:
         min_dte = int(os.getenv("IBKR_MIN_DTE", "14"))
 
-    underlying_hint = payload.get("last_close")
-    try:
-        underlying_hint = float(underlying_hint) if underlying_hint is not None else None
-    except Exception:
-        underlying_hint = None
+    underlying_hint = _resolve_underlying_hint(ticker, payload)
     target_price = payload.get("entry_momentum", underlying_hint)
     try:
         target_price = float(target_price) if target_price is not None else None

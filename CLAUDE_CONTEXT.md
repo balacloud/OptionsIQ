@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 33 (April 30, 2026)
-> **Current Version:** v0.25.0
-> **Project Phase:** Best Setups scan now reliable — 8 IBKR infrastructure fixes. 6 CAUTION setups confirmed live. Day 34 P0: KI-088 (L3 stale banner — STA underlying price fallback in analyze_etf()).
+> **Last Updated:** Day 34 (April 30, 2026)
+> **Current Version:** v0.25.1
+> **Project Phase:** KI-088 resolved — L3 stale banner fixed via _resolve_underlying_hint() helper (STA-as-canonical for underlying price). 36 tests. Data Provenance updated. MarketData.app chain diagnostic: viable as primary chain provider ($12/mo, Day 35 plan).
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY33_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY33.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY34_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY34.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -65,7 +65,7 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 |------|--------|-------|
 | Backend | Best Setups scan reliable (Day 33) | 8 IBKR infrastructure fixes. Sequential scan (max_workers=1). 6 CAUTION setups confirmed live. VIX from STA. Tests: 33. |
 | Frontend | LearnTab zones fix + IV/HV column (Day 32) | Zones SVG: edge-anchored zone text, BE label collision detection. Best Setups watchlist: IV/HV column with color coding. |
-| IBKR connection | PARTIAL | Best Setups scan works (sequential, STA price hint). L3 "Run Analysis" still stale (KI-088 — STA fallback needed in analyze_etf()). |
+| IBKR connection | WORKING | Best Setups + L3 both live. KI-088 resolved (Day 34) — _resolve_underlying_hint() pre-fetches STA price, bypasses unreliable reqMktData snapshot. |
 | Gate logic | Hardened Day 28 | Holdings earnings gate live. FOMC window gate fixed. Spread >20% blocks. 29 tests. |
 | P&L math | Fixed Day 9 | pnl_calculator.py — None guard + 4 new strategy type handlers |
 | Strategy ranking | Updated Day 9+12 | sell_call: bear_call_spread ✓. sell_put: naked + warning label. |
@@ -120,8 +120,8 @@ backend/
   analyze_service.py  DONE (Day 24+28) — 604+ lines. _etf_holdings_at_risk() added (Day 28).
                                    apply_etf_gate_adjustments() updated: spread >20% keeps blocking (Day 28).
 
-  tests/               DONE (Day 24+28+30) — 33 tests (pytest). 5 files: bs_calculator, spread_math,
-                                   direction_routing, gate_engine_etf, etf_gate_postprocess.
+  tests/               DONE (Day 24+28+30+34) — 36 tests (pytest). 6 files: bs_calculator, spread_math,
+                                   direction_routing, gate_engine_etf, etf_gate_postprocess, resolve_underlying_hint.
 
   constants.py         DONE (Day 19+27+28) — ETF_KEY_HOLDINGS (16 ETFs), COMPANY_EARNINGS (52 cos,
                                    Q2–Q4 2026). SPREAD_DATA_FAIL_PCT=20.0. FOMC_DATES correct.
@@ -225,8 +225,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 Full list: `docs/versioned/KNOWN_ISSUES_DAY33.md`
 
 Open (HIGH):
-1. **KI-088: L3 "Run Analysis" stale banner** — `analyze_etf()` doesn't try STA for `underlying_hint` when None. Fix: add STA `/api/stock/{ticker}` fallback before `data_svc.get_chain()`. Exact code in KI-088 in KNOWN_ISSUES_DAY33.md. Day 34 P0.
-2. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
+1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (MEDIUM):
 3. **KI-086: app.py ~500 lines — Rule 4 violation** — _seed_iv_for_ticker + _run_one belong in service modules.
@@ -290,6 +289,7 @@ Resolved (Day 24):
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 34 | Apr 30, 2026 | **KI-088 resolved (v0.25.1).** _resolve_underlying_hint() helper added to analyze_service.py — STA canonical source for underlying price. L3 "Run Analysis" now returns ibkr_live (was ibkr_stale). _run_one simplified. Data Provenance: underlying_price field added. MarketData.app diagnostic: full chain data confirmed (IV+greeks+bid/ask+OI), no historical IV. KI-089 logged for Day 35 ($12/mo subscription plan). 36 tests pass. |
 | Day 33 | Apr 30, 2026 | **Best Setups scan infrastructure overhaul (v0.25.0).** 8 root-cause fixes: CB threshold 2→5, stale spread WARN not BLOCK (data_source param added to apply_etf_gate_adjustments), verdict_label null fix (headline key), amber→yellow normalization + data_source added to _run_one, VIX from STA (rate-limit fix + threading.Lock), OHLCV reqHistoricalData skipped when SQLite ≤2 days fresh, STA underlying price pre-fetch in _run_one bypasses get_underlying_price() IBKR call, max_workers=1 (sequential, eliminates queue expiry). Result: 6 CAUTION setups confirmed live (XLF 9/11, XLK 9/11, XLC 8/11, XLY, XLV, XLP). VIX=17.59 from STA. 33 tests pass. KI-088 new: L3 stale banner — same STA price fix needed in analyze_etf() main path. |
 | Day 32 | Apr 29, 2026 | **VRP gate fix + IV/HV watchlist + zones fix (v0.24.0).** Critical bug found: `_etf_hv_iv_seller_gate()` inverted since Day 29 — compared IV/HV ratio against HV/IV thresholds, blocking sellers when IV > HV (should PASS). Fixed comparison operators, removed HV_IV_SELL_WARN_RATIO constant, updated display label. IV/HV column added to Best Setups watchlist (green ≥1.05, amber 1.0–1.05, red <1.0). LearnTab zones: zone text moved to edge-anchored corners (no more overlap with strike labels), BE label gets collision-aware horizontal offset when near short strike, TOTAL_H 102→116. API: best-setups results now include iv_hv_ratio, hv_20, current_iv. 33 tests pass. |
 | Day 31 | Apr 29, 2026 | **LearnTab redesign + UX polish + KI-084/085 resolved (v0.23.0).** LearnTab: Perplexity-style 5-panel trade education panel (Risk/Reward, Strike Zones, Breakeven, Timing/DTE, Safety Gates) replacing generic 4-lesson format. Context-aware: uses real ETF price/strike/premium/expiry from analysis when available; XLF defaults otherwise. SVG number line (staggered markers, no overlap). VIX badge added to RegimeBar with color coding (KI-085). XLRE/SCHB OHLCV seeded via _seed_iv_for_ticker() enhancement (KI-084/087). Paper trade workflow rebuilt: PaperTradeBanner (strategy picker), PaperTradeDashboard (mark/close/delete per trade), PATCH + DELETE endpoints. Best Setups as home screen: default tab 'setups', auto-scan on mount, clickable SetupCards → analysis + tab switch. |
@@ -297,38 +297,35 @@ Resolved (Day 24):
 
 ---
 
-## Next Session Priorities (Day 34)
+## Next Session Priorities (Day 35)
 
-### P0 — KI-088: L3 stale banner — STA underlying price fallback (HIGH, ~10 lines)
-In `analyze_service.analyze_etf()`, after extracting `underlying_hint = payload.get("last_close")`, add:
-```python
-if underlying_hint is None:
-    try:
-        import requests as _req
-        r = _req.get(f"{STA_BASE_URL}/api/stock/{ticker}", timeout=3)
-        underlying_hint = float(r.json().get("currentPrice") or 0) or None
-    except Exception:
-        pass
-```
-Then pass `underlying_hint` to `data_svc.get_chain(... underlying_hint=underlying_hint)`. This bypasses IBKR `get_underlying_price()` and eliminates the stale banner for L3 analysis. STA is already imported in analyze_service (`STA_BASE_URL` import added Day 33).
+### P0 — KI-089: MarketData.app as primary chain provider (MEDIUM)
+Subscribe ($12/mo). Wire as chain source in `data_service.py` cascade above Alpaca, below IBKR live.
+Eliminates IBKR chain dependency during trading hours entirely. Diagnostic confirmed: IV, delta, theta,
+gamma, vega, bid/ask, OI, volume all present. Historical IV not available — keep IBKR for nightly seed only.
 
-### P1 — app.py Size Cleanup (KI-086, MEDIUM)
-app.py is ~500 lines (Rule 4: max 150). Move `_seed_iv_for_ticker()` → analyze_service.py. Move `_run_one()` closure → best_setups_service.py (new file).
+### P1 — Live testing (market opens tomorrow)
+Run Best Setups scan. Click through to L3 on a CAUTION setup. Verify no stale banner (KI-088 fixed).
+If a GO appears, paper trade it. Check Data Provenance tab — verify "Underlying Price → sta" row shows.
 
-### P2 — QQQ sell_put ITM Strike Fix (KI-067, MEDIUM)
+### P2 — app.py Size Cleanup (KI-086, MEDIUM)
+app.py is 536 lines (Rule 4: max 150). Move `_seed_iv_for_ticker()` + `seed_iv_all()` → analyze_service.py.
+Move `_run_one()` closure → new best_setups_service.py.
+
+### P3 — QQQ sell_put ITM Strike Fix (KI-067, MEDIUM)
 Chain too narrow for current QQQ price (~$658) — sell_put picks up ITM puts.
 
-### P3 — Skew Computation (LOW)
+### P4 — Skew Computation (LOW)
 `put_iv_30delta - call_iv_30delta` from existing IBKR chain. No new data source.
 
 ### Deferred
 - KI-081: CPI/NFP macro events calendar (LOW)
 - KI-077: DirectionGuide sell_put "capped" label (LOW)
 - Phase 7c: Weakening → sell_call for cyclical sectors
-- **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md "Backtesting — Research Deferred" section.
+- **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY32.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY32_SHORT.md` — Day 32 summary
+- `docs/versioned/KNOWN_ISSUES_DAY34.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY34_SHORT.md` — Day 34 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research

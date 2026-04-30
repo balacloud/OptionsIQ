@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 33 (April 30, 2026)
-> **Current Version:** v0.25.0
+> **Last Updated:** Day 34 (April 30, 2026)
+> **Current Version:** v0.25.1
 
 ---
 
@@ -172,7 +172,7 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] IV/HV ratio column in Best Setups watchlist — color-coded (green/amber/red) ✅ Day 32
 - [x] LearnTab PanelZones SVG collision fix — corner-anchored band text + BE offset detection ✅ Day 32
 - [x] Best Setups scan reliability overhaul (8 fixes) — sequential scan, STA price/VIX, OHLCV skip, CB threshold, verdict normalization ✅ Day 33
-- [ ] KI-088: L3 analyze_etf() STA underlying price fallback — eliminate stale banner
+- [x] KI-088: L3 analyze_etf() STA underlying price fallback — _resolve_underlying_hint() helper ✅ Day 34
 - [ ] Skew computation — put_iv_30delta - call_iv_30delta from existing IBKR chain data
 - [ ] app.py size violation (KI-086) — move _seed_iv_for_ticker + _run_one to service modules
 
@@ -250,4 +250,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 | v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |
 | v0.21.0 | Day 29 | **Data observability + gate hardening.** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive empirical), _credit_width() in strategy_ranker, bear_call/bull_put R1/R2 wired. HV/IV VRP gate: _etf_hv_iv_seller_gate() (Sinclair — sell only when IV>HV). VIX regime gate: <15 warn, >30 warn, >40 fail. IVR thresholds: 50→35 (tastylive 60-70% frequency improvement). FOMC imminent fix (<5 days now warns, was falling through). Data Health tab: GET /api/data-health with field-level provenance per ETF (7 fields × 15 ETFs). Best Setups tab: parallel scan, manual trigger, IVR watchlist. Pre-analysis prompts + Paper Trade Dashboard shipped. Tab state retention (display:none vs unmount). IVR key mismatch fixed (was always null). Signal board display:grid override fixed. KI-083/084 discovered via data health (XLE OHLCV corrupted, XLC/XLRE missing). |
 | v0.23.0 | Day 31 | **LearnTab Perplexity redesign + UX polish + KI-084/085 resolved.** LearnTab: complete rewrite as 5-panel Perplexity-style trade education panel (Risk/Reward, Strike Zones, Breakeven, Timing/DTE, Safety Gates). Context-aware: real ETF price/strike/premium/expiry from analysis; XLF bear call defaults otherwise. SVG number line with staggered markers (no overlap regardless of proximity). VIX badge in RegimeBar — color-coded per regime (KI-085 resolved). XLRE/SCHB OHLCV seeded (KI-084/087 resolved). Paper trade workflow rebuilt: PaperTradeBanner (strategy picker + confirmation), PaperTradeDashboard (mark/close/delete), PATCH + DELETE endpoints. Best Setups as home screen: default tab 'setups', auto-scan on mount, clickable SetupCards → handleSelectFromSetups → analysis panel + tab switch. |
+| v0.25.1 | Day 34 | KI-088: _resolve_underlying_hint() — STA-as-canonical for underlying price. L3 stale banner eliminated. Data Provenance: underlying_price field added. MarketData.app chain diagnostic (KI-089 logged). 36 tests. |
+| v0.25.0 | Day 33 | Best Setups scan reliability overhaul (8 fixes) — sequential scan, STA price/VIX, OHLCV skip, CB threshold 2→5, verdict normalization. 6 CAUTION setups live. |
+| v0.24.0 | Day 32 | VRP gate inversion fix. IV/HV column in Best Setups. LearnTab zones SVG collision fix. |
 | v0.22.0 | Day 30 | **McMillan Stress Check + OHLCV data cleanup.** Gemini/McMillan book-audit driven. compute_max_21d_move() in iv_store.py — worst 21-day drawdown + best 21-day rally from OHLCV history. _historical_stress_gate() in gate_engine.py — WARN (non-blocking) if sell_put short strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. Wired into _run_etf_sell_put and _run_sell_call. Stress fields (max_21d_drawdown_pct, max_21d_rally_pct, stress_bars_available) added to gate_payload in analyze_service.py. Data cleanup: deleted 18 corrupted XLE rows (close>80, ~2x real price) — HV-20 went 413%→17%. Deleted 17 corrupted IWM rows (close<150) — worst_dd went 65%→9.2%. Tests: 29→33. KI-087 logged (XLRE/SCHB 0 OHLCV). |

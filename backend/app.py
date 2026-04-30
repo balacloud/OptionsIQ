@@ -428,22 +428,13 @@ def best_setups():
     def _run_one(s):
         ticker = s["etf"]
         direction = s["suggested_direction"]
-        # Pre-fetch underlying price from STA to bypass IBKR reqMktData snapshot call.
-        # Without this, all 8 parallel scans call get_underlying_price() simultaneously
-        # via IBWorker, fail (bid/ask/last all None in 1.2s window), and trip the circuit breaker.
-        last_close = None
-        try:
-            sta_stock = _requests.get(f"{STA_BASE_URL}/api/stock/{ticker}", timeout=3)
-            last_close = sta_stock.json().get("currentPrice")
-        except Exception:
-            pass
+        # underlying price resolved inside analyze_etf via _resolve_underlying_hint (KI-088)
         payload = {
             "ticker": ticker,
             "direction": direction,
             "account_size": account_size,
             "risk_pct": float(os.getenv("RISK_PCT", 0.01)),
             "planned_hold_days": 21,
-            **({"last_close": last_close} if last_close else {}),
         }
         try:
             result = analyze_etf(

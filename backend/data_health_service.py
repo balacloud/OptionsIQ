@@ -202,6 +202,7 @@ def build_data_health(
         fomc_status = "warn" if days_away <= 14 else "ok"
 
         field_resolution[ticker] = {
+            "underlying_price":  {"source": "sta",    "note": f"STA /api/stock/{ticker} currentPrice — precedence: payload last_close → STA → IBKR", "status": "ok"},
             "chain_implied_vol": {"source": chain_src, "note": chain_note, "status": chain_status},
             "oi_volume":         {"source": oi_src,   "note": oi_note,   "status": oi_status},
             "hv_20":             {"source": hv_src,   "note": hv_note,   "status": hv_status},

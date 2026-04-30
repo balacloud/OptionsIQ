@@ -184,6 +184,7 @@ export default function DataProvenance() {
           {tickers.map(t => {
             const fr = (data?.field_resolution || {})[t] || {};
             const FIELDS = [
+              { key: 'underlying_price',  label: 'Underlying Price' },
               { key: 'chain_implied_vol', label: 'Chain / Implied Vol' },
               { key: 'oi_volume',         label: 'OI / Volume' },
               { key: 'hv_20',             label: 'HV-20 (Hist. Vol)' },
