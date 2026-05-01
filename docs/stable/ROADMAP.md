@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 34 (April 30, 2026)
-> **Current Version:** v0.25.1
+> **Last Updated:** Day 35 (May 1, 2026)
+> **Current Version:** v0.26.0
 
 ---
 
@@ -174,7 +174,11 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] Best Setups scan reliability overhaul (8 fixes) — sequential scan, STA price/VIX, OHLCV skip, CB threshold, verdict normalization ✅ Day 33
 - [x] KI-088: L3 analyze_etf() STA underlying price fallback — _resolve_underlying_hint() helper ✅ Day 34
 - [ ] Skew computation — put_iv_30delta - call_iv_30delta from existing IBKR chain data
-- [ ] app.py size violation (KI-086) — move _seed_iv_for_ticker + _run_one to service modules
+- [~] app.py size violation (KI-086) — `_seed_iv_for_ticker` extracted to batch_service.py Day 35 (536→492 lines); `_run_one` still inline
+- [x] APScheduler BOD/EOD batch infrastructure — batch_service.py (148 lines) + CronTrigger Mon-Fri 9:31/16:05 ET ✅ Day 35
+- [x] Batch status dashboard in DataProvenance — BatchStatusPanel (last 10 runs) + IVCoverageGrid (per-ETF coverage) ✅ Day 35
+- [x] MarketData.app credit tracking — X-Api-Ratelimit-Remaining/Consumed headers, ~33 credits/day confirmed ✅ Day 35
+- [x] batch_run_log SQLite table — iv_store.py persistence for batch run history ✅ Day 35
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.

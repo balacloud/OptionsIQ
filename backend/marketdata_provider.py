@@ -68,6 +68,8 @@ class MarketDataProvider:
                 logger.warning("MarketData.app %s/%s: s=%s err=%s",
                                ticker, side, data.get("s"), data.get("errmsg", ""))
                 return None
+            remaining = resp.headers.get("X-Api-Ratelimit-Remaining")
+            consumed = resp.headers.get("X-Api-Ratelimit-Consumed")
             oi_list = data.get("openInterest") or []
             vol_list = data.get("volume") or []
             if not oi_list:
@@ -76,8 +78,14 @@ class MarketDataProvider:
             vol = vol_list[0] if vol_list else 0
             if oi is None:
                 return None
-            logger.info("MarketData.app %s %s $%.2f ~%dd: OI=%s vol=%s", ticker, side, strike, dte_target, oi, vol)
-            return {"open_interest": float(oi), "volume": float(vol) if vol is not None else 0.0}
+            logger.info("MarketData.app %s %s $%.2f ~%dd: OI=%s vol=%s [credits: consumed=%s remaining=%s]",
+                        ticker, side, strike, dte_target, oi, vol, consumed, remaining)
+            return {
+                "open_interest": float(oi),
+                "volume": float(vol) if vol is not None else 0.0,
+                "credits_remaining": int(remaining) if remaining is not None else None,
+                "credits_consumed": int(consumed) if consumed is not None else None,
+            }
         except requests.exceptions.Timeout:
             logger.warning("MarketData.app timeout for %s", ticker)
             return None

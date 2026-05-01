@@ -26,6 +26,20 @@ class IVStore:
         with self._conn() as conn:
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS batch_run_log (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  batch_type TEXT NOT NULL,
+                  ran_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  status TEXT NOT NULL,
+                  duration_sec REAL,
+                  tickers_ok INTEGER DEFAULT 0,
+                  tickers_failed INTEGER DEFAULT 0,
+                  detail_json TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS iv_history (
                   ticker TEXT NOT NULL,
                   date TEXT NOT NULL,
@@ -137,6 +151,52 @@ class IVStore:
             "first_date": row["first_date"] if rows > 0 else None,
             "last_date": row["last_date"] if rows > 0 else None,
         }
+
+    def log_batch_run(
+        self,
+        batch_type: str,
+        status: str,
+        duration_sec: float,
+        tickers_ok: int,
+        tickers_failed: int,
+        detail: dict | None = None,
+    ) -> None:
+        import json as _json
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO batch_run_log
+                  (batch_type, status, duration_sec, tickers_ok, tickers_failed, detail_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    batch_type, status, round(duration_sec, 1),
+                    int(tickers_ok), int(tickers_failed),
+                    _json.dumps(detail) if detail else None,
+                ),
+            )
+
+    def get_batch_runs(self, limit: int = 10) -> list[dict]:
+        import json as _json
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT batch_type, ran_at, status, duration_sec, tickers_ok, tickers_failed, detail_json
+                FROM batch_run_log ORDER BY id DESC LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            raw = d.pop("detail_json", None)
+            if raw:
+                try:
+                    d["detail"] = _json.loads(raw)
+                except Exception:
+                    d["detail"] = None
+            result.append(d)
+        return result
 
     def compute_ivr_pct(self, ticker: str, current_iv: float) -> float | None:
         history = self.get_iv_history(ticker, 252)

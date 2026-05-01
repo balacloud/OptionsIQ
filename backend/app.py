@@ -30,6 +30,7 @@ from strategy_ranker import StrategyRanker
 from yfinance_provider import YFinanceProvider
 from analyze_service import analyze_etf, get_live_price, _extract_iv_data, get_vix_status, _fetch_vix
 from data_health_service import build_data_health
+from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch
 
 VERSION = "2.0"
 
@@ -71,6 +72,24 @@ if _md_provider.available():
     logger.info("MarketDataProvider ready (OI/volume supplement for Liquidity gate)")
 else:
     logger.warning("MarketDataProvider: MARKET_DATA_KEY not set — OI/volume will remain 0")
+
+# ─── Scheduler (BOD 9:31 AM ET + EOD 4:05 PM ET, Mon-Fri) ────────────────────
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+_scheduler = BackgroundScheduler(timezone="America/New_York")
+_scheduler.add_job(
+    lambda: run_bod_batch(ib_worker=_ib_worker, data_svc=data_svc, iv_store=iv_store),
+    CronTrigger(day_of_week="mon-fri", hour=9, minute=31),
+    id="bod_batch", replace_existing=True,
+)
+_scheduler.add_job(
+    lambda: run_eod_batch(ib_worker=_ib_worker, yf_provider=_yf_provider, iv_store=iv_store),
+    CronTrigger(day_of_week="mon-fri", hour=16, minute=5),
+    id="eod_batch", replace_existing=True,
+)
+_scheduler.start()
+logger.info("Scheduler started — BOD 09:31 ET, EOD 16:05 ET (Mon-Fri)")
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -205,92 +224,38 @@ def list_paper_trades():
     return jsonify(out)
 
 
-def _seed_iv_for_ticker(symbol: str) -> dict:
-    """Seed IV history + OHLCV for one ticker. IBKR if connected, yfinance fallback."""
-    connected = _ib_worker.is_connected() and _ib_worker.provider is not None
-    hist = []
-    source = "none"
-    if connected:
-        try:
-            hist = _ib_worker.submit(_ib_worker.provider.get_historical_iv, symbol, 365, timeout=30.0)
-            source = "ibkr"
-        except Exception as exc:
-            logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
-    if not hist:
-        try:
-            hist = _yf_provider.get_historical_iv(symbol, 365)
-            source = "yfinance"
-        except Exception as exc:
-            logger.warning("seed-iv yfinance fallback failed for %s: %s", symbol, exc)
-    for row in hist:
-        iv_store.store_iv(symbol, row["date"], row["iv"], source=source)
-
-    # Also seed OHLCV — needed for HV-20 and McMillan stress check
-    ohlcv_rows = 0
-    ohlcv_source = "none"
-    if connected:
-        try:
-            bars = _ib_worker.submit(_ib_worker.provider.get_ohlcv_daily, symbol, 90, timeout=30.0)
-            if bars:
-                iv_store.store_ohlcv(symbol, bars)
-                ohlcv_rows = len(bars)
-                ohlcv_source = "ibkr"
-        except Exception as exc:
-            logger.warning("seed-iv OHLCV IBKR failed for %s: %s", symbol, exc)
-    if ohlcv_rows == 0:
-        try:
-            bars = _yf_provider.get_ohlcv_daily(symbol, 90) if hasattr(_yf_provider, "get_ohlcv_daily") else []
-            if bars:
-                iv_store.store_ohlcv(symbol, bars)
-                ohlcv_rows = len(bars)
-                ohlcv_source = "yfinance"
-        except Exception as exc:
-            logger.warning("seed-iv OHLCV yfinance fallback failed for %s: %s", symbol, exc)
-
-    return {
-        "ticker": symbol,
-        "seeded_days": len(hist),
-        "source": source,
-        "earliest_date": hist[0]["date"] if hist else None,
-        "latest_date": hist[-1]["date"] if hist else None,
-        "ohlcv_rows": ohlcv_rows,
-        "ohlcv_source": ohlcv_source,
-    }
-
-
 @app.post("/api/options/seed-iv/<ticker>")
 def seed_iv(ticker: str):
     """Seeds IV history for a single ticker."""
-    return jsonify(_seed_iv_for_ticker(ticker.upper()))
+    return jsonify(seed_iv_for_ticker(
+        ticker.upper(), ib_worker=_ib_worker, yf_provider=_yf_provider, iv_store=iv_store
+    ))
 
 
 @app.post("/api/admin/seed-iv/all")
 def seed_iv_all():
-    """Nightly job — seeds IV history for all 16 ETFs from IBKR (yfinance fallback).
-    2s pacing delay between tickers to stay within IBKR historical data limits."""
-    results = []
-    total_seeded = 0
-    errors = []
-    tickers = sorted(ETF_TICKERS)
-    for i, ticker in enumerate(tickers):
-        try:
-            r = _seed_iv_for_ticker(ticker)
-            results.append(r)
-            total_seeded += r["seeded_days"]
-            logger.info("seed-iv-all: %s — %d days from %s", ticker, r["seeded_days"], r["source"])
-        except Exception as exc:
-            logger.error("seed-iv-all: %s failed — %s", ticker, exc)
-            errors.append({"ticker": ticker, "error": str(exc)})
-        if i < len(tickers) - 1:
-            time.sleep(2)  # IBKR pacing: max ~60 historical requests per 10 min
-    sources = {r["source"] for r in results if r["source"] != "none"}
+    """EOD job — seeds IV history + OHLCV for all 16 ETFs. Delegates to batch_service."""
+    result = run_eod_batch(ib_worker=_ib_worker, yf_provider=_yf_provider, iv_store=iv_store)
+    return jsonify(result)
+
+
+@app.post("/api/admin/warm-cache")
+def warm_cache():
+    """BOD job — pre-fetches all 16 ETF chains into SQLite cache."""
+    result = run_bod_batch(ib_worker=_ib_worker, data_svc=data_svc, iv_store=iv_store)
+    return jsonify(result)
+
+
+@app.get("/api/admin/batch-status")
+def batch_status():
+    """Batch run history + next scheduled run times. Used by Data Provenance dashboard."""
+    runs = iv_store.get_batch_runs(limit=10)
+    bod_job = _scheduler.get_job("bod_batch")
+    eod_job = _scheduler.get_job("eod_batch")
     return jsonify({
-        "tickers_seeded": len(results),
-        "total_iv_rows": total_seeded,
-        "sources_used": sorted(sources),
-        "pacing_warning": total_seeded == 0 and not errors,
-        "errors": errors,
-        "results": results,
+        "recent_runs": runs,
+        "next_bod": bod_job.next_run_time.isoformat() if bod_job and bod_job.next_run_time else None,
+        "next_eod": eod_job.next_run_time.isoformat() if eod_job and eod_job.next_run_time else None,
     })
 
 

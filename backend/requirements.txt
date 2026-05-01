@@ -6,3 +6,4 @@ numpy==1.26.4
 scipy==1.13.1
 pandas==2.2.2
 python-dotenv==1.0.1
+apscheduler>=3.10,<4.0

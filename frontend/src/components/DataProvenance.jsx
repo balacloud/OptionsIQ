@@ -32,8 +32,150 @@ function Row({ label, value, status }) {
   );
 }
 
+function BatchStatusPanel({ batch }) {
+  if (!batch) return null;
+  const runs = batch.recent_runs || [];
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+      });
+    } catch { return iso; }
+  }
+
+  function statusColor(s) {
+    if (s === 'ok') return '#00c896';
+    if (s === 'partial') return '#f0b429';
+    return '#e53e3e';
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div className="dp-section-title">
+        Batch Schedule
+        <span className="dp-section-note"> — auto-runs Mon-Fri via APScheduler</span>
+      </div>
+      <div style={{ display: 'flex', gap: 24, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ background: '#1a1f2e', borderRadius: 8, padding: '10px 18px' }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>NEXT BOD (9:31 AM ET)</div>
+          <div style={{ fontWeight: 600, color: '#00c896' }}>{fmtTime(batch.next_bod)}</div>
+        </div>
+        <div style={{ background: '#1a1f2e', borderRadius: 8, padding: '10px 18px' }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>NEXT EOD (4:05 PM ET)</div>
+          <div style={{ fontWeight: 600, color: '#00c896' }}>{fmtTime(batch.next_eod)}</div>
+        </div>
+      </div>
+
+      {runs.length === 0 ? (
+        <div style={{ color: '#888', fontSize: 13, padding: '8px 0' }}>
+          No batch runs logged yet — BOD/EOD will fire automatically on schedule.
+        </div>
+      ) : (
+        <table className="dp-table">
+          <thead>
+            <tr>
+              <th>Type</th><th>Ran At</th><th>Status</th>
+              <th>OK</th><th>Failed</th><th>Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runs.map((r, i) => (
+              <tr key={i} className="dp-table-row">
+                <td style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 12 }}>{r.batch_type}</td>
+                <td>{fmtTime(r.ran_at)}</td>
+                <td>
+                  <span style={{ color: statusColor(r.status), fontWeight: 600 }}>
+                    {r.status === 'ok' ? '✓' : r.status === 'partial' ? '⚠' : '✗'} {r.status}
+                  </span>
+                </td>
+                <td style={{ color: '#00c896' }}>{r.tickers_ok}</td>
+                <td style={{ color: r.tickers_failed > 0 ? '#e53e3e' : '#888' }}>{r.tickers_failed}</td>
+                <td style={{ color: '#888' }}>{r.duration_sec != null ? `${r.duration_sec}s` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function IVCoverageGrid({ ivh, cc }) {
+  const tickers = Object.keys(ivh).sort();
+
+  function coverageColor(pct) {
+    if (pct >= 95) return '#00c896';
+    if (pct >= 60) return '#f0b429';
+    return '#e53e3e';
+  }
+
+  function coverageBar(pct) {
+    const filled = Math.round(pct / 10);
+    return '█'.repeat(filled) + '░'.repeat(10 - filled);
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div className="dp-section-title">
+        IV Store Coverage
+        <span className="dp-section-note"> — 252 days needed for valid IVR gate</span>
+      </div>
+      <table className="dp-table">
+        <thead>
+          <tr>
+            <th>ETF</th><th>Days</th><th>Coverage</th><th>IVR Valid</th>
+            <th>Last Seed</th><th>OHLCV</th><th>HV-20</th><th>Chain Cache</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tickers.map(t => {
+            const h = ivh[t] || {};
+            const c = cc[t] || {};
+            const days = h.rows || 0;
+            const pct = Math.min(Math.round(days / 252 * 100), 100);
+            const ivrValid = days >= 30;
+            return (
+              <tr key={t} className="dp-table-row">
+                <td className="dp-ticker">{t}</td>
+                <td style={{ color: coverageColor(pct), fontWeight: 600 }}>{days}</td>
+                <td style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                  <span style={{ color: coverageColor(pct) }}>{coverageBar(pct)}</span>
+                  <span style={{ color: '#888', marginLeft: 6 }}>{pct}%</span>
+                </td>
+                <td>
+                  {ivrValid
+                    ? <span style={{ color: '#00c896', fontWeight: 600 }}>✓ valid</span>
+                    : <span style={{ color: '#e53e3e', fontWeight: 600 }}>✗ need seed</span>}
+                </td>
+                <td style={{ color: '#888', fontSize: 12 }}>{h.last_date ?? '—'}</td>
+                <td style={{ color: h.ohlcv_rows >= 21 ? '#00c896' : '#e53e3e' }}>
+                  {h.ohlcv_rows ?? 0}
+                </td>
+                <td>
+                  {h.hv_20 != null
+                    ? <span style={{ color: '#00c896' }}>{h.hv_20}%</span>
+                    : <span style={{ color: '#e53e3e' }}>—</span>}
+                </td>
+                <td>
+                  <StatusDot status={c.status || 'missing'} />
+                  <span style={{ color: '#888', fontSize: 12 }}>
+                    {c.status === 'fresh' ? `${c.age_minutes}m ago` : c.status || 'missing'}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function DataProvenance() {
   const [data, setData] = useState(null);
+  const [batch, setBatch] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [checkedAt, setCheckedAt] = useState(null);
@@ -42,10 +184,14 @@ export default function DataProvenance() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/api/data-health`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const [healthRes, batchRes] = await Promise.all([
+        fetch(`${API}/api/data-health`),
+        fetch(`${API}/api/admin/batch-status`),
+      ]);
+      if (!healthRes.ok) throw new Error(`data-health HTTP ${healthRes.status}`);
+      const json = await healthRes.json();
       setData(json);
+      if (batchRes.ok) setBatch(await batchRes.json());
       setCheckedAt(new Date().toLocaleTimeString());
     } catch (e) {
       setError(e.message);
@@ -85,6 +231,12 @@ export default function DataProvenance() {
 
       {data && (
         <>
+          {/* ── Batch Schedule ───────────────────────────────────────── */}
+          <BatchStatusPanel batch={batch} />
+
+          {/* ── IV Coverage Grid ─────────────────────────────────────── */}
+          <IVCoverageGrid ivh={data?.iv_history || {}} cc={data?.chain_cache || {}} />
+
           {/* ── Sources ──────────────────────────────────────────────── */}
           <div className="dp-section-title">Data Sources</div>
           <div className="dp-sources-grid">

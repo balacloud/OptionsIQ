@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 32 (April 29, 2026)
+> **Last Updated:** Day 35 (May 1, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -295,10 +295,54 @@ Seeds IV history for a single ticker from IBKR (yfinance fallback if disconnecte
 
 ---
 
+## GET /api/admin/batch-status
+
+Returns recent batch run history and next scheduled BOD/EOD times.
+
+**Response:**
+```json
+{
+  "recent_runs": [
+    {
+      "id": 1,
+      "batch_type": "eod",
+      "ran_at": "2026-05-01T16:05:02",
+      "status": "ok",
+      "duration_sec": 59.6,
+      "tickers_ok": 15,
+      "tickers_failed": 0,
+      "detail": {"XLK": "ok", "XLF": "ok"}
+    }
+  ],
+  "next_bod": "2026-05-02T09:31:00-04:00",
+  "next_eod": "2026-05-02T16:05:00-04:00"
+}
+```
+
+**`recent_runs`** — last 10 batch runs from `batch_run_log` SQLite table. `batch_type` is `"bod"` or `"eod"`.
+
+---
+
+## POST /api/admin/warm-cache
+
+Manually triggers BOD batch (pre-fetches chains for all 15 ETFs). Same as the scheduled 9:31 AM job.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "tickers_ok": 15,
+  "tickers_failed": 0,
+  "duration_sec": 45.2
+}
+```
+
+---
+
 ## POST /api/admin/seed-iv/all
 
-Batch IV seeding for all 16 ETFs. Designed for nightly cron or manual trigger from UI.
-Uses IBKR `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` per ticker, yfinance fallback.
+Batch IV seeding for all 15 ETFs. Designed for EOD batch or manual trigger from UI.
+Delegates to `run_eod_batch()` in batch_service.py. Uses IBKR `reqHistoricalData(OPTION_IMPLIED_VOLATILITY)` per ticker, yfinance fallback.
 2s pacing delay between tickers to stay within IBKR historical data rate limits.
 
 **Response:**
