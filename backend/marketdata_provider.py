@@ -78,11 +78,31 @@ class MarketDataProvider:
             vol = vol_list[0] if vol_list else 0
             if oi is None:
                 return None
-            logger.info("MarketData.app %s %s $%.2f ~%dd: OI=%s vol=%s [credits: consumed=%s remaining=%s]",
-                        ticker, side, strike, dte_target, oi, vol, consumed, remaining)
+
+            def _first(key):
+                lst = data.get(key) or []
+                v = lst[0] if lst else None
+                return float(v) if v is not None else None
+
+            iv    = _first("iv")
+            delta = _first("delta")
+            gamma = _first("gamma")
+            theta = _first("theta")
+            vega  = _first("vega")
+
+            logger.info(
+                "MarketData.app %s %s $%.2f ~%dd: OI=%s vol=%s IV=%.4f delta=%.4f [credits: consumed=%s remaining=%s]",
+                ticker, side, strike, dte_target, oi, vol,
+                iv or 0, delta or 0, consumed, remaining,
+            )
             return {
                 "open_interest": float(oi),
                 "volume": float(vol) if vol is not None else 0.0,
+                "iv": iv,
+                "delta": delta,
+                "gamma": gamma,
+                "theta": theta,
+                "vega": vega,
                 "credits_remaining": int(remaining) if remaining is not None else None,
                 "credits_consumed": int(consumed) if consumed is not None else None,
             }

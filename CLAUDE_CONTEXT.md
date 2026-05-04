@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 35 (May 1, 2026)
-> **Current Version:** v0.26.0
-> **Project Phase:** Batch infrastructure shipped — APScheduler (BOD 9:31 AM + EOD 4:05 PM ET auto-fire). batch_service.py extracted. Data Provenance batch dashboard live. Two-arch design locked: Alpaca+MarketData live hours / IBKR batch-only. 36 tests.
+> **Last Updated:** Day 36 (May 4, 2026)
+> **Current Version:** v0.26.1
+> **Project Phase:** MarketData.app greeks now surfaced through pipeline — IV patches IVR gate when Alpaca is fallback tier. md_supplement field added to analyze response. 36 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY35_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY35.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY36_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY36.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -63,7 +63,7 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Backend | Batch infrastructure shipped (Day 35) | APScheduler BOD 9:31/EOD 4:05 ET auto-fire. batch_service.py extracted. MarketData.app credit tracking live. Tests: 36. |
+| Backend | MD.app greeks pipeline (Day 36) | marketdata_provider returns IV+greeks. analyze_etf patches current_iv from MD.app when Alpaca IV=null. md_supplement in response. Tests: 36. |
 | Frontend | Batch dashboard in DataProvenance (Day 35) | BatchStatusPanel (last 10 runs, next BOD/EOD) + IVCoverageGrid (per-ETF: days history, IVR valid, chain age). |
 | IBKR connection | WORKING | Best Setups + L3 both live. KI-088 resolved (Day 34) — _resolve_underlying_hint() pre-fetches STA price, bypasses unreliable reqMktData snapshot. |
 | Gate logic | Hardened Day 28 | Holdings earnings gate live. FOMC window gate fixed. Spread >20% blocks. 29 tests. |
@@ -120,8 +120,8 @@ backend/
                                        Day 19: Phase 7b bear logic (Lagging→bear_call_spread), _detect_regime(),
                                        L2 chain fix (DIRECTION_TO_CHAIN_DIR), IVR bear warning.
 
-  analyze_service.py  DONE (Day 24+28) — 604+ lines. _etf_holdings_at_risk() added (Day 28).
-                                   apply_etf_gate_adjustments() updated: spread >20% keeps blocking (Day 28).
+  analyze_service.py  DONE (Day 24+28+36) — 835 lines. _etf_holdings_at_risk() added (Day 28).
+                                   Day 36: IV patching from MD.app when chain IV=null + md_supplement in response.
 
   tests/               DONE (Day 24+28+30+34) — 36 tests (pytest). 6 files: bs_calculator, spread_math,
                                    direction_routing, gate_engine_etf, etf_gate_postprocess, resolve_underlying_hint.
@@ -129,9 +129,10 @@ backend/
   constants.py         DONE (Day 19+27+28) — ETF_KEY_HOLDINGS (16 ETFs), COMPANY_EARNINGS (52 cos,
                                    Q2–Q4 2026). SPREAD_DATA_FAIL_PCT=20.0. FOMC_DATES correct.
 
-  marketdata_provider.py  DONE (Day 27+35) — OI/volume supplement from MarketData.app REST API.
+  marketdata_provider.py  DONE (Day 27+35+36) — OI/volume + greeks supplement from MarketData.app REST API.
                                           Non-blocking (5s timeout). Wired into analyze_etf().
                                           Day 35: credit tracking (X-Api-Ratelimit-Remaining/Consumed headers).
+                                          Day 36: IV, delta, gamma, theta, vega now parsed and returned.
                                           Free tier (100/day) confirmed sufficient — ~33 credits/day actual usage.
 ```
 
@@ -227,7 +228,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY35.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY36.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
@@ -294,6 +295,7 @@ Resolved (Day 24):
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 36 | May 4, 2026 | **MarketData.app greeks pipeline (v0.26.1).** marketdata_provider.get_oi_volume() now returns IV+greeks (delta/gamma/theta/vega) alongside OI/volume. analyze_etf() patches current_iv from MD.app when Alpaca chain IV=null — recomputes IVR percentile + hv_iv_ratio, sets iv_source="marketdata". md_supplement dict added to analyze response. |
 | Day 35 | May 1, 2026 | **Batch infrastructure + architecture decisions (v0.26.0).** APScheduler wired: BOD 9:31 AM + EOD 4:05 PM ET auto-fire Mon-Fri. batch_service.py extracted (148 lines) — seed_iv_for_ticker, run_bod_batch, run_eod_batch. app.py 536→492 lines (KI-086 partial). Batch status dashboard in DataProvenance (BatchStatusPanel + IVCoverageGrid). MarketData.app credit tracking live (~33 credits/day vs 100 limit — stay on Free). Full Greeks at all MD tiers confirmed via docs scrape. Two-arch design locked: Alpaca+MD live hours / IBKR batch-only. 15 ETFs confirmed (SCHB not in app). New routes: GET /api/admin/batch-status, POST /api/admin/warm-cache. |
 | Day 34 | Apr 30, 2026 | **KI-088 resolved (v0.25.1).** _resolve_underlying_hint() helper added to analyze_service.py — STA canonical source for underlying price. L3 "Run Analysis" now returns ibkr_live (was ibkr_stale). _run_one simplified. Data Provenance: underlying_price field added. MarketData.app diagnostic: full chain data confirmed (IV+greeks+bid/ask+OI), no historical IV. KI-089 logged for Day 35 ($12/mo subscription plan). 36 tests pass. |
 | Day 33 | Apr 30, 2026 | **Best Setups scan infrastructure overhaul (v0.25.0).** 8 root-cause fixes: CB threshold 2→5, stale spread WARN not BLOCK (data_source param added to apply_etf_gate_adjustments), verdict_label null fix (headline key), amber→yellow normalization + data_source added to _run_one, VIX from STA (rate-limit fix + threading.Lock), OHLCV reqHistoricalData skipped when SQLite ≤2 days fresh, STA underlying price pre-fetch in _run_one bypasses get_underlying_price() IBKR call, max_workers=1 (sequential, eliminates queue expiry). Result: 6 CAUTION setups confirmed live (XLF 9/11, XLK 9/11, XLC 8/11, XLY, XLV, XLP). VIX=17.59 from STA. 33 tests pass. KI-088 new: L3 stale banner — same STA price fix needed in analyze_etf() main path. |
@@ -303,23 +305,19 @@ Resolved (Day 24):
 
 ---
 
-## Next Session Priorities (Day 36)
+## Next Session Priorities (Day 37)
 
 ### P0 — Verify EOD auto-batch fired (5 min)
 Check Data Provenance batch log — confirm EOD job ran at 4:05 PM ET. Check status, tickers_ok, duration.
 
 ### P1 — Live market test (20 min)
 Run Best Setups scan. Verify batch-warmed chain cache hits (not fresh IBKR calls). Click through to L3
-on a CAUTION setup. If a GO appears, paper trade it. Monitor credit usage in backend.log after scan.
+on a CAUTION setup. Check backend.log for `iv_source: marketdata` — confirms MD.app IV patching fires.
 
-### P2 — MarketData.app support reply (5 min)
-Check email. Likely confirms Greeks on all tiers (already validated via docs scrape Day 35).
-No upgrade needed unless reply contradicts docs finding.
-
-### P3 — KI-086: Move _run_one to best_setups_service.py (MEDIUM, 45 min)
+### P2 — KI-086: Move _run_one to best_setups_service.py (MEDIUM, 45 min)
 app.py 492 → ~420 lines. `_run_one` closure still inline in best_setups() route.
 
-### P4 — KI-067: QQQ sell_put ITM strike fix (MEDIUM, 30 min)
+### P3 — KI-067: QQQ sell_put ITM strike fix (MEDIUM, 30 min)
 Chain too narrow for current QQQ price (~$658) — sell_put picks up ITM puts.
 
 ### Deferred
@@ -330,7 +328,7 @@ Chain too narrow for current QQQ price (~$658) — sell_put picks up ITM puts.
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY35.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY35_SHORT.md` — Day 35 summary
+- `docs/versioned/KNOWN_ISSUES_DAY36.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY36_SHORT.md` — Day 36 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research

@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 35 (May 1, 2026)
+> **Last Updated:** Day 36 (May 4, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -138,13 +138,25 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
   "put_call_ratio": 0.85,
   "max_pain_strike": 195.0,
   "recommended_dte": 49,
-  "direction_locked": []
+  "direction_locked": [],
+  "md_supplement": {
+    "iv": 0.17,
+    "delta": -0.31,
+    "gamma": 0.012,
+    "theta": -0.08,
+    "vega": 0.22,
+    "open_interest": 4521.0,
+    "volume": 312.0,
+    "credits_remaining": 67
+  }
 }
 ```
 
 **ETF-only enforcement:** Non-ETF tickers return HTTP 400 `{"error": "XYZ is not in the ETF universe", "etf_universe": [...]}`.
 
 **OI/Volume source:** `open_interest` and `volume` in strategies are supplemented from MarketData.app REST API when available. Falls back to 0 if MarketData.app times out or is unreachable. IBKR `reqMktData` does not return per-contract OI (platform limitation KI-035).
+
+**`md_supplement`:** Present when MarketData.app returns data. Contains raw greeks + OI/volume from MD.app for the nearest ATM contract (~30 DTE). `iv` is decimal (e.g. 0.17 = 17%). `null` when MD.app call fails or returns no data. When chain IV is absent (Alpaca fallback), `ivr_data.iv_source` will be `"marketdata"` — the IV was patched from this field.
 
 ---
 

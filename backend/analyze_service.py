@@ -725,6 +725,20 @@ def analyze_etf(payload: dict, ticker: str, *,
         if _md_result:
             _md_oi_volume = _md_result
 
+    # If IBKR/Alpaca chain returned no IV (common when Alpaca is the fallback tier),
+    # patch current_iv from MD.app's single-contract IV and recompute IVR percentile.
+    if _md_oi_volume.get("iv") and not ivr_data.get("current_iv"):
+        _md_iv = _md_oi_volume["iv"] * 100  # MD.app returns decimal (e.g. 0.17), store as pct
+        _md_ivr = iv_store.compute_ivr_pct(ticker, _md_iv) if iv_store else None
+        _md_hv = ivr_data.get("hv_20")
+        ivr_data = {
+            **ivr_data,
+            "current_iv": round(_md_iv, 2),
+            "ivr_pct": _md_ivr,
+            "hv_iv_ratio": round(_md_iv / _md_hv, 2) if (_md_hv and _md_hv > 0) else None,
+            "iv_source": "marketdata",
+        }
+
     ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
     vix_value, vix_source = _fetch_vix()
 
@@ -804,6 +818,16 @@ def analyze_etf(payload: dict, ticker: str, *,
         "max_pain_strike": _max_pain(chain),
         "recommended_dte": recommended_dte,
         "vix": {"value": round(vix_value, 2) if vix_value else None, "source": vix_source},
+        "md_supplement": {
+            "iv": _md_oi_volume.get("iv"),
+            "delta": _md_oi_volume.get("delta"),
+            "gamma": _md_oi_volume.get("gamma"),
+            "theta": _md_oi_volume.get("theta"),
+            "vega": _md_oi_volume.get("vega"),
+            "open_interest": _md_oi_volume.get("open_interest"),
+            "volume": _md_oi_volume.get("volume"),
+            "credits_remaining": _md_oi_volume.get("credits_remaining"),
+        } if _md_oi_volume else None,
         "direction_locked": [] if is_etf else (
             ["sell_call", "buy_put"] if swing_data.get("signal") == "BUY" else
             ["buy_call", "sell_put"] if swing_data.get("signal") == "SELL" else []
