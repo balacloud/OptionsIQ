@@ -8,18 +8,18 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (iv_history.db + chain_cache.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, always running (user's own system)
 
-## Current Phase (Day 36)
-v0.26.1. MarketData.app greeks pipeline: get_oi_volume() now returns IV+delta+gamma+theta+vega.
-analyze_etf() patches current_iv from MD.app when Alpaca chain IV=null — recomputes IVR percentile,
-sets iv_source="marketdata". md_supplement field added to analyze response.
-Previous Day 35: batch infrastructure (APScheduler, batch_service.py, DataProvenance dashboard).
+## Current Phase (Day 37)
+v0.27.0. Startup catch-up: run_startup_catchup() daemon fires missed BOD/EOD jobs on startup.
+yfinance HV removed from IV seeding (HV≠IV — was contaminating IVR percentile).
+docs/Research/ reorganized (18 files → 6 subdirs). DATA_PROVIDERS_SYNTHESIS.md created.
+Tradier confirmed free with brokerage account. Massive.com: don't buy verdict final.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY36_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY36.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY37_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY37.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -27,9 +27,10 @@ After reading: state current version, top priority, any blockers. Ask "What woul
 ```
 backend/
   app.py              492 lines — Rule 4 violation (max 150). _seed_iv_for_ticker moved to batch_service.py (Day 35). _run_one still inline.
-  batch_service.py    NEW (Day 35) — 148 lines. seed_iv_for_ticker(), run_bod_batch(), run_eod_batch(). APScheduler targets.
-  analyze_service.py  DONE (Day 24+28+29+33+34+36) — 835 lines. _resolve_underlying_hint() (Day 34).
-                      Day 36: IV patching from MD.app when chain IV=null + md_supplement in response.
+  batch_service.py    UPDATED (Day 37) — 231 lines. seed_iv_for_ticker(), run_bod_batch(), run_eod_batch().
+                      run_startup_catchup() daemon (Day 37). yfinance IV fallback REMOVED (HV≠IV).
+  analyze_service.py  DONE (Day 24+28+29+33+34+36) — 841 lines. _resolve_underlying_hint() (Day 34).
+                      Day 36: IV patching from MD.app + md_supplement. Day 37: MD.app IV stored daily.
   constants.py        DONE (Day 19+27+28+29+32) — MIN_CREDIT_WIDTH_RATIO=0.33, IVR_SELLER_PASS_PCT=35,
                       HV_IV_SELL_PASS_RATIO=1.05 (IV/HV). VIX_LOW_VOL=15, VIX_STRESS=30, VIX_CRISIS=40.
   marketdata_provider.py  DONE (Day 27+35+36) — 114 lines. OI/volume + IV+greeks supplement. Non-blocking.
@@ -75,11 +76,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 37 Priorities
-1. **P0:** Verify EOD auto-batch fired at 4:05 PM — check Data Provenance batch log.
-2. **P1:** Live market test — verify batch-warmed cache hits + check backend.log for `iv_source: marketdata`.
-3. **P2:** KI-086 — move _run_one to best_setups_service.py (app.py 492→~420 lines).
-4. **P3:** KI-067 — QQQ sell_put ITM strike fix.
+## Day 38 Priorities
+1. **P0:** Tradier integration — open brokerage account, test live chain call, implement `tradier_provider.py`.
+2. **P1:** KI-086 — move `_run_one` to `best_setups_service.py` (app.py 497→~420 lines).
+3. **P2:** KI-067 — QQQ sell_put ITM strike fix.
+4. **P3:** Live test startup catch-up — restart backend, check backend.log for "Startup catch-up" entries.
+5. **P4:** FOMC dates audit — verify 2026 dates in constants.py complete (next: Jun 18, Jul 30).
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -92,8 +94,10 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.2.
 - `docs/versioned/KNOWN_ISSUES_DAY36.md`
 - `docs/status/PROJECT_STATUS_DAY36_SHORT.md`
-- `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts
-- `docs/Research/KI-088_Plan_Day34.md` — Opus plan for KI-088 + MarketData.app diagnostic
+- `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
+- `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
+- `docs/Research/ki-plans/KI-088_Day34.md` — Opus plan for KI-088 + MarketData.app diagnostic
+- Research subfolders: `data-providers/`, `system-audits/`, `sector-rotation/`, `ux-design/`, `multi-llm-synthesis/`, `ki-plans/`, `archive/`
 
 ## Memory Index
 - [feedback_test_before_plan.md](feedback_test_before_plan.md) — Always test APIs with live calls before making claims or planning

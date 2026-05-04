@@ -30,7 +30,7 @@ from strategy_ranker import StrategyRanker
 from yfinance_provider import YFinanceProvider
 from analyze_service import analyze_etf, get_live_price, _extract_iv_data, get_vix_status, _fetch_vix
 from data_health_service import build_data_health
-from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch
+from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch, run_startup_catchup
 
 VERSION = "2.0"
 
@@ -90,6 +90,11 @@ _scheduler.add_job(
 )
 _scheduler.start()
 logger.info("Scheduler started — BOD 09:31 ET, EOD 16:05 ET (Mon-Fri)")
+
+run_startup_catchup(
+    ib_worker=_ib_worker, data_svc=data_svc,
+    yf_provider=_yf_provider, iv_store=iv_store,
+)
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────

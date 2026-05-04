@@ -9,15 +9,29 @@ Both jobs log to batch_run_log table (iv_store). Results visible in Data Provena
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from datetime import datetime, date, timedelta, time as dtime
+from zoneinfo import ZoneInfo
 
 from constants import ETF_TICKERS
+
+_ET = ZoneInfo("America/New_York")
+_BOD_TIME = dtime(9, 31)
+_EOD_TIME = dtime(16, 5)
 
 logger = logging.getLogger(__name__)
 
 
 def seed_iv_for_ticker(symbol: str, *, ib_worker, yf_provider, iv_store) -> dict:
-    """Seed IV history + OHLCV for one ticker. IBKR primary, yfinance fallback."""
+    """Seed IV history + OHLCV for one ticker.
+
+    IV history: IBKR only (OPTION_IMPLIED_VOLATILITY bars). No yfinance fallback —
+    HV computed from prices is not implied volatility and contaminates IVR percentiles.
+    If IBKR is offline, IV seeding is skipped for this ticker.
+
+    OHLCV: IBKR primary, yfinance fallback. Price data is correct from both sources.
+    """
     connected = ib_worker.is_connected() and ib_worker.provider is not None
     hist = []
     source = "none"
@@ -28,13 +42,8 @@ def seed_iv_for_ticker(symbol: str, *, ib_worker, yf_provider, iv_store) -> dict
             source = "ibkr"
         except Exception as exc:
             logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
-
-    if not hist:
-        try:
-            hist = yf_provider.get_historical_iv(symbol, 365)
-            source = "yfinance"
-        except Exception as exc:
-            logger.warning("seed-iv yfinance fallback failed for %s: %s", symbol, exc)
+    else:
+        logger.info("seed-iv %s: IBKR offline — IV seeding skipped (no HV proxy)", symbol)
 
     for row in hist:
         iv_store.store_iv(symbol, row["date"], row["iv"], source=source)
@@ -146,3 +155,77 @@ def run_bod_batch(*, ib_worker, data_svc, iv_store) -> dict:
         "tickers_failed": len(errors),
         "duration_sec": round(duration, 1),
     }
+
+
+def _prev_trading_date(ref: date) -> date:
+    """Return the most recent weekday before ref (Mon→Fri, Mon→previous Friday)."""
+    d = ref - timedelta(days=1)
+    while d.weekday() > 4:  # Sat=5, Sun=6
+        d -= timedelta(days=1)
+    return d
+
+
+def _ran_on(runs: list, batch_type: str, date_str: str) -> bool:
+    """Return True if any run of batch_type has ran_at starting with date_str."""
+    return any(
+        r["batch_type"] == batch_type and r["ran_at"].startswith(date_str)
+        for r in runs
+    )
+
+
+def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
+    """
+    Called once at app startup in a background thread. Fires any BOD/EOD jobs
+    that were missed because the backend wasn't running at scheduled time.
+
+    Run order (all ET timezone checks):
+      1. Previous trading day EOD missing → seed IV history now (closes gap before analysis)
+      2. Today's BOD missing + past 9:31 AM → pre-warm chain cache
+      3. Today's EOD missing + past 4:05 PM → seed today's closing IV
+
+    Waits 10s first to give IBWorker time to establish its IBKR connection.
+    Note: the APScheduler BOD/EOD jobs fire unconditionally at their scheduled
+    times — this function only fills gaps when the app wasn't running.
+    """
+    def _run():
+        time.sleep(10)
+        now_et = datetime.now(_ET)
+
+        if now_et.weekday() > 4:
+            logger.info("Startup catch-up: weekend — skipping")
+            return
+
+        today_str = now_et.date().isoformat()
+        prev_str = _prev_trading_date(now_et.date()).isoformat()
+        current_time = now_et.time()
+        runs = iv_store.get_batch_runs(limit=30)
+
+        # 1. Previous trading day EOD — seeds IV history gap before any analysis
+        if not _ran_on(runs, "eod", prev_str):
+            logger.info("Startup catch-up: EOD missing for %s — seeding IV history now", prev_str)
+            try:
+                run_eod_batch(ib_worker=ib_worker, yf_provider=yf_provider, iv_store=iv_store)
+                runs = iv_store.get_batch_runs(limit=30)  # refresh for subsequent checks
+            except Exception as exc:
+                logger.error("Startup catch-up prev-day EOD failed: %s", exc)
+
+        # 2. Today's BOD missed
+        if current_time >= _BOD_TIME and not _ran_on(runs, "bod", today_str):
+            logger.info("Startup catch-up: BOD missed today — firing now")
+            try:
+                run_bod_batch(ib_worker=ib_worker, data_svc=data_svc, iv_store=iv_store)
+                runs = iv_store.get_batch_runs(limit=30)
+            except Exception as exc:
+                logger.error("Startup catch-up BOD failed: %s", exc)
+
+        # 3. Today's EOD missed (only relevant if app starts after market close)
+        if current_time >= _EOD_TIME and not _ran_on(runs, "eod", today_str):
+            logger.info("Startup catch-up: EOD missed today — firing now")
+            try:
+                run_eod_batch(ib_worker=ib_worker, yf_provider=yf_provider, iv_store=iv_store)
+            except Exception as exc:
+                logger.error("Startup catch-up today EOD failed: %s", exc)
+
+        logger.info("Startup catch-up complete")
+
+    threading.Thread(target=_run, name="startup-catchup", daemon=True).start()

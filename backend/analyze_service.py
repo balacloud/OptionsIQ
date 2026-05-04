@@ -725,6 +725,12 @@ def analyze_etf(payload: dict, ticker: str, *,
         if _md_result:
             _md_oi_volume = _md_result
 
+    # Accumulate MD.app IV into iv_history on every analysis call — builds forward-going
+    # IV history without requiring IBKR to be running. Idempotent (same date overwrites).
+    if _md_oi_volume.get("iv") and iv_store:
+        _today = datetime.now().strftime("%Y-%m-%d")
+        iv_store.store_iv(ticker, _today, round(_md_oi_volume["iv"] * 100, 2), source="marketdata")
+
     # If IBKR/Alpaca chain returned no IV (common when Alpaca is the fallback tier),
     # patch current_iv from MD.app's single-contract IV and recompute IVR percentile.
     if _md_oi_volume.get("iv") and not ivr_data.get("current_iv"):
