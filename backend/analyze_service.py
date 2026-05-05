@@ -677,9 +677,9 @@ def analyze_etf(payload: dict, ticker: str, *,
     quality = data_svc.quality_label(data_source, chain)
 
     iv_provider = mock_provider
-    if data_source in {"ibkr_live", "ibkr_closed", "ibkr_cache", "ibkr_stale"} and ib_worker.provider is not None:
+    if data_source in {"ibkr_live", "ibkr_closed", "bod_cache", "ibkr_stale"} and ib_worker.provider is not None:
         iv_provider = ib_worker.provider
-    elif data_source == "yfinance":
+    elif data_source in {"yfinance", "tradier", "alpaca"}:
         iv_provider = yf_provider
 
     is_etf = ticker in ETF_TICKERS

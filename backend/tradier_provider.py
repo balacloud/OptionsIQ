@@ -160,6 +160,12 @@ class TradierProvider:
                 if strike <= 0 or strike < low or strike > high:
                     continue
 
+                # Direction-aware OTM filter (mirrors KI-067 fix in ibkr_provider)
+                if direction == "sell_put" and strike > underlying:
+                    continue  # exclude ITM puts
+                if direction == "sell_call" and strike < underlying:
+                    continue  # exclude ITM calls
+
                 right = "C" if opt_type == "call" else "P"
                 bid = _f(opt.get("bid")); bid = bid if bid > 0 else None
                 ask = _f(opt.get("ask")); ask = ask if ask > 0 else None
@@ -186,10 +192,10 @@ class TradierProvider:
                     "ask": ask,
                     "last": last,
                     "mid": mid,
-                    "delta": _f(g.get("delta")) or None,
-                    "gamma": _f(g.get("gamma")) or None,
-                    "theta": _f(g.get("theta")) or None,
-                    "vega": _f(g.get("vega")) or None,
+                    "delta": float(g["delta"]) if g.get("delta") is not None else None,
+                    "gamma": float(g["gamma"]) if g.get("gamma") is not None else None,
+                    "theta": float(g["theta"]) if g.get("theta") is not None else None,
+                    "vega": float(g["vega"]) if g.get("vega") is not None else None,
                     "impliedVol": iv,
                     "optPrice": mid,
                     "undPrice": underlying,

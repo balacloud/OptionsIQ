@@ -285,7 +285,7 @@ class DataService:
     ) -> tuple[dict, str]:
         """
         Returns (chain_dict, data_source).
-        data_source: "ibkr_cache" | "tradier" | "ibkr_stale" | "alpaca" | "yfinance" | "mock"
+        data_source: "bod_cache" | "tradier" | "ibkr_stale" | "alpaca" | "yfinance" | "mock"
         IBKR live removed from cascade (Day 39) — see ARCH_DECISION_TRADIER_PRIMARY.md
         """
         ticker = ticker.upper()
@@ -296,7 +296,7 @@ class DataService:
         #    See ARCH_DECISION_TRADIER_PRIMARY.md for full rationale.
         cached = self._cache_get(ticker, profile, direction)
         if cached is not None:
-            return deepcopy(cached), "ibkr_cache"
+            return deepcopy(cached), "bod_cache"
 
         # 2. Tradier — real-time REST, primary live source (no IB Gateway needed)
         if self.tradier_provider is not None:
@@ -399,7 +399,7 @@ class DataService:
             return "delayed"
         if data_source == "yfinance":
             return "yfinance"
-        if data_source == "ibkr_cache":
+        if data_source == "bod_cache":
             return "cached"
         if data_source == "ibkr_closed":
             return "closed"

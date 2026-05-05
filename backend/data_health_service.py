@@ -126,7 +126,7 @@ def build_data_health(
             chain_note = "live from IB Gateway"
             chain_status = "ok"
         elif cc.get("status") == "fresh":
-            chain_src = "ibkr_cache"
+            chain_src = "bod_cache"
             chain_note = f"cached {cc.get('age_minutes', '?')}m ago"
             chain_status = "ok"
         elif cc.get("status") == "stale":
