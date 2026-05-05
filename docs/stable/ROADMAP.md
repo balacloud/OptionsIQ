@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 37 (May 4, 2026)
-> **Current Version:** v0.27.0
+> **Last Updated:** Day 38 (May 5, 2026)
+> **Current Version:** v0.27.1
 
 ---
 
@@ -183,7 +183,8 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] Startup catch-up for missed BOD/EOD — `run_startup_catchup()` daemon thread, prev-day EOD + today BOD/EOD checks ✅ Day 37
 - [x] yfinance HV removed from IV seeding — HV≠IV, was contaminating IVR percentile ✅ Day 37
 - [x] Research folder reorganized — DATA_PROVIDERS_SYNTHESIS.md canonical provider decisions doc ✅ Day 37
-- [ ] Tradier integration — `tradier_provider.py`, wire into data_service.py above Alpaca (P0 Day 38)
+- [x] DataFlowDiagram SVG in DataProvenance tab — always-visible architecture diagram (Live Analysis + Batch flows) ✅ Day 38
+- [ ] Tradier integration — `tradier_provider.py`, wire into data_service.py above Alpaca (P0 Day 39)
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.

@@ -4,7 +4,7 @@
 
 OptionsIQ pulls live options chain data from Interactive Brokers, runs a multi-gate quality framework, ranks the best strike/expiry combinations for vertical spreads, and gives you a step-by-step guide to place the trade on IBKR Client Portal. It covers all four option directions across 16 sector ETFs, with real-time SPY regime awareness and IV Rank scoring.
 
-> **v0.27.0** — Day 37 (May 4, 2026)
+> **v0.27.1** — Day 38 (May 5, 2026)
 
 ---
 

@@ -7,19 +7,18 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - IB Gateway: 127.0.0.1:4001 (live account U11574928)
 - Database: SQLite at `backend/data/` (iv_history.db + chain_cache.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, always running (user's own system)
+- MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
+- Tradier: signing up soon (free account, no subscription needed — confirmed by support)
 
-## Current Phase (Day 37)
-v0.27.0. Startup catch-up: run_startup_catchup() daemon fires missed BOD/EOD jobs on startup.
-yfinance HV removed from IV seeding (HV≠IV — was contaminating IVR percentile).
-docs/Research/ reorganized (18 files → 6 subdirs). DATA_PROVIDERS_SYNTHESIS.md created.
-Tradier confirmed free with brokerage account. Massive.com: don't buy verdict final.
+## Current Phase (Day 38)
+v0.27.1. DataFlowDiagram SVG added to Data Provenance tab — always-visible two-section architecture diagram (Live Analysis + Batch/Nightly). MD.app confirmed FREE tier (was incorrectly documented as Starter $12/mo). Tradier: open account imminent, no subscription needed (support confirmed).
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY37_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY37.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY38_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY38.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -52,7 +51,7 @@ backend/
                       New: test_resolve_underlying_hint.py (3 tests, KI-088).
 
 frontend/
-  components/DataProvenance.jsx  DONE (Day 29+34+35) — BatchStatusPanel + IVCoverageGrid added Day 35. batch-status API fetch wired.
+  components/DataProvenance.jsx  DONE (Day 29+34+35+38) — DataFlowDiagram SVG added Day 38 (always visible). BatchStatusPanel + IVCoverageGrid added Day 35.
   components/BestSetups.jsx      DONE (Day 31+32) — IV/HV ratio column, 7-col grid.
 ```
 
@@ -76,11 +75,11 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 38 Priorities
+## Day 39 Priorities
 1. **P0:** Tradier integration — open brokerage account, test live chain call, implement `tradier_provider.py`.
 2. **P1:** KI-086 — move `_run_one` to `best_setups_service.py` (app.py 497→~420 lines).
 3. **P2:** KI-067 — QQQ sell_put ITM strike fix.
-4. **P3:** Live test startup catch-up — restart backend, check backend.log for "Startup catch-up" entries.
+4. **P3:** Check backend.log for "Startup catch-up" entries (backend restarted Day 38 with IB Gateway live).
 5. **P4:** FOMC dates audit — verify 2026 dates in constants.py complete (next: Jun 18, Jul 30).
 
 ## Git Status

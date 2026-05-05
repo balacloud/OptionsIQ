@@ -173,6 +173,169 @@ function IVCoverageGrid({ ivh, cc }) {
   );
 }
 
+function DataFlowDiagram() {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div className="dp-section-title">
+        Data Flow Architecture
+        <span className="dp-section-note"> — how data moves from sources to verdict</span>
+      </div>
+      <div style={{ background: '#0d1117', borderRadius: 10, padding: '16px 8px', overflowX: 'auto' }}>
+        <svg viewBox="0 0 860 430" style={{ width: '100%', minWidth: 580, display: 'block' }}>
+          <defs>
+            <marker id="dfa-a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#64748b" />
+            </marker>
+            <marker id="dfa-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#10b981" />
+            </marker>
+            <marker id="dfa-o" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#f97316" />
+            </marker>
+            <marker id="dfa-b" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#38bdf8" />
+            </marker>
+          </defs>
+
+          {/* ── section labels ── */}
+          <text x="210" y="16" textAnchor="middle" fill="#475569" fontSize="10" fontWeight="700" letterSpacing="2">LIVE ANALYSIS FLOW</text>
+          <text x="645" y="16" textAnchor="middle" fill="#475569" fontSize="10" fontWeight="700" letterSpacing="2">BATCH / NIGHTLY FLOW</text>
+          <line x1="435" y1="22" x2="435" y2="410" stroke="#1e293b" strokeWidth="1" strokeDasharray="5,5" />
+
+          {/* ══════════ LEFT: LIVE ANALYSIS ══════════ */}
+
+          {/* 1. User trigger */}
+          <rect x="80" y="24" width="260" height="30" rx="6" fill="#4c1d95" />
+          <text x="210" y="44" textAnchor="middle" fill="#ede9fe" fontSize="12" fontWeight="600">User: Analyze ETF</text>
+
+          <line x1="210" y1="54" x2="210" y2="72" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          {/* 2. Provider row */}
+          <rect x="48" y="76" width="88" height="30" rx="4" fill="#1e40af" />
+          <text x="92" y="87" textAnchor="middle" fill="#bfdbfe" fontSize="11" fontWeight="600">IBKR</text>
+          <text x="92" y="100" textAnchor="middle" fill="#93c5fd" fontSize="9">primary</text>
+
+          <rect x="144" y="76" width="80" height="30" rx="4" fill="#065f46" />
+          <text x="184" y="87" textAnchor="middle" fill="#a7f3d0" fontSize="11" fontWeight="600">Alpaca</text>
+          <text x="184" y="100" textAnchor="middle" fill="#6ee7b7" fontSize="9">fallback</text>
+
+          <rect x="232" y="76" width="84" height="30" rx="4" fill="#374151" />
+          <text x="274" y="87" textAnchor="middle" fill="#d1d5db" fontSize="11" fontWeight="600">yfinance</text>
+          <text x="274" y="100" textAnchor="middle" fill="#9ca3af" fontSize="9">OHLCV only</text>
+
+          {/* STA — side feed (dashed blue) */}
+          <rect x="326" y="76" width="90" height="30" rx="4" fill="#0c4a6e" />
+          <text x="371" y="87" textAnchor="middle" fill="#bae6fd" fontSize="11" fontWeight="600">STA</text>
+          <text x="371" y="100" textAnchor="middle" fill="#7dd3fc" fontSize="9">Price / VIX / SPY</text>
+
+          {/* converging arrows to DataService */}
+          <line x1="92"  y1="106" x2="176" y2="148" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="184" y1="106" x2="202" y2="148" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="274" y1="106" x2="238" y2="148" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="348" y1="106" x2="275" y2="154" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="4,3" markerEnd="url(#dfa-b)" />
+
+          {/* 3. DataService Cascade */}
+          <rect x="110" y="152" width="200" height="28" rx="4" fill="#1e293b" stroke="#334155" strokeWidth="1" />
+          <text x="210" y="171" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="600">DataService Cascade</text>
+
+          {/* MD.app supplement — dashed orange */}
+          <rect x="326" y="154" width="100" height="24" rx="4" fill="#7c2d12" />
+          <text x="376" y="163" textAnchor="middle" fill="#fed7aa" fontSize="10" fontWeight="600">MD.app (free)</text>
+          <text x="376" y="174" textAnchor="middle" fill="#fdba74" fontSize="9">OI / Vol / SpotIV</text>
+          <line x1="326" y1="166" x2="311" y2="166" stroke="#f97316" strokeWidth="1.5" strokeDasharray="3,2" markerEnd="url(#dfa-o)" />
+
+          <line x1="210" y1="180" x2="210" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          {/* 4. iv_store.db — IVR */}
+          <rect x="100" y="204" width="220" height="28" rx="4" fill="#78350f" />
+          <text x="210" y="223" textAnchor="middle" fill="#fef3c7" fontSize="11" fontWeight="600">iv_store.db  ·  IVR (252 days)</text>
+
+          <line x1="210" y1="232" x2="210" y2="252" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          {/* 5. gate_engine */}
+          <rect x="100" y="256" width="220" height="28" rx="4" fill="#1e3a8a" />
+          <text x="210" y="275" textAnchor="middle" fill="#bfdbfe" fontSize="11" fontWeight="600">gate_engine()</text>
+
+          <line x1="210" y1="284" x2="210" y2="306" stroke="#10b981" strokeWidth="2" markerEnd="url(#dfa-g)" />
+
+          {/* 6. MasterVerdict */}
+          <rect x="88" y="310" width="244" height="38" rx="19" fill="#064e3b" stroke="#10b981" strokeWidth="1.5" />
+          <text x="210" y="324" textAnchor="middle" fill="#6ee7b7" fontSize="12" fontWeight="700">MasterVerdict</text>
+          <text x="210" y="340" textAnchor="middle" fill="#34d399" fontSize="10">GO  ·  CAUTION  ·  BLOCK</text>
+
+          {/* ══════════ RIGHT: BATCH FLOW ══════════ */}
+
+          {/* 1. APScheduler */}
+          <rect x="535" y="24" width="220" height="30" rx="6" fill="#3b0764" />
+          <text x="645" y="44" textAnchor="middle" fill="#e9d5ff" fontSize="12" fontWeight="600">APScheduler  Mon – Fri</text>
+
+          {/* fork */}
+          <line x1="645" y1="54" x2="645" y2="70" stroke="#64748b" strokeWidth="1.5" />
+          <line x1="568" y1="70" x2="722" y2="70" stroke="#64748b" strokeWidth="1.5" />
+          <line x1="568" y1="70" x2="568" y2="82" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="722" y1="70" x2="722" y2="82" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          {/* BOD */}
+          <rect x="508" y="86" width="120" height="34" rx="5" fill="#1e3a5f" />
+          <text x="568" y="99"  textAnchor="middle" fill="#bfdbfe" fontSize="12" fontWeight="700">BOD</text>
+          <text x="568" y="113" textAnchor="middle" fill="#93c5fd" fontSize="10">9:31 AM ET</text>
+
+          {/* EOD */}
+          <rect x="662" y="86" width="120" height="34" rx="5" fill="#1e3a5f" />
+          <text x="722" y="99"  textAnchor="middle" fill="#bfdbfe" fontSize="12" fontWeight="700">EOD</text>
+          <text x="722" y="113" textAnchor="middle" fill="#93c5fd" fontSize="10">4:05 PM ET</text>
+
+          <line x1="568" y1="120" x2="568" y2="148" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="722" y1="120" x2="722" y2="148" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          {/* actions */}
+          <rect x="488" y="152" width="160" height="24" rx="4" fill="#0f172a" stroke="#1e293b" strokeWidth="1" />
+          <text x="568" y="168" textAnchor="middle" fill="#94a3b8" fontSize="10">Pre-warm 16 ETF chains</text>
+
+          <rect x="642" y="152" width="160" height="24" rx="4" fill="#0f172a" stroke="#1e293b" strokeWidth="1" />
+          <text x="722" y="168" textAnchor="middle" fill="#94a3b8" fontSize="10">Seed IV history + OHLCV</text>
+
+          <line x1="568" y1="176" x2="568" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="722" y1="176" x2="722" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          {/* databases */}
+          <rect x="488" y="204" width="160" height="28" rx="4" fill="#713f12" />
+          <text x="568" y="223" textAnchor="middle" fill="#fef3c7" fontSize="11" fontWeight="600">chain_cache.db</text>
+
+          <rect x="642" y="204" width="160" height="28" rx="4" fill="#78350f" />
+          <text x="722" y="223" textAnchor="middle" fill="#fef3c7" fontSize="11" fontWeight="600">iv_store.db</text>
+
+          {/* converge to startup_catchup */}
+          <line x1="568" y1="232" x2="620" y2="276" stroke="#475569" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="722" y1="232" x2="676" y2="276" stroke="#475569" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+
+          <rect x="534" y="280" width="224" height="34" rx="5" fill="#1e293b" stroke="#334155" strokeWidth="1" />
+          <text x="646" y="293" textAnchor="middle" fill="#94a3b8" fontSize="11" fontWeight="600">run_startup_catchup()</text>
+          <text x="646" y="307" textAnchor="middle" fill="#64748b" fontSize="10">fills missed jobs on boot</text>
+
+          {/* ── legend ── */}
+          <g transform="translate(450, 372)">
+            <text x="2" y="0" fill="#334155" fontSize="10" fontWeight="700" letterSpacing="1">LEGEND</text>
+            {[
+              { fill: '#4c1d95', label: 'Trigger' },
+              { fill: '#1e40af', label: 'Data Source' },
+              { fill: '#78350f', label: 'SQLite DB' },
+              { fill: '#1e3a8a', label: 'Processing' },
+              { fill: '#064e3b', label: 'Output' },
+              { fill: '#7c2d12', label: 'Supplement' },
+            ].map(({ fill, label }, i) => (
+              <g key={i} transform={`translate(${i * 68}, 14)`}>
+                <rect width="10" height="10" rx="2" fill={fill} />
+                <text x="14" y="10" fill="#475569" fontSize="10">{label}</text>
+              </g>
+            ))}
+          </g>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export default function DataProvenance() {
   const [data, setData] = useState(null);
   const [batch, setBatch] = useState(null);
@@ -218,6 +381,8 @@ export default function DataProvenance() {
       </div>
 
       {error && <div className="dp-error">Error: {error}</div>}
+
+      <DataFlowDiagram />
 
       {!data && !loading && (
         <div className="dp-idle">

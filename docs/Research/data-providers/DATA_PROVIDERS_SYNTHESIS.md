@@ -19,7 +19,7 @@ This is the constraint that drove every provider decision.
 
 ```
 Live chain + greeks:   IBKR IB Gateway (primary) → Alpaca (fallback) → yfinance (emergency)
-OI / volume:           MarketData.app Starter $12/mo (supplements Alpaca which has no OI)
+OI / volume:           MarketData.app FREE tier (100 credits/day, ~33 used — supplements Alpaca)
 Spot IV supplement:    MarketData.app (accumulated into iv_history.db on every analyze_etf() call)
 Historical IV (IVR):   IBKR only — nightly EOD batch via batch_service.py (free, already running)
 OHLCV daily:           IBKR (primary) → yfinance (fallback) — both correct for price data
@@ -27,7 +27,10 @@ Underlying price:      STA localhost:5001 (always running, canonical source)
 VIX:                   STA localhost:5001
 ```
 
-**Total monthly cost: $12/mo** (MD.app Starter only)
+**Total monthly cost: $0** (all free tiers — MD.app free, Alpaca free, IBKR included with account)
+
+**Upgrade trigger for MD.app Starter ($12/mo):** Only if credits approach 100/day limit consistently,
+or if 24h data delay causes stale OI/greeks issues in live analysis. Current usage ~33/day is fine.
 
 ---
 
@@ -40,7 +43,7 @@ VIX:                   STA localhost:5001
 - **Constraint:** Requires IB Gateway running. All calls must go through `IBWorker.submit()` (asyncio isolation — Golden Rule 2). Connection edge cases exist.
 - **Role in stack:** Primary live chain + sole historical IV source. Not replaceable for IV history.
 
-### MarketData.app Starter — $12/mo — ACTIVE (purchased Day 35/36)
+### MarketData.app — FREE TIER (not upgraded — ~33 credits/day vs 100 limit)
 - **Live chain:** ✅ IV, delta, gamma, theta, vega, OI, volume per contract. 15-min delayed.
 - **Spot IV:** ✅ `get_oi_volume()` returns `iv` field (decimal, e.g. 0.17 = 17%). Multiplied ×100 on store.
 - **Historical IV:** ❌ **Platform limitation confirmed by support (Day 10).** Historical chain endpoint returns 0 contracts for past dates. No timeline for fix.
@@ -59,14 +62,19 @@ VIX:                   STA localhost:5001
 - **IV history:** ❌ **REMOVED from IV seeding pipeline (Day 37).** `yfinance` computes rolling 20-day HV from price returns (`np.std(returns) * sqrt(252) * 100`) — this is **historical volatility, not implied volatility**. Storing HV in iv_history.db contaminates IVR percentile calculations. Only real IV (IBKR/MD.app) is stored now.
 - **Role:** OHLCV daily bars only. Never IV.
 
-### Tradier — FREE (brokerage account required) — PENDING INTEGRATION
+### Tradier — FREE (account only, NO subscription needed) — PENDING INTEGRATION
 - **Live chain:** ✅ full chain, OI, volume, bid/ask — REST API, no IB Gateway needed
 - **Greeks/IV:** ✅ delta, gamma, theta, vega, rho + bid_iv/mid_iv/ask_iv/smv_vol per contract
 - **Delay:** Greeks updated **once per hour** via ORATS. Acceptable for multi-week swing analysis.
 - **Historical IV:** ❌ No historical ATM IV time series. Same gap as all REST providers.
-- **Cost:** Free with Tradier brokerage account. No separate developer plan exists (confirmed by support Day 37).
+- **Cost:** **$0 — free account only.** Confirmed by Tradier support (Day 37): "The subscription level does not impact your API level, so you do not need a subscription to gain access to the API." No developer plan, no paid tier required.
 - **Potential role:** Replace IBKR as primary live-hours chain source → eliminates IB Gateway dependency. IBKR still needed for nightly IV seeding batch.
-- **Status:** Not yet integrated. Open a Tradier account → test `/v1/markets/options/chains?symbol=XLF&expiration=YYYY-MM-DD&greeks=true` live → implement `tradier_provider.py` if confirmed.
+- **Status:** Not yet integrated. Sign up at tradier.com (free) → get token from web.tradier.com/user/api → test live → implement `tradier_provider.py`.
+- **Live test command:**
+  ```bash
+  curl -s "https://api.tradier.com/v1/markets/options/chains?symbol=XLF&expiration=2025-06-20&greeks=true" \
+    -H "Authorization: Bearer YOUR_TOKEN" -H "Accept: application/json" | python3 -m json.tool | head -60
+  ```
 - **Integration point:** `data_service.py` cascade — insert above Alpaca when implemented.
 
 ### Massive.com — ❌ DO NOT BUY
