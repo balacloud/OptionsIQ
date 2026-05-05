@@ -283,7 +283,7 @@ class StrategyRanker:
         otm_puts = sorted([c for c in puts if _f(c.get("strike"), 0.0) < current],
                           key=lambda c: _f(c.get("strike"), 0.0), reverse=True)  # highest first
         if not otm_puts:
-            otm_puts = sorted(puts, key=lambda c: _f(c.get("strike"), 0.0), reverse=True)
+            return []  # no OTM puts in chain — ibkr_provider fix ensures this shouldn't happen
 
         # Short leg: delta ~0.30 (abs) — slightly OTM, collects most credit
         short_30 = self._closest_delta(otm_puts, 0.30)

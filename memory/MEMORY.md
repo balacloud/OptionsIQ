@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: signing up soon (free account, no subscription needed — confirmed by support)
 
-## Current Phase (Day 38)
-v0.27.1. DataFlowDiagram SVG added to Data Provenance tab — always-visible two-section architecture diagram (Live Analysis + Batch/Nightly). MD.app confirmed FREE tier (was incorrectly documented as Starter $12/mo). Tradier: open account imminent, no subscription needed (support confirmed).
+## Current Phase (Day 39)
+v0.28.0. Tradier is now the primary live chain source — IBKR removed from DataService real-time path. IB Gateway only needed for EOD batch (4:05 PM ET IV seeding). KI-086 resolved (best_setups_service.py). KI-067 resolved (QQQ sell_put ITM fix). Opus review found 4 follow-up bugs (KI-090/091/092/093) to fix Day 40 before Tradier is production-ready.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY38_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY38.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY39_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY39.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -26,8 +26,15 @@ After reading: state current version, top priority, any blockers. Ask "What woul
 ```
 backend/
   app.py              492 lines — Rule 4 violation (max 150). _seed_iv_for_ticker moved to batch_service.py (Day 35). _run_one still inline.
-  batch_service.py    UPDATED (Day 37) — 231 lines. seed_iv_for_ticker(), run_bod_batch(), run_eod_batch().
-                      run_startup_catchup() daemon (Day 37). yfinance IV fallback REMOVED (HV≠IV).
+  batch_service.py    UPDATED (Day 37+39) — 239 lines. seed_iv_for_ticker(), run_bod_batch(), run_eod_batch().
+                      run_startup_catchup() daemon. _ran_on() min_duration=1.0 (Day 39). startup delay 10s→30s.
+  tradier_provider.py NEW (Day 39) — 165 lines. get_underlying_price(), get_options_chain(), get_ohlcv_daily().
+                      Primary live chain source. TRADIER_KEY env var. Backup: data_service.py.pre_tradier_primary.
+  best_setups_service.py NEW (Day 39) — 80 lines. run_one_setup() extracted from app.py _run_one closure (KI-086).
+  data_service.py     UPDATED (Day 39) — IBKR live removed from get_chain(). Cascade: BOD cache → Tradier → stale → Alpaca → yf → Mock.
+  app.py              UPDATED (Day 39) — 450 lines. TradierProvider init + best_setups_service import.
+  ibkr_provider.py    UPDATED (Day 39) — OTM filter for sell_put in _fetch_structure() (KI-067 fix).
+  strategy_ranker.py  UPDATED (Day 39) — _rank_sell_put_spread() fallback → return [] (KI-067 fix).
   analyze_service.py  DONE (Day 24+28+29+33+34+36) — 841 lines. _resolve_underlying_hint() (Day 34).
                       Day 36: IV patching from MD.app + md_supplement. Day 37: MD.app IV stored daily.
   constants.py        DONE (Day 19+27+28+29+32) — MIN_CREDIT_WIDTH_RATIO=0.33, IVR_SELLER_PASS_PCT=35,
@@ -51,7 +58,7 @@ backend/
                       New: test_resolve_underlying_hint.py (3 tests, KI-088).
 
 frontend/
-  components/DataProvenance.jsx  DONE (Day 29+34+35+38) — DataFlowDiagram SVG added Day 38 (always visible). BatchStatusPanel + IVCoverageGrid added Day 35.
+  components/DataProvenance.jsx  DONE (Day 29+34+35+38+39) — ManualBatchTriggers added Day 39 (idempotency check, two-click confirm). DataFlowDiagram SVG needs update (still shows IBKR as primary — KI Day 40).
   components/BestSetups.jsx      DONE (Day 31+32) — IV/HV ratio column, 7-col grid.
 ```
 
@@ -75,12 +82,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 39 Priorities
-1. **P0:** Tradier integration — open brokerage account, test live chain call, implement `tradier_provider.py`.
-2. **P1:** KI-086 — move `_run_one` to `best_setups_service.py` (app.py 497→~420 lines).
-3. **P2:** KI-067 — QQQ sell_put ITM strike fix.
-4. **P3:** Check backend.log for "Startup catch-up" entries (backend restarted Day 38 with IB Gateway live).
-5. **P4:** FOMC dates audit — verify 2026 dates in constants.py complete (next: Jun 18, Jul 30).
+## Day 40 Priorities (Opus-ordered — ALL blocking before Tradier is production-ready)
+1. **P0 [BLOCKING]:** Fix KI-090 + KI-091 — Tradier delta coercion + direction-aware strike window (`tradier_provider.py`).
+2. **P1 [BLOCKING]:** Smoke test — IB Gateway OFF, run Best Setups, confirm `data_source=tradier`, real deltas, strikes ≤ underlying.
+3. **P2 [BLOCKING]:** Fix KI-092 + KI-093 — rename `"ibkr_cache"` → `"bod_cache"`, add `"tradier"` branch in `analyze_service.py:680`.
+4. **P3 [NICE]:** Update DataFlowDiagram SVG in DataProvenance.jsx — IBKR demoted to EOD-only.
+5. **P4 [NICE]:** FOMC 2026 dates audit in constants.py.
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)

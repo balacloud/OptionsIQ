@@ -1,19 +1,18 @@
 """
 OptionsIQ — Data Service
 
-Provider selection: BOD cache → Tradier (real-time REST) → stale cache → Alpaca → yfinance → Mock
-IBKR live removed from real-time path (Day 39). IBKR only called by batch jobs in batch_service.py.
-See docs/stable/ARCH_DECISION_TRADIER_PRIMARY.md for full rationale and revert instructions.
+Provider selection: IBKR (via IBWorker) → Persistent cache → Tradier → Alpaca → yfinance → Mock
 Persistent SQLite chain cache survives Flask restarts (TTL per constants.py).
 Circuit breaker: 2 consecutive IBKR failures → 45s cooldown.
 
 Provider quality labels returned:
-  "ibkr_cache"  — served from BOD pre-warm cache (IBKR-sourced at 9:31 AM)
-  "tradier"     — Tradier REST real-time (primary live source — no IB Gateway needed)
-  "ibkr_stale"  — beyond TTL but Tradier also failed
+  "ibkr_live"   — fresh from IB Gateway (market open, live bid/ask/greeks)
+  "ibkr_closed" — IBKR connected but market closed; BS-computed greeks, no bid/ask/OI
+  "ibkr_cache"  — within TTL window (background refresh triggered)
+  "ibkr_stale"  — beyond TTL but IBKR unavailable (background refresh triggered)
+  "tradier"     — Tradier REST (real-time with brokerage account, real greeks + OI)
   "alpaca"      — Alpaca REST fallback (15-min delayed, real greeks + OI)
   "yfinance"    — yfinance fallback
-  NOTE: "ibkr_live" / "ibkr_closed" no longer emitted — IBKR removed from live path.
   "mock"        — dev/CI only
 """
 from __future__ import annotations
@@ -285,20 +284,56 @@ class DataService:
     ) -> tuple[dict, str]:
         """
         Returns (chain_dict, data_source).
-        data_source: "ibkr_cache" | "tradier" | "ibkr_stale" | "alpaca" | "yfinance" | "mock"
-        IBKR live removed from cascade (Day 39) — see ARCH_DECISION_TRADIER_PRIMARY.md
+        data_source: "ibkr_live" | "ibkr_closed" | "ibkr_cache" | "ibkr_stale" | "tradier" | "alpaca" | "yfinance" | "mock"
         """
         ticker = ticker.upper()
         min_dte_val = int(min_dte if min_dte is not None else DEFAULT_MIN_DTE)
 
-        # 1. BOD cache — serve immediately (pre-warmed at 9:31 AM by run_bod_batch)
-        #    No background IBKR refresh — IB Gateway not required during live hours.
-        #    See ARCH_DECISION_TRADIER_PRIMARY.md for full rationale.
+        # 1. Fresh cache — serve immediately + trigger background refresh
         cached = self._cache_get(ticker, profile, direction)
         if cached is not None:
+            self._refresh_async(
+                ticker, profile, direction, underlying_hint, target_price, min_dte_val
+            )
             return deepcopy(cached), "ibkr_cache"
 
-        # 2. Tradier — real-time REST, primary live source (no IB Gateway needed)
+        # 2. IBKR live via IBWorker
+        if self.ib_worker is not None and self._cb_allowed():
+            provider = self.ib_worker.provider
+            if provider is not None:
+                try:
+                    chain = self.ib_worker.submit(
+                        provider.get_options_chain,
+                        ticker,
+                        underlying_hint,
+                        direction,
+                        target_price,
+                        profile,
+                        min_dte_val,
+                        timeout=self._timeout(profile),
+                    )
+                    self._cb_record(success=True)
+                    if chain.get("market_closed"):
+                        # BS-computed greeks — don't store in live-quote cache
+                        return chain, "ibkr_closed"
+                    self._cache_set(ticker, chain, profile, direction)
+                    return chain, "ibkr_live"
+                except TimeoutError:
+                    logger.warning("IBKR chain timeout for %s", ticker)
+                    self._cb_record(success=False)
+                except Exception as exc:
+                    logger.warning("IBKR chain error for %s: %s", ticker, exc)
+                    self._cb_record(success=False)
+
+        # 3. Stale cache (IBKR was down)
+        stale = self._cache_get(ticker, profile, direction, allow_stale=True)
+        if stale is not None:
+            self._refresh_async(
+                ticker, profile, direction, underlying_hint, target_price, min_dte_val
+            )
+            return deepcopy(stale), "ibkr_stale"
+
+        # 4. Tradier (real-time REST with brokerage account — real greeks + OI)
         if self.tradier_provider is not None:
             try:
                 chain = self.tradier_provider.get_options_chain(
@@ -313,12 +348,7 @@ class DataService:
             except Exception as exc:
                 logger.warning("Tradier chain error for %s: %s", ticker, exc)
 
-        # 3. Stale BOD cache (Tradier also failed — last known-good data)
-        stale = self._cache_get(ticker, profile, direction, allow_stale=True)
-        if stale is not None:
-            return deepcopy(stale), "ibkr_stale"
-
-        # 4. Alpaca (15-min delayed REST, real greeks + OI)
+        # 5. Alpaca (15-min delayed REST, real greeks + OI — better than yfinance)
         if self.alpaca_provider is not None:
             try:
                 chain = self.alpaca_provider.get_options_chain(
@@ -333,7 +363,7 @@ class DataService:
             except Exception as exc:
                 logger.warning("Alpaca chain error for %s: %s", ticker, exc)
 
-        # 5. yfinance
+        # 6. yfinance
         if self.yf_provider is not None:
             try:
                 chain = self.yf_provider.get_options_chain(
@@ -348,7 +378,7 @@ class DataService:
             except Exception as exc:
                 logger.warning("yfinance chain error for %s: %s", ticker, exc)
 
-        # 6. Mock (last resort — never for live paper trades)
+        # 7. Mock (last resort — never for live paper trades)
         if self.mock_provider is not None:
             chain = self.mock_provider.get_options_chain(ticker)
             return chain, "mock"

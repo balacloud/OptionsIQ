@@ -23,6 +23,7 @@ from gate_engine import GateEngine
 from ib_worker import IBWorker
 from iv_store import IVStore
 from alpaca_provider import AlpacaNotAvailableError, AlpacaProvider
+from tradier_provider import TradierProvider, TradierNotAvailableError
 from marketdata_provider import MarketDataProvider
 from mock_provider import MockProvider
 from pnl_calculator import PnLCalculator
@@ -31,6 +32,7 @@ from yfinance_provider import YFinanceProvider
 from analyze_service import analyze_etf, get_live_price, _extract_iv_data, get_vix_status, _fetch_vix
 from data_health_service import build_data_health
 from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch, run_startup_catchup
+from best_setups_service import run_one_setup
 
 VERSION = "2.0"
 
@@ -57,15 +59,25 @@ _ib_worker = IBWorker()
 _yf_provider = YFinanceProvider()
 try:
     _alpaca_provider = AlpacaProvider()
-    logger.info("AlpacaProvider initialised (tier 2.5 fallback)")
+    logger.info("AlpacaProvider initialised (tier 3 fallback)")
 except AlpacaNotAvailableError as _e:
     _alpaca_provider = None
     logger.warning("AlpacaProvider unavailable: %s", _e)
+
+_tradier_key = os.getenv("TRADIER_KEY")
+if _tradier_key:
+    _tradier_provider = TradierProvider(_tradier_key)
+    logger.info("TradierProvider initialised (tier 2 fallback — real-time)")
+else:
+    _tradier_provider = None
+    logger.warning("TradierProvider: TRADIER_KEY not set — Tradier fallback disabled")
+
 data_svc = DataService(
     ib_worker=_ib_worker,
     yf_provider=_yf_provider,
     mock_provider=mock_provider,
     alpaca_provider=_alpaca_provider,
+    tradier_provider=_tradier_provider,
 )
 _md_provider = MarketDataProvider()
 if _md_provider.available():
@@ -380,9 +392,10 @@ def sectors_scan():
 @app.get("/api/best-setups")
 def best_setups():
     """
-    Scan all ETFs using their sector-suggested direction, run gate analysis in parallel,
+    Scan all ETFs using their sector-suggested direction, run gate analysis sequentially,
     return top GO/CAUTION results ranked by gate pass rate.
-    Max 8 parallel workers — IBKR pacing safe.
+    Sequential (max_workers=1): IBWorker is single-threaded; parallel workers race against
+    the 40s expiry timeout. Sequential gives every ETF full IBWorker without contention.
     """
     scan = scan_sectors(iv_store=iv_store)
     if scan.get("error"):
@@ -394,71 +407,21 @@ def best_setups():
     ]
 
     account_size = float(os.getenv("ACCOUNT_SIZE", 25000))
+    risk_pct = float(os.getenv("RISK_PCT", 0.01))
 
-    def _run_one(s):
-        ticker = s["etf"]
-        direction = s["suggested_direction"]
-        # underlying price resolved inside analyze_etf via _resolve_underlying_hint (KI-088)
-        payload = {
-            "ticker": ticker,
-            "direction": direction,
-            "account_size": account_size,
-            "risk_pct": float(os.getenv("RISK_PCT", 0.01)),
-            "planned_hold_days": 21,
-        }
-        try:
-            result = analyze_etf(
-                payload, ticker,
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        results = list(pool.map(
+            lambda s: run_one_setup(
+                s,
                 data_svc=data_svc, ib_worker=_ib_worker,
                 yf_provider=_yf_provider, mock_provider=mock_provider,
                 strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
                 iv_store=iv_store, spy_regime_fn=_spy_regime,
                 md_provider=_md_provider,
-            )
-            verdict = result.get("verdict", {})
-            gates = result.get("gates", [])
-            passed = sum(1 for g in gates if g.get("status") == "pass")
-            total = len(gates)
-            failed = [g.get("name") or g.get("label", "?") for g in gates if g.get("status") == "fail"]
-            top = (result.get("top_strategies") or [{}])[0]
-            # Normalize color: gate_engine returns "amber" but frontend expects "yellow" for CAUTION
-            raw_color = verdict.get("color", "red")
-            color = "yellow" if raw_color == "amber" else raw_color
-            label_map = {"green": "GO", "yellow": "CAUTION", "red": "BLOCKED"}
-            return {
-                "ticker": ticker,
-                "direction": direction,
-                "quadrant": s.get("quadrant"),
-                "name": s.get("name"),
-                "verdict_color": color,
-                "verdict_label": label_map.get(color, "BLOCKED"),
-                "data_source": result.get("data_source"),
-                "pass_rate": round(passed / total * 100) if total else 0,
-                "gates_passed": passed,
-                "gates_total": total,
-                "failed_gates": failed,
-                "ivr": result.get("ivr_data", {}).get("ivr_pct"),
-                "iv_hv_ratio": result.get("ivr_data", {}).get("hv_iv_ratio"),
-                "hv_20": result.get("ivr_data", {}).get("hv_20"),
-                "current_iv": result.get("ivr_data", {}).get("current_iv"),
-                "premium": top.get("premium"),
-                "premium_per_lot": top.get("premium_per_lot"),
-                "strike_display": top.get("strike_display"),
-                "expiry_display": top.get("expiry_display"),
-                "credit_to_width_ratio": top.get("credit_to_width_ratio"),
-                "strategy_type": top.get("strategy_type"),
-                "vix": (result.get("vix") or {}).get("value"),
-                "error": None,
-            }
-        except Exception as exc:
-            logger.warning("best-setups: %s/%s failed — %s", ticker, direction, exc)
-            return {"ticker": ticker, "direction": direction, "quadrant": s.get("quadrant"), "error": str(exc)}
-
-    # max_workers=1: IBWorker is single-threaded — parallel workers just create a queue
-    # where later requests race against their 40s expiry. Sequential gives every ETF
-    # the full IBWorker without contention. Scan takes ~3-4 min but data quality is real.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        results = list(pool.map(_run_one, candidates))
+                account_size=account_size, risk_pct=risk_pct,
+            ),
+            candidates,
+        ))
 
     order = {"green": 0, "yellow": 1, "red": 2, None: 3}
     good = [r for r in results if not r.get("error") and r.get("verdict_color") in ("green", "yellow")]

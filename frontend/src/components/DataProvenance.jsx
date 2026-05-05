@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const API = 'http://localhost:5051';
 
@@ -40,8 +40,9 @@ function BatchStatusPanel({ batch }) {
     if (!iso) return '—';
     try {
       return new Date(iso).toLocaleString('en-US', {
-        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
-      });
+        timeZone: 'America/New_York',
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      }) + ' ET';
     } catch { return iso; }
   }
 
@@ -169,6 +170,186 @@ function IVCoverageGrid({ ivh, cc }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function BatchRunResult({ result }) {
+  if (!result) return null;
+  const color = result.status === 'ok' ? '#00c896' : result.status === 'partial' ? '#f0b429' : '#e53e3e';
+  const icon = result.status === 'ok' ? '✓' : result.status === 'partial' ? '⚠' : '✗';
+  return (
+    <div style={{ marginTop: 8, fontSize: 12, color }}>
+      {icon} {result.status}
+      {result.tickers_ok != null && ` — ${result.tickers_ok} ok`}
+      {result.tickers_failed > 0 && `, ${result.tickers_failed} failed`}
+      {result.duration_sec != null && ` · ${result.duration_sec}s`}
+      {result.error && ` — ${result.error}`}
+    </div>
+  );
+}
+
+function ManualBatchTriggers() {
+  const INIT = { running: false, result: null, todayRun: null, confirming: false };
+  const [bod, setBod] = useState(INIT);
+  const [eod, setEod] = useState(INIT);
+  const anyRunning = bod.running || eod.running;
+
+  // On mount: fetch batch history and mark which types already ran today
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API}/api/admin/batch-status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const runs = data.recent_runs || [];
+        const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+        function findToday(type) {
+          return runs.find(r => {
+            if (r.batch_type !== type || (r.duration_sec || 0) < 1.0) return false;
+            try {
+              // ran_at is SQLite CURRENT_TIMESTAMP = UTC "YYYY-MM-DD HH:MM:SS"
+              const d = new Date(r.ran_at.replace(' ', 'T') + 'Z');
+              return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) === todayET;
+            } catch { return false; }
+          }) || null;
+        }
+
+        setBod(s => ({ ...s, todayRun: findToday('bod') }));
+        setEod(s => ({ ...s, todayRun: findToday('eod') }));
+      } catch { /* silent — don't block manual triggers if status fetch fails */ }
+    })();
+  }, []);
+
+  async function runBatch(type) {
+    const endpoint = type === 'bod' ? '/api/admin/warm-cache' : '/api/admin/seed-iv/all';
+    const set = type === 'bod' ? setBod : setEod;
+    set(s => ({ ...s, running: true, result: null, confirming: false }));
+    try {
+      const res = await fetch(`${API}${endpoint}`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
+      // Update todayRun so a subsequent click also asks for confirmation
+      set(s => ({ ...s, running: false, result, todayRun: result.status !== 'failed' ? result : s.todayRun }));
+    } catch (e) {
+      set(s => ({ ...s, running: false, result: { status: 'failed', error: e.message } }));
+    }
+  }
+
+  function handleClick(type) {
+    const state = type === 'bod' ? bod : eod;
+    const set = type === 'bod' ? setBod : setEod;
+    if (state.todayRun && !state.confirming) {
+      // First click: already ran today — ask for confirmation
+      set(s => ({ ...s, confirming: true }));
+      return;
+    }
+    runBatch(type);
+  }
+
+  function cancelConfirm(type) {
+    const set = type === 'bod' ? setBod : setEod;
+    set(s => ({ ...s, confirming: false }));
+  }
+
+  function fmtRunTime(ran_at) {
+    try {
+      const d = new Date(ran_at.replace(' ', 'T') + 'Z');
+      return d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' }) + ' ET';
+    } catch { return ''; }
+  }
+
+  function TriggerCard({ type, label, runLabel, waitLabel, activeColor, activeBorder, activeText }) {
+    const state = type === 'bod' ? bod : eod;
+    const { running, result, todayRun, confirming } = state;
+
+    return (
+      <div style={{ background: '#1a1f2e', borderRadius: 8, padding: '14px 18px', minWidth: 240 }}>
+        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, fontWeight: 600, letterSpacing: 1 }}>
+          {label}
+        </div>
+
+        {confirming ? (
+          /* Confirmation state */
+          <div>
+            <div style={{ fontSize: 12, color: '#f0b429', marginBottom: 8 }}>
+              ⚠ Already ran today at {fmtRunTime(todayRun.ran_at)} ({todayRun.duration_sec}s).
+              <br />Force re-run?
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => runBatch(type)}
+                style={{ flex: 1, background: '#7c2d12', color: '#fed7aa', border: '1px solid #92400e',
+                  borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+              >
+                ✓ Yes, re-run
+              </button>
+              <button
+                onClick={() => cancelConfirm(type)}
+                style={{ flex: 1, background: '#1e293b', color: '#94a3b8', border: '1px solid #334155',
+                  borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}
+              >
+                ✗ Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Normal / running state */
+          <button
+            onClick={() => handleClick(type)}
+            disabled={anyRunning}
+            style={{
+              background: running ? '#1e293b' : activeColor,
+              color: running ? '#64748b' : activeText,
+              border: `1px solid ${running ? '#334155' : activeBorder}`,
+              borderRadius: 6, padding: '7px 16px',
+              cursor: anyRunning ? 'not-allowed' : 'pointer',
+              fontSize: 12, fontWeight: 600, width: '100%',
+            }}
+          >
+            {running ? `⟳ Running… (${waitLabel})` : `▶ ${runLabel}`}
+          </button>
+        )}
+
+        {/* Already-ran indicator (shown when not confirming and not running) */}
+        {todayRun && !confirming && !running && !result && (
+          <div style={{ marginTop: 7, fontSize: 11, color: '#00c896' }}>
+            ✓ Ran today at {fmtRunTime(todayRun.ran_at)} · {todayRun.duration_sec}s
+          </div>
+        )}
+
+        <BatchRunResult result={result} />
+        {result && (
+          <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>
+            Click ⟳ Check Health to refresh batch history
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div className="dp-section-title">
+        Manual Batch Triggers
+        <span className="dp-section-note"> — run on demand if a scheduled job was missed</span>
+      </div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 10 }}>
+        <TriggerCard
+          type="bod" label="BOD — PRE-WARM CHAINS"
+          runLabel="Run BOD Now" waitLabel="2-3 min"
+          activeColor="#1e3a8a" activeBorder="#3b5bdb" activeText="#bfdbfe"
+        />
+        <TriggerCard
+          type="eod" label="EOD — SEED IV HISTORY"
+          runLabel="Run EOD Now" waitLabel="1-2 min"
+          activeColor="#713f12" activeBorder="#92400e" activeText="#fed7aa"
+        />
+      </div>
+      <div style={{ fontSize: 11, color: '#475569' }}>
+        IB Gateway must be connected · BOD pre-warms all 16 ETF chain caches · EOD seeds IV + OHLCV history
+      </div>
     </div>
   );
 }
@@ -383,6 +564,8 @@ export default function DataProvenance() {
       {error && <div className="dp-error">Error: {error}</div>}
 
       <DataFlowDiagram />
+
+      <ManualBatchTriggers />
 
       {!data && !loading && (
         <div className="dp-idle">

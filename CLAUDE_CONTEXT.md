@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 38 (May 5, 2026)
-> **Current Version:** v0.27.1
-> **Project Phase:** DataFlowDiagram SVG added to Data Provenance tab (always-visible architecture diagram). Doc corrections: MD.app confirmed FREE tier (not Starter). Tradier: open account imminent. 36 tests.
+> **Last Updated:** Day 39 (May 5, 2026)
+> **Current Version:** v0.28.0
+> **Project Phase:** Tradier primary live source. IBKR removed from DataService real-time chain path — IB Gateway now only needed for EOD (4:05 PM ET). KI-086 resolved (best_setups_service.py extracted). KI-067 resolved (QQQ sell_put ITM fix). 36 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY38_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY38.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY39_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY39.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -147,14 +147,18 @@ backend/
 **IB Gateway:** 127.0.0.1:4001 (live account U11574928)
 **Database:** SQLite at `backend/data/` (chain_cache.db + iv_store.db)
 
-### Data Provider Hierarchy (live-first)
+### Data Provider Hierarchy — DataService.get_chain() (Day 39)
 ```
-[1] IBKR Live (reqMktData snapshot=False)  ← DEFAULT (greeks confirmed Day 9)
-[2] IBKR Cache (SQLite, TTL 2 min)         ← "Using cached chain" banner
-[2.5] MarketData.app Free (MONITORING)    ← OI/volume supplement. ~33 credits/day vs 100 limit. 24h delayed OK for ETF liquidity gate.
-[3] Alpaca indicative (DONE, free)         ← greeks+IV but NO OI/volume
-[4] yfinance (emergency fallback)          ← NO real greeks (BS computed from HV)
-[5] Mock (dev/CI testing ONLY)             ← NEVER for paper trades
+[1] BOD Cache (SQLite, pre-warmed 9:31 AM)   ← "ibkr_cache" — fastest, no network call
+[2] Tradier REST (real-time, brokerage acct) ← "tradier" — PRIMARY live source, no IB Gateway needed
+[3] Stale BOD Cache                          ← "ibkr_stale" — last known-good if Tradier fails
+[4] Alpaca (15-min delayed REST)             ← "alpaca" — greeks+IV, no OI
+[5] yfinance (emergency fallback)            ← "yfinance" — NO real greeks (BS computed)
+[6] Mock (dev/CI testing ONLY)              ← NEVER for paper trades
+
+IBKR LIVE REMOVED from DataService (Day 39). See ARCH_DECISION_TRADIER_PRIMARY.md.
+IBKR only called by: run_eod_batch() → ib_worker.submit(get_historical_iv) for IV seeding.
+MarketData.app: OI/volume supplement for Liquidity gate (~33 credits/day, Free tier).
 ```
 
 ### IBWorker Thread Model
@@ -236,8 +240,8 @@ Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (MEDIUM):
-3. **KI-086: app.py ~500 lines — Rule 4 violation** — _seed_iv_for_ticker + _run_one belong in service modules.
-4. **KI-067: QQQ chain fractional strikes** — sell_put returns ITM puts + ibkr_stale chain.
+3. **KI-086: app.py ~500 lines — Rule 4 violation** ✅ RESOLVED Day 39 — best_setups_service.py extracted, app.py 497→449 lines.
+4. **KI-067: QQQ sell_put returns ITM strikes** ✅ RESOLVED Day 39 — ibkr_provider OTM filter + strategy_ranker fallback fixed.
 5. **KI-064: IVR mismatch L2 vs L3** — ~5pp gap.
 7. **KI-075: GateExplainer GATE_KB may drift** — audit scheduled Category 9.
 8. **KI-076: TradeExplainer isBearish() not live-tested** — all 4 directions not verified live.
@@ -297,6 +301,7 @@ Resolved (Day 24):
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 39 | May 5, 2026 | **Tradier primary + KI-086/KI-067 resolved (v0.28.0).** tradier_provider.py created + wired into DataService. IBKR removed from DataService live chain path — IB Gateway now only needed for EOD batch (4:05 PM ET). Cascade: BOD cache → Tradier → stale cache → Alpaca → yfinance → Mock. KI-086: best_setups_service.py extracted (app.py 497→449 lines). KI-067: ibkr_provider OTM filter for sell_put + strategy_ranker fallback → return [] (no more ITM strikes). Manual BOD/EOD trigger buttons with idempotency check. Startup catchup delay 10s→30s + _ran_on() min_duration=1.0. ARCH_DECISION_TRADIER_PRIMARY.md + backup created. |
 | Day 38 | May 5, 2026 | **DataFlowDiagram + doc corrections (v0.27.1).** DataFlowDiagram SVG component added and wired into DataProvenance tab — always visible, two-section architecture diagram (Live Analysis + Batch/Nightly). MD.app confirmed FREE tier (100 credits/day, was incorrectly documented as Starter $12/mo). Tradier support confirmed: no subscription needed for API access. |
 | Day 37 | May 4, 2026 | **Startup catch-up + IV integrity (v0.27.0).** run_startup_catchup() daemon thread fires missed BOD/EOD jobs on startup (checks batch_run_log for prev-day EOD, today's BOD/EOD). yfinance HV removed from IV seeding pipeline — HV≠IV, storing HV in iv_history.db contaminates IVR percentile. docs/Research/ reorganized (18 files→6 subdirs) with DATA_PROVIDERS_SYNTHESIS.md. Tradier: confirmed free with brokerage account, ORATS greeks hourly. Massive.com: final verdict don't buy. |
 | Day 36 | May 4, 2026 | **MarketData.app greeks pipeline (v0.26.1).** marketdata_provider.get_oi_volume() now returns IV+greeks (delta/gamma/theta/vega) alongside OI/volume. analyze_etf() patches current_iv from MD.app when Alpaca chain IV=null — recomputes IVR percentile + hv_iv_ratio, sets iv_source="marketdata". md_supplement dict added to analyze response. |
@@ -309,13 +314,21 @@ Resolved (Day 24):
 
 ---
 
-## Next Session Priorities (Day 39)
+## Next Session Priorities (Day 40)
 
-### P0 — Tradier integration (2 hrs)
-Open Tradier brokerage account → get API token → test live:
-`curl -s "https://api.tradier.com/v1/markets/options/chains?symbol=XLF&expiration=2025-06-20&greeks=true" -H "Authorization: Bearer TOKEN" -H "Accept: application/json"`
-If confirmed: implement `tradier_provider.py`, wire into `data_service.py` above Alpaca.
-Goal: eliminate IB Gateway dependency for live-hours chain fetching.
+### P0 — Live end-to-end test: Tradier as primary (30 min)
+Start backend WITHOUT IB Gateway. Run Best Setups scan. Verify data_source="tradier" in results.
+Check DataProvenance badge shows "tradier". Confirm greeks/IV are real values (not BS-computed).
+
+### P1 — P3 and P4 from Day 39 backlog
+- P3: Check backend.log for "Startup catch-up" entries (did BOD/EOD fire correctly after Day 38 restart?)
+- P4: FOMC 2026 dates audit — verify constants.py FOMC_DATES includes Jun 18, Jul 30, Sep 17, Nov 4, Dec 10
+
+### P2 — DataFlowDiagram update (frontend)
+SVG diagram in DataProvenance still shows IBKR as primary live source. Update to reflect new cascade:
+BOD Cache → Tradier → stale cache → Alpaca → yfinance
+
+### P3 — Session close docs (KNOWN_ISSUES_DAY39, PROJECT_STATUS_DAY39)
 
 ### P1 — KI-086: Move _run_one to best_setups_service.py (MEDIUM, 45 min)
 app.py 497 → ~420 lines. `_run_one` closure still inline in `best_setups()` route.

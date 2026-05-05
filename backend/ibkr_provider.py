@@ -316,6 +316,10 @@ class IBKRProvider:
         if direction == DIRECTION_SELL_CALL:
             window_strikes.sort()           # ascending: ATM edge → OTM end
         elif direction == DIRECTION_SELL_PUT:
+            # Exclude ITM puts (strike > underlying) — bull put spread only needs OTM/ATM legs.
+            # Without this, high-priced tickers (QQQ ~$480) with $1 increments fill the 12-strike
+            # cap with ITM strikes from the 2% upper buffer, leaving no OTM strikes for the ranker.
+            window_strikes = [s for s in window_strikes if s <= underlying]
             window_strikes.sort(reverse=True)  # descending: ATM edge → OTM end (puts go lower)
         else:
             window_strikes.sort(key=lambda s: abs(s - underlying))

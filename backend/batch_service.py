@@ -165,10 +165,16 @@ def _prev_trading_date(ref: date) -> date:
     return d
 
 
-def _ran_on(runs: list, batch_type: str, date_str: str) -> bool:
-    """Return True if any run of batch_type has ran_at starting with date_str."""
+def _ran_on(runs: list, batch_type: str, date_str: str, min_duration: float = 1.0) -> bool:
+    """Return True if a substantive run of batch_type exists for date_str.
+
+    Runs under min_duration seconds are cache-hit no-ops (IBKR not connected
+    at time of run) and are not counted — catchup will re-fire with a live connection.
+    """
     return any(
-        r["batch_type"] == batch_type and r["ran_at"].startswith(date_str)
+        r["batch_type"] == batch_type
+        and r["ran_at"].startswith(date_str)
+        and (r.get("duration_sec") or 0.0) >= min_duration
         for r in runs
     )
 
@@ -183,12 +189,13 @@ def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
       2. Today's BOD missing + past 9:31 AM → pre-warm chain cache
       3. Today's EOD missing + past 4:05 PM → seed today's closing IV
 
-    Waits 10s first to give IBWorker time to establish its IBKR connection.
+    Waits 30s first to give IBWorker time to establish its IBKR connection.
+    IB Gateway auth can take 20-30s, so 10s was insufficient.
     Note: the APScheduler BOD/EOD jobs fire unconditionally at their scheduled
     times — this function only fills gaps when the app wasn't running.
     """
     def _run():
-        time.sleep(10)
+        time.sleep(30)
         now_et = datetime.now(_ET)
 
         if now_et.weekday() > 4:
