@@ -17,7 +17,7 @@ const DIRECTIONS = [
     group: 'bullish',
     view: 'I think price will STAY or rise slowly',
     howItWorks: 'You COLLECT a credit upfront. Profit if the ETF stays flat or rises.',
-    risk: 'Risk: Spread width (capped with spread)',
+    risk: 'Risk: Large (up to full strike value if naked). Bull put spread caps this — check strategy type.',
     reward: 'Reward: Keep the credit collected',
     color: 'green',
   },

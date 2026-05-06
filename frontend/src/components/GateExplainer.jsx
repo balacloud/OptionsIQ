@@ -53,10 +53,10 @@ const GATE_KB = {
   },
   events: {
     category: 'market',
-    question: 'Are there any surprise events before expiry?',
-    passAnswer: 'NO events — No earnings, Fed meetings, or major events fall before your expiry date.',
-    failAnswer: 'YES — A major event (earnings, FOMC) falls before expiry. This could cause a large gap move.',
-    why: 'One earnings surprise can cause a 5–10% overnight gap. That turns a calm trade into a max-loss trade instantly.',
+    question: 'Are there any major scheduled events before expiry?',
+    passAnswer: 'NO events — No FOMC, CPI, NFP, PCE, or earnings fall inside your holding window.',
+    failAnswer: 'YES — A major event (FOMC, CPI, NFP, PCE, or earnings) falls before expiry. This could cause a sharp gap move.',
+    why: 'FOMC decisions move rate-sensitive ETFs 1–3% overnight. CPI and NFP prints cause similar spikes. Earnings on key holdings can gap 5–10%. Any of these can instantly turn a profitable trade into a max-loss.',
   },
   liquidity: {
     category: 'risk',
@@ -99,6 +99,20 @@ const GATE_KB = {
     passAnswer: 'YES — Max loss is within acceptable bounds for this account size.',
     failAnswer: 'NO — Potential loss is too large relative to account size. Adjust or skip.',
     why: 'Even with defined risk, if max loss is too large as a percentage of your account, one bad trade hurts too much.',
+  },
+  hv_iv_vrp: {
+    category: 'pricing',
+    question: 'Is implied volatility priced above recent realized moves?',
+    passAnswer: 'YES — IV is above historical volatility. You are collecting overpriced premium — the classic seller\'s edge.',
+    failAnswer: 'NO — Realized moves exceed implied volatility. The market is moving more than options are pricing in, which erodes seller edge.',
+    why: 'The Volatility Risk Premium (VRP) is the foundation of premium selling. When IV > HV, options are systematically overpriced — that overpayment is your expected profit.',
+  },
+  vix_regime: {
+    category: 'market',
+    question: 'Is the VIX at a level favorable for selling premium?',
+    passAnswer: 'YES — VIX is in the 15–30 range: premiums are rich enough to collect without crisis-level risk.',
+    failAnswer: 'NO — VIX is either too low (premiums too thin) or in crisis territory (above 40, negative expectancy for sellers).',
+    why: 'VIX below 15 means options are cheap — you\'re selling for too little. Above 40 means the market is gapping unpredictably — short premium positions face catastrophic assignment risk.',
   },
 };
 

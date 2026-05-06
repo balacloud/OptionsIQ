@@ -27,6 +27,7 @@ from constants import (
     ETF_MIN_PREMIUM_DOLLAR,
     ETF_TICKERS,
     FOMC_DATES,
+    MACRO_DATES,
     IVR_BUYER_PASS_PCT,
     MAX_LOSS_FAIL_PCT,
     MAX_LOSS_WARN_PCT,
@@ -46,6 +47,25 @@ def _days_until_next_fomc() -> int:
         if meeting >= today:
             return (meeting - today).days
     return 999
+
+
+def _days_until_next_macro() -> tuple[int, str]:
+    """Days from today to the nearest CPI, NFP, or PCE release.
+    Returns (days, event_name). Falls back to (999, 'Macro') if list exhausted.
+    """
+    today = datetime.utcnow().date()
+    nearest_days = 999
+    nearest_name = "Macro"
+    for event_name, dates in MACRO_DATES.items():
+        for date_str in sorted(dates):
+            event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if event_date >= today:
+                days = (event_date - today).days
+                if days < nearest_days:
+                    nearest_days = days
+                    nearest_name = event_name
+                break
+    return nearest_days, nearest_name
 
 
 def _resolve_underlying_hint(ticker: str, payload: dict) -> float | None:
@@ -345,8 +365,20 @@ def _merge_swing(payload: dict, underlying: float, spy_regime_fn) -> dict:
 def _extract_iv_data(ticker: str, chain: dict, provider, *,
                      ib_worker=None, mock_provider=None, iv_store=None) -> dict:
     contracts = chain.get("contracts", [])
-    ivs = [float(c.get("impliedVol", 0.0)) * 100 for c in contracts if c.get("impliedVol") is not None]
-    current_iv = round(sum(ivs) / len(ivs), 2) if ivs else None
+    # Use ATM contract IV to match L2 and align with the historical IV baseline
+    # (IBKR reqHistoricalData OPTION_IMPLIED_VOLATILITY is ATM-weighted, not a chain average).
+    # Averaging across all direction-filtered contracts introduces skew distortion — e.g.,
+    # sell_put fetches only puts, whose OTM skew inflates the average vs the ATM reference.
+    underlying_price = chain.get("underlying_price")
+    current_iv: float | None = None
+    if underlying_price and contracts:
+        atm = min(contracts, key=lambda c: abs(c.get("strike", 0) - float(underlying_price)))
+        raw_iv = atm.get("impliedVol")
+        if raw_iv is not None and float(raw_iv) > 0:
+            current_iv = round(float(raw_iv) * 100, 2)
+    if current_iv is None and contracts:
+        ivs = [float(c.get("impliedVol", 0.0)) * 100 for c in contracts if c.get("impliedVol") is not None]
+        current_iv = round(sum(ivs) / len(ivs), 2) if ivs else None
 
     def _call_provider(fn, *args):
         if ib_worker is not None and provider is ib_worker.provider:
@@ -686,6 +718,9 @@ def analyze_etf(payload: dict, ticker: str, *,
     ivr_data = _extract_iv_data(ticker, chain, iv_provider,
                                 ib_worker=ib_worker, mock_provider=mock_provider, iv_store=iv_store)
 
+    _fomc_days = _i(payload.get("fomc_days_away"), None) or _days_until_next_fomc()
+    _macro_days, _macro_name = _days_until_next_macro()
+
     if is_etf:
         spy_regime = _fetch_spy_regime(spy_regime_fn)
         _spy_above_raw = spy_regime.get("spy_above_200sma")
@@ -693,7 +728,7 @@ def analyze_etf(payload: dict, ticker: str, *,
             underlying=underlying,
             spy_above=bool(_spy_above_raw) if _spy_above_raw is not None else True,
             spy_5d=float(spy_regime["spy_5day_return"] / 100.0) if spy_regime.get("spy_5day_return") is not None else None,
-            fomc_days_away=_i(payload.get("fomc_days_away"), None) or _days_until_next_fomc(),
+            fomc_days_away=_fomc_days,
             ivr_pct=ivr_data.get("ivr_pct"),
         )
     else:
@@ -769,7 +804,9 @@ def analyze_etf(payload: dict, ticker: str, *,
         "max_gain_per_lot": float(selected.get("max_gain_per_lot") or -1.0),
         "account_size": account_size,
         "risk_pct": risk_pct,
-        "fomc_days_away": _i(payload.get("fomc_days_away"), 999),
+        "fomc_days_away": _fomc_days,
+        "macro_days_away": _macro_days,
+        "macro_event_name": _macro_name,
         "vix": vix_value,
         "lots": _f(payload.get("lots"), 1.0),
         "etf_holdings_at_risk": (

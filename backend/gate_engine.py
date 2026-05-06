@@ -13,6 +13,8 @@ from constants import (
     DTE_REC_MED_SIGNAL,
     ETF_DTE_HIGH_IVR,
     ETF_DTE_LOW_IVR,
+    ETF_DTE_SELLER_PASS_MAX,
+    ETF_DTE_SELLER_PASS_MIN,
     HV_IV_PASS_RATIO,
     HV_IV_WARN_RATIO,
     HV_IV_SELL_PASS_RATIO,
@@ -397,22 +399,28 @@ class GateEngine:
             s, r = "warn", "Suboptimal DTE window"
         out.append(_gate("dte_seller", "DTE (Seller)", s, f"DTE {dte}", f"{DEFAULT_MIN_DTE}-{DTE_REC_HIGH_SIGNAL} pass; {DTE_REC_HIGH_SIGNAL}-{DTE_REC_MED_SIGNAL} warn; >60 or <7 fail", r, s == "fail"))
 
-        # Gate 4: Events
+        # Gate 4: Events — earnings + FOMC + macro (CPI/NFP/PCE)
         earn_days = int(p.get("earnings_days_away", 999) or 999)
         fomc_days = int(p.get("fomc_days_away", 999) or 999)
+        macro_days = int(p.get("macro_days_away", 999) or 999)
+        macro_name = p.get("macro_event_name") or "Macro"
+        nearest_event_days = min(fomc_days, macro_days)
+        nearest_event_name = "FOMC" if fomc_days <= macro_days else macro_name
         if earn_days <= dte:
             s, r = "fail", "Earnings inside expiry window"
             block = True
-        elif fomc_days < 5:
-            s, r = "warn", f"FOMC imminent ({fomc_days}d) — vol event inside holding window"
+        elif nearest_event_days < 5:
+            s, r = "warn", f"{nearest_event_name} imminent ({nearest_event_days}d) — vol event inside holding window"
             block = False
-        elif fomc_days <= 10:
-            s, r = "warn", "FOMC event near expiry"
+        elif nearest_event_days <= 10:
+            s, r = "warn", f"{nearest_event_name} event near expiry"
             block = False
         else:
             s, r = "pass", "No major event conflict"
             block = False
-        out.append(_gate("events", "Event Calendar", s, f"earn {earn_days}d, FOMC {fomc_days}d", "earnings > DTE and FOMC >10d", r, block))
+        out.append(_gate("events", "Event Calendar", s,
+                         f"earn {earn_days}d · FOMC {fomc_days}d · {macro_name} {macro_days}d",
+                         "earnings > DTE and events >10d", r, block))
 
         # Gate 5: Liquidity
         out.append(self._liquidity_gate(p))
@@ -809,20 +817,27 @@ class GateEngine:
                      r, False)
 
     def _etf_fomc_gate(self, p: dict, dte: int) -> dict:
-        """FOMC proximity check — ETFs have no earnings, FOMC is the primary event.
-        Warns whenever FOMC falls inside the holding window (fomc_days < dte),
-        not just when FOMC is imminent from today.
+        """FOMC + macro event proximity check (CPI, NFP, PCE).
+        Warns whenever any major scheduled event falls inside the holding window.
         """
         fomc_days = int(p.get("fomc_days_away", 999) or 999)
-        inside_window = fomc_days < dte
-        if fomc_days < 5:
-            s, r, block = "warn", "FOMC imminent — consider reducing size or avoid entry", False
-        elif inside_window:
-            s, r, block = "warn", f"FOMC in {fomc_days}d falls inside holding window ({dte} DTE) — rate-sensitive ETFs may gap", False
+        macro_days = int(p.get("macro_days_away", 999) or 999)
+        macro_name = p.get("macro_event_name") or "Macro"
+
+        # Pick the nearest upcoming event
+        nearest_days = min(fomc_days, macro_days)
+        nearest_name = "FOMC" if fomc_days <= macro_days else macro_name
+
+        if nearest_days < 5:
+            s, r, block = "warn", f"{nearest_name} imminent — consider reducing size or avoid entry", False
+        elif nearest_days < dte:
+            s, r, block = "warn", f"{nearest_name} in {nearest_days}d falls inside holding window ({dte} DTE) — ETF may gap on release", False
         else:
-            s, r, block = "pass", "No FOMC event inside holding window", False
-        return _gate("events", "Event Calendar", s, f"FOMC {fomc_days}d, DTE {dte}",
-                     "warn if FOMC < DTE; clear otherwise", r, block)
+            s, r, block = "pass", "No major events inside holding window", False
+
+        val = f"FOMC {fomc_days}d · {macro_name} {macro_days}d · DTE {dte}"
+        return _gate("events", "Event Calendar", s, val,
+                     "warn if any major event < DTE; clear otherwise", r, block)
 
     def _etf_spy_regime_bull_gate(self, p: dict) -> dict:
         """SPY regime gate for bullish ETF buyers (buy_call)."""
@@ -1023,18 +1038,18 @@ class GateEngine:
                          f"strike {strike:.2f}, und {und:.2f}",
                          ">=3% OTM pass; ATM warn; ITM fail", r, s == "fail"))
 
-        # Gate 3: DTE seller window
+        # Gate 3: DTE seller window — ETF-specific: 21–45 DTE sweet spot (tastylive)
         dte = int(p.get("selected_expiry_dte", 0) or 0)
-        if DEFAULT_MIN_DTE <= dte <= DTE_REC_HIGH_SIGNAL:
-            s, r = "pass", "Optimal theta decay window"
-        elif DTE_REC_HIGH_SIGNAL < dte <= DTE_REC_MED_SIGNAL:
-            s, r = "warn", "Tradable but slower decay"
+        if ETF_DTE_SELLER_PASS_MIN <= dte <= ETF_DTE_SELLER_PASS_MAX:
+            s, r = "pass", "Optimal theta decay window for ETF sellers"
+        elif DEFAULT_MIN_DTE <= dte < ETF_DTE_SELLER_PASS_MIN:
+            s, r = "warn", "Too close to expiry — gamma risk rising"
         elif dte > 60 or dte < 7:
             s, r = "fail", "Outside seller DTE window"
         else:
             s, r = "warn", "Suboptimal DTE window"
         out.append(_gate("dte_seller", "DTE (Seller)", s, f"DTE {dte}",
-                         f"{DEFAULT_MIN_DTE}–{DTE_REC_HIGH_SIGNAL} pass; >60 or <7 fail", r, s == "fail"))
+                         f"{ETF_DTE_SELLER_PASS_MIN}–{ETF_DTE_SELLER_PASS_MAX} pass; <{ETF_DTE_SELLER_PASS_MIN} warn; >60 or <7 fail", r, s == "fail"))
 
         # Gate 4: FOMC event
         out.append(self._etf_fomc_gate(p, dte))
