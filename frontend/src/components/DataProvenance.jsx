@@ -39,7 +39,13 @@ function BatchStatusPanel({ batch }) {
   function fmtTime(iso) {
     if (!iso) return '—';
     try {
-      return new Date(iso).toLocaleString('en-US', {
+      // SQLite CURRENT_TIMESTAMP = "YYYY-MM-DD HH:MM:SS" (UTC, no TZ marker).
+      // Without explicit 'Z', Chrome treats it as local time → 4h off in EDT.
+      // APScheduler ISO strings already carry a TZ offset — leave them alone.
+      const normalized = typeof iso === 'string' && !iso.includes('T') && !iso.includes('Z')
+        ? iso.replace(' ', 'T') + 'Z'
+        : iso;
+      return new Date(normalized).toLocaleString('en-US', {
         timeZone: 'America/New_York',
         month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
       }) + ' ET';
@@ -348,7 +354,7 @@ function ManualBatchTriggers() {
         />
       </div>
       <div style={{ fontSize: 11, color: '#475569' }}>
-        IB Gateway must be connected · BOD pre-warms all 16 ETF chain caches · EOD seeds IV + OHLCV history
+        BOD pre-warms ETF chain caches via Tradier (no IB Gateway needed) · EOD seeds IV + OHLCV history (requires IB Gateway)
       </div>
     </div>
   );

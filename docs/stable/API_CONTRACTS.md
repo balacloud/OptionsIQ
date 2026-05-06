@@ -144,6 +144,17 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
   "max_pain_strike": 195.0,
   "recommended_dte": 49,
   "direction_locked": [],
+  "skew": {
+    "skew": 3.42,
+    "put_iv_30d": 18.91,
+    "call_iv_30d": 15.49,
+    "put_delta": -0.298,
+    "call_delta": 0.303,
+    "put_strike": 470.0,
+    "call_strike": 492.5,
+    "expiry": "2026-06-20",
+    "dte": 45
+  },
   "md_supplement": {
     "iv": 0.17,
     "delta": -0.31,
@@ -263,6 +274,21 @@ Record a new paper trade.
 ```
 
 **Response:** `{"success": true, "trade_id": 1}`
+
+---
+
+## GET /api/options/paper-trades/summary
+
+Returns aggregate P&L summary across all open paper trades.
+
+**Response:**
+```json
+{
+  "total_trades": 3,
+  "total_pnl": 142.50,
+  "win_rate": 0.67
+}
+```
 
 ---
 

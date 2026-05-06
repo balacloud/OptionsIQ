@@ -1,6 +1,6 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 27 (April 21, 2026)
-> **Version:** v1.2
+> **Last Updated:** Day 42 (May 6, 2026)
+> **Version:** v1.3
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
 > **Time estimate:** 30-45 mins per full audit. Run all 9 categories or specify one by name.
 
@@ -23,7 +23,7 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 ### From Golden Rules (hard constraints):
 | # | Principle | What the audit checks |
 |---|-----------|----------------------|
-| R1 | Live data is always the default | reqMarketDataType(1) at startup, no silent mock fallback |
+| R1 | Live data is always the default | Tradier REST is primary live source; no silent mock fallback; IBKR only for EOD IV batch |
 | R2 | One IBWorker, one IB() instance | No ib_insync calls from Flask thread, ever |
 | R3 | No magic numbers | All thresholds in constants.py, none inline |
 | R4 | app.py is routes only (≤150 lines) | Line count, no business logic in routes |
@@ -35,9 +35,21 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 | R13 | All 4 directions tested before "frozen" | buy_call + sell_call + buy_put + sell_put all exercised |
 | R14 | Swing field defaults forbidden | Missing fields → null + SKIP gate, never fabricated |
 | R15 | Code is source of truth, docs are debt | Code vs docs contradictions = doc is wrong |
-| R16 | Gate track must be explicit per direction | No direction-agnostic routing |
+| R16-gate | Gate track must be explicit per direction | No direction-agnostic routing |
+| R16-restart | Restart backend after ANY Python change | Flask debug=False — no auto-reload; kill+restart+health-check required |
 | R18 | Liquidity gates must be direction-aware | ATM nearness filter can't apply to ITM buyer strikes |
 | R21 | Think like a quant trader, not a developer | Would this cost money if wrong? |
+
+### From LLM Research (external validation):
+- **Historical IV is uniquely IBKR** — no other affordable provider has it. IVR requires IBKR EOD batch (not live chain).
+- **IVR = percentile** (what % of past year was lower than today), not count-rank
+- **High IVR → sell premium, not buy** — IVR 100% on buy_call is a critical block, not a warning
+- **IVR seller threshold = 35%** (tastylive empirical, Day 29) — not 50%. Higher threshold sacrifices 60-70% of trade frequency.
+- **Multi-LLM consensus before implementing financial logic** — one model can hallucinate options theory
+- **Sector quadrant interpretation requires research** — Weakening ≠ ANALYZE (it means WAIT)
+- **Lagging ≠ bearish opportunity without further conditions** — mean-reversion timing matters
+- **ETF options have different liquidity profiles** — can't apply single-stock thresholds to ETFs
+- **Tradier REST = real-time data with brokerage account** — free, OI + volume + greeks included, 200 req/min
 
 ### From Coding Experience (learned the hard way):
 - **Zero is not null** — `0` scores as real data, corrupts gate logic silently
@@ -48,15 +60,9 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 - **Docs always diverge from code** — they were written before code, never synced back
 - **Direction-specific logic needs direction-specific tests** — 1 passing direction ≠ 4 correct
 - **Silent fallbacks are worse than crashes** — phantom data that looks correct corrupts decisions
-
-### From LLM Research (external validation):
-- **Historical IV is uniquely IBKR** — no other affordable provider has it. IVR requires IBKR.
-- **IVR = percentile** (what % of past year was lower than today), not count-rank
-- **High IVR → sell premium, not buy** — IVR 100% on buy_call is a critical block, not a warning
-- **Multi-LLM consensus before implementing financial logic** — one model can hallucinate options theory
-- **Sector quadrant interpretation requires research** — Weakening ≠ ANALYZE (it means WAIT)
-- **Lagging ≠ bearish opportunity without further conditions** — mean-reversion timing matters
-- **ETF options have different liquidity profiles** — can't apply single-stock thresholds to ETFs
+- **`_f(x) or None` is dangerous for valid 0.0 values** — `0.0 or None` evaluates to `None` in Python. Deep-OTM options legitimately have delta=0.0. Use `float(g[k]) if g.get(k) is not None else None` instead (KI-090 lesson).
+- **Data source labels must reflect actual source** — if Tradier fills the BOD cache, call it "bod_cache" not "ibkr_cache". Lying labels corrupt the DataProvenance UI and iv_provider selection downstream (KI-092/093 lesson).
+- **SQLite CURRENT_TIMESTAMP is UTC** — when parsing in JavaScript, always append 'Z' before `new Date(...)`. Without 'Z', Chrome treats the string as local time → 4-hour offset in EDT. Use `.replace(' ', 'T') + 'Z'` consistently.
 
 ---
 
@@ -77,14 +83,21 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 
 #### Claims Checklist (run each session):
 ```
-[ ] "We always use live IBKR data by default"
-    → Read: ibkr_provider.py reqMarketDataType call. Does it call type(1) on connect?
+[ ] "Tradier is the primary live chain source — IB Gateway not needed for analysis"
+    → Read: data_service.py get_chain() — is tradier_provider called before ibkr_stale?
+    → Confirm: IBKR provider no longer in live path (only EOD batch)
 
-[ ] "Greeks are 100% populated during market hours"
-    → Read: ibkr_provider.py, check BS fallback condition. When does Phase 4e fire?
+[ ] "BOD batch uses Tradier (not IBKR) — runs successfully without IB Gateway"
+    → Read: batch_service.run_bod_batch() — does it call data_svc.get_chain() (Tradier cascade)?
+    → Confirm: no ib_worker calls inside run_bod_batch()
 
-[ ] "IVR flows into gate_engine for buy_call"
-    → Read: sector_scan_service._analyze_etf() → iv_store.get_ivr() → gate_payload dict
+[ ] "Direction-aware OTM filter prevents ITM puts on sell_put"
+    → Read: tradier_provider.get_options_chain() — does `strike > underlying` skip for sell_put?
+    → Read: ibkr_provider.py — same filter present?
+
+[ ] "Skew computation is non-blocking — analyze returns skew:null if Tradier unavailable"
+    → Read: analyze_service.analyze_etf() — is compute_skew() in a try/except?
+    → Confirm: tradier_provider=None path returns skew:null, not an exception
 
 [ ] "sell_call builds a bear_call_spread (ranks 1+2); rank 3 is a far-OTM naked call with UNLIMITED RISK warning"
     → Read: strategy_ranker._rank_sell_call() — verify ranks 1+2 have two legs, rank 3 has warning field
@@ -95,8 +108,9 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 [ ] "SPY regime gates bullish calls correctly"
     → Read: gate_engine._run_track_a() SPY gate. Does spy_5day_return=-3% → FAIL?
 
-[ ] "Sector L2 uses live IBKR chain, not cache"
-    → Read: sector_scan_service._analyze_etf() data_source field
+[ ] "IVR seller threshold is 35% (not 50%)"
+    → Read: constants.py IVR_SELLER_PASS_PCT — should be 35, not 50
+    → Read: gate_engine seller gate — does it use IVR_SELLER_PASS_PCT?
 
 [ ] "sell_put warns about naked risk"
     → Read: strategy_ranker._rank_track_b() — warning field on all 3 strategies
@@ -104,8 +118,12 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 [ ] "ACCOUNT_SIZE raises at startup if missing"
     → Read: app.py startup block. Is there an explicit raise or just a default?
 
+[ ] "iv_provider maps tradier/alpaca to yf_provider (not mock)"
+    → Read: analyze_service.analyze_etf() iv_provider selection block
+    → Confirm: data_source="tradier" → yf_provider, not mock_provider
+
 [ ] "Quality banner shows when data is below live"
-    → Read: frontend QualityBanner.jsx — does it cover all tiers: ibkr_stale, alpaca, yfinance, mock?
+    → Read: frontend QualityBanner.jsx — does it cover: bod_cache, tradier, ibkr_stale, alpaca, yfinance, mock?
 ```
 
 ---
@@ -114,20 +132,24 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 **Principle:** All 21 rules — check each has not been violated since last audit
 
 ```
-[ ] R1: reqMarketDataType(1) in ibkr_provider.py startup? (not type 3/4)
-[ ] R2: grep app.py for direct ib. calls → should be zero
-[ ] R3: grep gate_engine.py + strategy_ranker.py for raw numbers → should be zero
-[ ] R4: wc -l backend/app.py → should be ≤150 (currently ~600 — known violation KI-023)
+[ ] R1: Tradier in DataService live chain path (before ibkr_stale). IBKR NOT in live path.
+    → grep data_service.py for tradier_provider call in get_chain()
+[ ] R2: grep app.py for direct ib. calls → should be zero outside ib_worker.py
+[ ] R3: grep gate_engine.py + strategy_ranker.py + tradier_provider.py for raw numbers
+    → skew thresholds: SKEW_TARGET_DELTA, SKEW_DTE_MIN, SKEW_DTE_MAX must be in constants.py ✓
+[ ] R4: wc -l backend/app.py → should be ≤150 (currently ~475 — known violation, tracked KI-086 partial)
 [ ] R5: gate_engine.py math functions untouched since Day 12
-[ ] R6: STA offline path — does app work if localhost:5001 is down?
+[ ] R6: STA offline path — analyze_etf() works with STA down? (underlying_hint fallback)
 [ ] R7: grep app.py + analyze_service for ACCOUNT_SIZE default → must be None/raise
-[ ] R8: every data tier in QualityBanner.jsx — ibkr_live/cache/stale/closed/alpaca/yfinance/mock
-[ ] R11: grep all providers for hardcoded numeric fallbacks (e.g., iv=25, hv=15, delta=0.3)
-[ ] R13: buy_put + sell_call live tested? (KI-059 — currently NO)
+[ ] R8: every data tier in QualityBanner.jsx — bod_cache/tradier/ibkr_stale/alpaca/yfinance/mock
+[ ] R11: grep all providers for hardcoded numeric fallbacks (e.g., iv=25, hv=15)
+    → Special check: _f(x) or None pattern → dangerous for delta=0.0 (KI-090 lesson)
+[ ] R13: all 4 directions live tested via Tradier? (Day 40 BOD smoke test: sell_put ✓ via Tradier)
 [ ] R14: _merge_swing → grep for default= with a number
-[ ] R16: gate_engine.run() routes by direction string — verify 4 branches exist
+[ ] R16-gate: gate_engine.run() routes by direction string — verify 4 branches exist
+[ ] R16-restart: After this audit session, any Python changes must trigger kill+restart+health-check
 [ ] R18: liquidity gate strike nearness uses direction-aware threshold
-[ ] R21: last analysis result — does it pass quant filter? (is IVR actually flowing?)
+[ ] R21: last analysis result — does it pass quant filter? (is IVR actually flowing? is skew returning?)
 ```
 
 ---
@@ -140,10 +162,10 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     Formula: count(hist_iv ≤ current_iv) / len(hist_iv) * 100
     NOT: (current_iv - min) / (max - min) * 100  ← that's IV percentile by range, not rank
 
-[ ] IVR threshold interpretation:
+[ ] IVR threshold interpretation (updated Day 29):
     buy_call gate → IVR < 30% = PASS (cheap IV, good time to buy)
-    sell_put gate → IVR > 50% = PASS (expensive IV, good time to sell)
-    Are these thresholds in constants.py and applied correctly?
+    sell_put gate → IVR > 35% = PASS (tastylive empirical; was 50% pre-Day 29 — verify constants.py)
+    Are these thresholds in constants.py (IVR_BUYER_PASS_PCT, IVR_SELLER_PASS_PCT) and applied correctly?
 
 [ ] Direction-DTE mapping:
     buy_call / buy_put → 45-90 DTE sweet spot enforced?
@@ -181,6 +203,14 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     IVR > 50% + buy_call → should suggest bull_call_spread instead
     Is this adjustment in sector_scan_service._analyze_etf()?
     Does it actually change the suggested_direction field?
+
+[ ] Skew computation (added Day 42):
+    skew = put_iv_30d - call_iv_30d from nearest 20-50 DTE Tradier chain
+    Positive skew = puts richer = downside tail risk priced in (normal market condition)
+    Skew is informational only — not yet wired into gate logic
+    → Read: analyze_etf() return dict — does "skew" key exist?
+    → Confirm: compute_skew() is inside try/except (non-blocking)
+    → Confirm: SKEW_TARGET_DELTA=0.30, SKEW_DTE_MIN=20, SKEW_DTE_MAX=50 in constants.py
 ```
 
 ---
@@ -189,30 +219,40 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 **Principle:** R11 (null not fake), R8 (quality banners), R15 (code is truth)
 
 ```
-[ ] Provider cascade order: IBKR Live → IBKR Cache → Alpaca → yfinance → Mock
-    Read data_service.py request_chain() — does fallback order match this?
+[ ] Provider cascade order (updated Day 39):
+    BOD Cache (bod_cache) → Tradier (tradier) → Stale Cache (ibkr_stale) → Alpaca (alpaca) → yfinance (yfinance) → Mock (mock)
+    Read data_service.py get_chain() — does fallback order match exactly?
+    IBKR LIVE IS REMOVED from this cascade. "ibkr_cache" label must NOT appear anywhere.
 
-[ ] Cache TTL: IBKR cache is 2 minutes. Is this constant in constants.py?
+[ ] Data source labels — no "ibkr_cache" anywhere (renamed to "bod_cache" Day 40):
+    grep data_service.py + data_health_service.py + analyze_service.py for "ibkr_cache" → should be zero
+
+[ ] BOD cache TTL: chain_cache.db SQLite cache. Is TTL constant in constants.py?
+    Read data_service._cache_get() — how long is a cached chain considered fresh?
+
+[ ] iv_provider selection covers all data_source values (updated Day 40):
+    "ibkr_live", "ibkr_closed", "bod_cache", "ibkr_stale" → ib_worker.provider
+    "yfinance", "tradier", "alpaca" → yf_provider
+    anything else → mock_provider
+    Read analyze_service.py iv_provider block — verify all 5+ source labels are handled
 
 [ ] Zero vs null discipline:
-    grep providers for "or 0" patterns → each one is a potential null-masking bug
-    OK: float(x or 0.0) only when 0.0 is a valid domain value (e.g., delta can be 0)
-    NOT OK: iv = data.get("iv") or 0.0 (IV of 0 is not real, it should be null)
+    grep tradier_provider.py for "or None" patterns → dangerous for 0.0 delta (KI-090)
+    OK: `float(g[k]) if g.get(k) is not None else None` ← correct form
+    NOT OK: `_f(g.get("delta")) or None` ← 0.0 becomes None
 
-[ ] Historical IV data: only IBKR provides it. No other provider should claim to have it.
-    grep alpaca_provider, marketdata_provider for "historical" + "iv" returns
-
-[ ] OI availability: IBKR reqMktData does NOT return per-contract OI.
-    Liquidity gate should check Vol > 0 for liquidity, not OI > 0 (platform limitation KI-035)
+[ ] Historical IV data: only IBKR EOD batch provides it.
+    Tradier: provides chain greeks but NOT historical IV (no get_historical_iv method)
+    yf_provider: provides get_historical_iv() via yfinance (used as IV fallback when Tradier is data_source)
+    grep tradier_provider.py for get_historical_iv → should NOT exist
 
 [ ] SPY regime source: sector_scan_service._spy_regime() → uses STA, not yfinance (Day 16 fix)
     Read the function. Is STA_BASE_URL used? No yfinance import?
 
-[ ] All provider tiers in QualityBanner:
-    ibkr_live → no banner (silent = best)
-    ibkr_cache → "Using cached chain — X min ago"
-    ibkr_stale → "Stale IBKR cache..."
-    ibkr_closed → "Market closed — estimated greeks"
+[ ] All provider tiers in QualityBanner (updated for Tradier primary):
+    bod_cache → "Using BOD cache — pre-warmed this morning"
+    tradier   → no banner (live real-time = best available)
+    ibkr_stale → "Stale cache..."
     alpaca → "Alpaca fallback — 15-min delay, no OI/volume"
     yfinance → "Emergency fallback — estimated greeks only"
     mock → "MOCK DATA — do not trade"
@@ -251,21 +291,25 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 **Principle:** R15 (code is truth), R9 (session close protocol)
 
 ```
-[ ] Count @app.route in app.py:
-    grep -c "@app.route" backend/app.py
+[ ] Count @app.route/@app.get/@app.post/@app.patch/@app.delete in app.py:
+    grep -c "@app\." backend/app.py
 
 [ ] Count endpoints in API_CONTRACTS.md:
-    Count ## POST / ## GET headers in the doc
+    Count ## POST / ## GET / ## PATCH / ## DELETE headers in the doc
 
-[ ] For each endpoint, verify response structure:
-    /api/options/analyze → verdict, gates, strategies, pnl_table, behavioral_checks
+[ ] For each key endpoint, verify response structure:
+    /api/options/analyze → verdict, gates, strategies, pnl_table, behavioral_checks, skew (Day 42)
+    /api/health → status, ibkr_connected, mock_mode, tradier_ok, tradier_error (Day 41)
     /api/sectors/scan → etfs[], spy_regime, scan_time
-    /api/sectors/analyze/{ticker} → iv_current, iv_percentile, hv_20, suggested_dte, suggested_direction
-    /api/health → status, ibkr_connected, mock_mode
+    /api/admin/batch-status → recent_runs[], next_bod, next_eod (Day 35)
+    /api/admin/warm-cache (POST) → status, tickers_ok, tickers_failed, duration_sec (BOD)
+    /api/admin/seed-iv/all (POST) → status, tickers_ok, tickers_failed (EOD)
+    /api/best-setups → as_of, candidates_scanned, setups[], all_results[] (Day 29)
 
 [ ] Verify field names match between code and docs:
-    Look for recent renames (e.g., impliedVol vs iv — was a bug Day 15)
-    Look for added fields not yet documented
+    "skew" field in analyze response — is it in API_CONTRACTS.md?
+    "tradier_ok", "tradier_error" in health response — is it in API_CONTRACTS.md? ✓ (added Day 41)
+    "bod_cache" as data_source — is API_CONTRACTS.md updated from "ibkr_cache"?
 
 [ ] Verify STA field mappings still match STA's actual response:
     Key ones that have burned us: days_until vs days_away, suggestedEntry vs levels.entry
@@ -291,12 +335,13 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     naked_put
 
 [ ] Live test coverage (update this table each audit):
-    | Direction  | Live Tested? | Last Test | Bugs Found |
-    |------------|-------------|-----------|------------|
-    | buy_call   | YES ✅      | Day 21 (XLU ETF) | none active |
-    | sell_put   | YES ✅      | Day 27 (XLK ETF) | none active |
-    | sell_call  | YES ✅      | Day 21 (XLU ETF) | none active |
-    | buy_put    | YES ✅      | Day 21 (XLU ETF) | none active |
+    | Direction  | Live Tested? | Last Test | Provider | Bugs Found |
+    |------------|-------------|-----------|----------|------------|
+    | buy_call   | YES ✅      | Day 21 (XLU ETF) | IBKR | none active |
+    | sell_put   | YES ✅      | Day 40 BOD smoke (5 ETFs) | Tradier | KI-091 fixed (ITM put filter) |
+    | sell_call  | YES ✅      | Day 21 (XLU ETF) | IBKR | none active |
+    | buy_put    | YES ✅      | Day 21 (XLU ETF) | IBKR | none active |
+    Note: buy_call, sell_call, buy_put not yet live-tested with Tradier as primary source.
 
 [ ] IVR direction adjustment in sector_scan_service:
     IVR > 50% + buy_call → bull_call_spread (verified Day 16 ✅)
@@ -382,6 +427,7 @@ Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction cover
 | Day 17 Full Audit | Mar 22, 2026 | 1-8 | 10 checks | 0 | 2 found+fixed | KI-060 SPY None masking fixed, KI-061 IVR formula verified. Post-fix: 0C/2H remaining (KI-059, KI-044) |
 | Day 25 Category 9 Added | Apr 17, 2026 | 9 | New category | 0 | 0 | Frontend UX Accuracy audit added. Phase 8 UX overhaul introduced hardcoded GATE_KB + isBearish() zone logic — needs sync audit trigger. |
 | Day 27 Full Audit | Apr 21, 2026 | 1-9 | 5 findings | 0 | 1 found+fixed | bull_put_spread missing in pnl_calculator (P&L table all zeros for ETF sell_put) — FIXED. API_CONTRACTS updated (seed fields, OI source, ETF enforcement note). Direction table corrected (all 4 directions live tested Day 21+27). Post-fix: 0C/0H. |
+| Day 42 Full Audit | May 6, 2026 | 1-9 | 0 CRITICAL · 2 HIGH · 3 MEDIUM | 2 HIGH + 1 MEDIUM fixed same session | 2 MEDIUM fixed end of session | First audit with Tradier as primary. Framework updated to v1.3 before run. All findings resolved. |
 
 ---
 

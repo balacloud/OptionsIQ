@@ -117,6 +117,13 @@ SMART_MAX_STRIKES       = 12     # Smart: 12 strikes — ascending/descending so
 SMART_MAX_CONTRACTS     = 26     # Smart: 12 strikes × 2 expiries + ATM anchors
 SMART_STRIKE_WINDOW     = 0.10   # Smart: fallback ±10% when no direction hint
 
+# ---------------------------------------------------------------------------
+# Skew computation (30-delta put vs call IV spread)
+# ---------------------------------------------------------------------------
+SKEW_TARGET_DELTA       = 0.30   # Standard 30-delta for skew measurement
+SKEW_DTE_MIN            = 20     # Nearest expiry lower bound for skew
+SKEW_DTE_MAX            = 50     # Nearest expiry upper bound for skew
+
 FULL_MAX_EXPIRIES       = 3      # Full: up to 3 expiries in DTE window
 FULL_MAX_STRIKES        = 8      # Full: 8 strikes per expiry
 FULL_MAX_CONTRACTS      = 60     # Full: up to 60 contracts (reqTickers cap)

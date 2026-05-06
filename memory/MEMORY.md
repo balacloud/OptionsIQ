@@ -8,17 +8,17 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Database: SQLite at `backend/data/` (iv_history.db + chain_cache.db)
 - STA (separate repo): `localhost:5001` — integration HTTP only, always running (user's own system)
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
-- Tradier: signing up soon (free account, no subscription needed — confirmed by support)
+- Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 41)
-v0.28.2. Polish + observability. DataFlowDiagram SVG updated: Tradier as PRIMARY LIVE (dark green), IBKR demoted to EOD-only, cascade order shown as subtext. FOMC 2026 dates verified correct in constants.py (no code changes). Tradier startup health ping: `_tradier_ok` + `_tradier_error` set at startup, surfaced in /api/health. No bug fixes. 36 tests. Next: skew computation (P0), KI-064 IVR mismatch (P1), KI-075 GateExplainer audit (P2).
+## Current Phase (Day 42)
+v0.29.0. Skew + audit hardening. `compute_skew()` in tradier_provider.py (30-delta put/call IV spread, 2 Tradier calls, 8-field response dict). analyze_etf() returns `skew` non-blocking. Full Day 42 audit: 0 CRITICAL · 2 HIGH · 3 MEDIUM — all resolved. QualityBanner ibkr_cache→bod_cache fixed (KI-094). BatchStatusPanel UTC timestamp fixed (KI-095). ACCOUNT_SIZE silent default removed. Rule 16 added (restart backend after .py edits). MASTER_AUDIT_FRAMEWORK v1.3. 36 tests. Next: KI-064 IVR mismatch (P0), KI-075 GateExplainer audit (P1).
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY41_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY41.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY42_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY42.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -28,7 +28,8 @@ backend/
   app.py              492 lines — Rule 4 violation (max 150). _seed_iv_for_ticker moved to batch_service.py (Day 35). _run_one still inline.
   batch_service.py    UPDATED (Day 37+39) — 239 lines. seed_iv_for_ticker(), run_bod_batch(), run_eod_batch().
                       run_startup_catchup() daemon. _ran_on() min_duration=1.0 (Day 39). startup delay 10s→30s.
-  tradier_provider.py UPDATED (Day 39+40) — 175 lines. get_underlying_price(), get_options_chain(), get_ohlcv_daily().
+  tradier_provider.py UPDATED (Day 39+40+42) — 210 lines. get_underlying_price(), get_options_chain(), get_ohlcv_daily().
+                      compute_skew() added Day 42: 2 Tradier calls, nearest 20-50 DTE expiry, 30-delta put/call IV spread.
                       Primary live chain source. TRADIER_KEY env var. Backup: data_service.py.pre_tradier_primary.
                       Day 40: KI-090 delta coercion fix + KI-091 direction-aware OTM filter.
   best_setups_service.py NEW (Day 39) — 80 lines. run_one_setup() extracted from app.py _run_one closure (KI-086).
@@ -37,9 +38,10 @@ backend/
   app.py              UPDATED (Day 39) — 450 lines. TradierProvider init + best_setups_service import.
   ibkr_provider.py    UPDATED (Day 39) — OTM filter for sell_put in _fetch_structure() (KI-067 fix).
   strategy_ranker.py  UPDATED (Day 39) — _rank_sell_put_spread() fallback → return [] (KI-067 fix).
-  analyze_service.py  DONE (Day 24+28+29+33+34+36+40) — 841 lines. _resolve_underlying_hint() (Day 34).
+  analyze_service.py  DONE (Day 24+28+29+33+34+36+40+42) — ~850 lines. _resolve_underlying_hint() (Day 34).
                       Day 36: IV patching from MD.app + md_supplement. Day 37: MD.app IV stored daily.
                       Day 40: KI-093 — iv_provider "tradier"/"alpaca" → yf_provider; "ibkr_cache"→"bod_cache" in set.
+                      Day 42: compute_skew() called non-blocking, result in response as `skew` dict.
   constants.py        DONE (Day 19+27+28+29+32) — MIN_CREDIT_WIDTH_RATIO=0.33, IVR_SELLER_PASS_PCT=35,
                       HV_IV_SELL_PASS_RATIO=1.05 (IV/HV). VIX_LOW_VOL=15, VIX_STRESS=30, VIX_CRISIS=40.
   marketdata_provider.py  DONE (Day 27+35+36) — 114 lines. OI/volume + IV+greeks supplement. Non-blocking.
@@ -61,7 +63,8 @@ backend/
                       New: test_resolve_underlying_hint.py (3 tests, KI-088).
 
 frontend/
-  components/DataProvenance.jsx  DONE (Day 29+34+35+38+39+41) — ManualBatchTriggers added Day 39. DataFlowDiagram SVG updated Day 41: Tradier PRIMARY LIVE (dark green), IBKR EOD-only, cascade subtext.
+  components/DataProvenance.jsx  DONE (Day 29+34+35+38+39+41+42) — ManualBatchTriggers added Day 39. DataFlowDiagram SVG updated Day 41. fmtTime() UTC fix Day 42 (SQLite timestamps normalized before new Date()).
+  App.jsx                        DONE (Day 21+25+29+31+42) — QualityBanner ibkr_cache→bod_cache (Day 42), tradier added to no-banner early-return.
   components/BestSetups.jsx      DONE (Day 31+32) — IV/HV ratio column, 7-col grid.
 ```
 
@@ -85,12 +88,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 42 Priorities
-1. **P0 (NICE):** Skew computation — put_iv_30delta - call_iv_30delta from Tradier chain. Surface as `skew` field in analyze response.
-2. **P1 (MEDIUM):** KI-064 investigation — IVR mismatch L2 vs L3 root cause (~5pp gap).
-3. **P2 (LOW):** KI-075 — GateExplainer GATE_KB audit (Category 9 sweep, seller gates changed since Day 25).
-4. **P3 (LOW):** KI-077 — DirectionGuide sell_put "capped" label fix.
-5. **P4 (LOW):** KI-081 — CPI/NFP/PCE macro events calendar in constants.py.
+## Day 43 Priorities
+1. **P0 (MEDIUM):** KI-064 — IVR mismatch L2 vs L3 root cause (~5pp gap). Check chain profile, time delta, IV source diff.
+2. **P1 (LOW):** KI-075 — GateExplainer GATE_KB audit (Category 9 sweep, seller gates changed since Day 25).
+3. **P2 (LOW):** KI-077 — DirectionGuide sell_put "capped" label fix.
+4. **P3 (LOW):** KI-081 — CPI/NFP/PCE macro events calendar in constants.py.
+5. **P4:** Category 7 live tests — buy_call/sell_call/buy_put via Tradier (only sell_put tested Day 40).
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -100,9 +103,9 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
-- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.2.
-- `docs/versioned/KNOWN_ISSUES_DAY41.md`
-- `docs/status/PROJECT_STATUS_DAY41_SHORT.md`
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.3 (Day 42).
+- `docs/versioned/KNOWN_ISSUES_DAY42.md`
+- `docs/status/PROJECT_STATUS_DAY42_SHORT.md`
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
 - `docs/Research/ki-plans/KI-088_Day34.md` — Opus plan for KI-088 + MarketData.app diagnostic

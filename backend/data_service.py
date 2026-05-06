@@ -8,7 +8,7 @@ Persistent SQLite chain cache survives Flask restarts (TTL per constants.py).
 Circuit breaker: 2 consecutive IBKR failures → 45s cooldown.
 
 Provider quality labels returned:
-  "ibkr_cache"  — served from BOD pre-warm cache (IBKR-sourced at 9:31 AM)
+  "bod_cache"   — served from BOD pre-warm cache (Tradier-sourced at 9:31 AM)
   "tradier"     — Tradier REST real-time (primary live source — no IB Gateway needed)
   "ibkr_stale"  — beyond TTL but Tradier also failed
   "alpaca"      — Alpaca REST fallback (15-min delayed, real greeks + OI)

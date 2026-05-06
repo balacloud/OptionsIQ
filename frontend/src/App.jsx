@@ -47,11 +47,12 @@ const FILTER_OPTIONS = ['all', 'analyze', 'watch', 'skip'];
 
 function QualityBanner({ data }) {
   const source = data?.data_source;
-  if (!source || source === 'ibkr_live') return null;
+  // tradier = real-time live (same tier as ibkr_live) — no banner needed
+  if (!source || source === 'ibkr_live' || source === 'tradier') return null;
 
   const BANNERS = {
-    ibkr_cache:   { cls: 'banner-cached',  icon: 'i', text: (d) => `Cached chain — ${Math.round((Date.now() - new Date(d.timestamp + 'Z').getTime()) / 60000)} min old.` },
-    ibkr_stale:   { cls: 'banner-delayed', icon: '!', text: (d) => `Stale IBKR cache — IBKR unavailable.` },
+    bod_cache:    { cls: 'banner-cached',  icon: 'i', text: () => 'BOD cache — pre-warmed this morning via Tradier. Chain is from ~9:31 AM ET.' },
+    ibkr_stale:   { cls: 'banner-delayed', icon: '!', text: () => 'Stale cache — Tradier unavailable, using last known-good chain.' },
     ibkr_closed:  { cls: 'banner-delayed', icon: '!', text: () => 'Market closed — estimated greeks (BS + HV). No bid/ask/OI.' },
     alpaca:       { cls: 'banner-delayed', icon: '!', text: () => 'Alpaca fallback — 15-min delayed. No OI/volume.' },
     yfinance:     { cls: 'banner-delayed', icon: '!', text: () => 'yfinance fallback — greeks estimated via Black-Scholes.' },

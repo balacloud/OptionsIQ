@@ -27,6 +27,9 @@ from constants import (
     FULL_MAX_EXPIRIES,
     FULL_MAX_STRIKES,
     FULL_STRIKE_WINDOW,
+    SKEW_DTE_MAX,
+    SKEW_DTE_MIN,
+    SKEW_TARGET_DELTA,
     SMART_MAX_EXPIRIES,
     SMART_MAX_STRIKES,
     SMART_STRIKE_WINDOW,
@@ -219,6 +222,96 @@ class TradierProvider:
             "underlying_price": underlying,
             "asof": asof,
             "contracts": contracts,
+        }
+
+    def compute_skew(self, ticker: str, underlying: float | None = None) -> dict | None:
+        """
+        30-delta IV skew: put_iv_30d - call_iv_30d from the nearest SKEW_DTE_MIN–SKEW_DTE_MAX expiry.
+
+        Positive skew = puts more expensive than calls = market pricing in downside tail risk.
+        Negative skew = calls more expensive (rare; seen in meme stocks or supply squeezes).
+
+        Returns None if no valid expiry or insufficient delta coverage.
+        Makes 2 API calls (expirations + single chain fetch).
+        """
+        symbol = ticker.upper()
+        if underlying is None:
+            underlying = self.get_underlying_price(symbol)
+
+        exp_data = self._get("/markets/options/expirations", {
+            "symbol": symbol, "includeAllRoots": "false",
+        })
+        exp_dates = (exp_data.get("expirations") or {}).get("date") or []
+
+        today = date.today()
+        target_exp: str | None = None
+        target_dte: int | None = None
+        for d in exp_dates:
+            try:
+                dte = (datetime.strptime(d, "%Y-%m-%d").date() - today).days
+                if SKEW_DTE_MIN <= dte <= SKEW_DTE_MAX:
+                    target_exp = d
+                    target_dte = dte
+                    break
+            except Exception:
+                continue
+
+        if not target_exp:
+            logger.debug("Skew: no expiry in %d-%d DTE for %s", SKEW_DTE_MIN, SKEW_DTE_MAX, symbol)
+            return None
+
+        chain_data = self._get("/markets/options/chains", {
+            "symbol": symbol, "expiration": target_exp, "greeks": "true",
+        })
+        options = (chain_data.get("options") or {}).get("option") or []
+        if isinstance(options, dict):
+            options = [options]
+
+        calls: list[dict] = []
+        puts: list[dict] = []
+        for opt in options:
+            g = opt.get("greeks") or {}
+            if g.get("delta") is None:
+                continue
+            try:
+                delta = float(g["delta"])
+            except Exception:
+                continue
+            iv_raw = _f(g.get("smv_vol")) or _f(g.get("mid_iv"))
+            if iv_raw <= 0:
+                continue
+            strike = _f(opt.get("strike"))
+            if strike <= 0:
+                continue
+            entry = {"strike": strike, "delta": delta, "iv": round(iv_raw * 100, 2)}
+            if opt.get("option_type") == "call":
+                calls.append(entry)
+            elif opt.get("option_type") == "put":
+                puts.append(entry)
+
+        if not calls or not puts:
+            return None
+
+        # Nearest to 30-delta: calls have positive delta (~0.30), puts negative (~-0.30)
+        best_call = min(calls, key=lambda c: abs(c["delta"] - SKEW_TARGET_DELTA))
+        best_put = min(puts, key=lambda c: abs(c["delta"] - (-SKEW_TARGET_DELTA)))
+
+        skew = round(best_put["iv"] - best_call["iv"], 2)
+        logger.info(
+            "Skew %s: put_iv=%.1f%% (Δ%.2f @ %.2f) — call_iv=%.1f%% (Δ%.2f @ %.2f) → skew=%.2f%%",
+            symbol, best_put["iv"], best_put["delta"], best_put["strike"],
+            best_call["iv"], best_call["delta"], best_call["strike"], skew,
+        )
+        return {
+            "skew": skew,
+            "put_iv_30d": best_put["iv"],
+            "call_iv_30d": best_call["iv"],
+            "put_delta": round(best_put["delta"], 3),
+            "call_delta": round(best_call["delta"], 3),
+            "put_strike": best_put["strike"],
+            "call_strike": best_call["strike"],
+            "expiry": target_exp,
+            "dte": target_dte,
         }
 
     def get_ohlcv_daily(self, ticker: str, days: int = 90) -> list[dict]:

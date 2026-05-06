@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 29 (April 27, 2026)
+> **Last Updated:** Day 42 (May 6, 2026)
 
 ---
 
@@ -207,7 +207,7 @@ Document which approach is used. Never apply a single nearness threshold across 
 
 ## SESSION RULES
 
-### The 15 Process Rules:
+### The 16 Process Rules:
 1. **START of session:** Read `CLAUDE_CONTEXT.md` first — always
 2. **BEFORE modifying any file:** READ it first using Read tool — never assume structure
 3. **NEVER assume code structure** — always verify with actual file
@@ -223,6 +223,7 @@ Document which approach is used. Never apply a single nearness threshold across 
 13. **EXHAUSTIVE VERIFICATION** — When testing artifacts, check EVERY item, not a sample
 14. **UPDATE "LAST UPDATED" DATES** — When modifying any file in `docs/stable/`, update the `Last Updated` header
 15. **NEVER IMPLEMENT WITHOUT VALIDATION** — Don't implement features based on assumptions. Require verified behavior from actual code or explicit user direction
+16. **RESTART BACKEND AFTER PYTHON CHANGES** — Flask runs with `debug=False` (no auto-reload). After ANY edit to `.py` files, immediately kill and restart the backend (`lsof -ti:5051 | xargs kill -9` then `nohup python3 app.py > backend.log 2>&1 &`). Verify with `curl /api/health` before declaring the feature done. Do NOT leave the user running stale code.
 
 ---
 

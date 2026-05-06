@@ -639,7 +639,7 @@ def get_live_price(ticker: str, *, ib_worker, yf_provider) -> float:
 def analyze_etf(payload: dict, ticker: str, *,
                 data_svc, ib_worker, yf_provider, mock_provider,
                 strategy_ranker, pnl_calculator, iv_store,
-                spy_regime_fn, md_provider=None) -> dict:
+                spy_regime_fn, md_provider=None, tradier_provider=None) -> dict:
     """
     Main analysis orchestrator. Returns a dict (caller jsonifies).
     Extracted from app.py _analyze_options_inner() on Day 24.
@@ -786,6 +786,14 @@ def analyze_etf(payload: dict, ticker: str, *,
     if is_etf:
         apply_etf_gate_adjustments(gates, direction, account_size, gate_payload, strategies_preview, data_source)
 
+    # 30-delta skew: put_iv_30d - call_iv_30d (non-blocking — Tradier only, separate expiry fetch)
+    skew_data: dict | None = None
+    if tradier_provider is not None:
+        try:
+            skew_data = tradier_provider.compute_skew(ticker, underlying)
+        except Exception as _se:
+            logger.debug("Skew computation skipped for %s: %s", ticker, _se)
+
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")
 
@@ -838,4 +846,5 @@ def analyze_etf(payload: dict, ticker: str, *,
             ["sell_call", "buy_put"] if swing_data.get("signal") == "BUY" else
             ["buy_call", "sell_put"] if swing_data.get("signal") == "SELL" else []
         ),
+        "skew": skew_data,
     }

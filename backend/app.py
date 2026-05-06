@@ -159,7 +159,7 @@ def analyze_options():
             yf_provider=_yf_provider, mock_provider=mock_provider,
             strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
             iv_store=iv_store, spy_regime_fn=_spy_regime,
-            md_provider=_md_provider,
+            md_provider=_md_provider, tradier_provider=_tradier_provider,
         )
         return jsonify(result)
     except Exception as exc:
@@ -418,7 +418,7 @@ def best_setups():
         if s.get("suggested_direction") and s.get("action") == "ANALYZE"
     ]
 
-    account_size = float(os.getenv("ACCOUNT_SIZE", 25000))
+    account_size = float(os.getenv("ACCOUNT_SIZE"))  # validated at startup (Rule 7)
     risk_pct = float(os.getenv("RISK_PCT", 0.01))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
