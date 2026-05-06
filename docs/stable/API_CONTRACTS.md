@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 36 (May 4, 2026)
+> **Last Updated:** Day 41 (May 6, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -21,8 +21,13 @@ Returns connection status of all subsystems.
     "seconds_remaining": 0.0
   },
   "mock_mode": false,
+  "tradier_ok": true,
+  "tradier_error": null,
   "version": "2.0"
 }
+```
+`tradier_ok`: `true` if startup ping to Tradier API succeeded. `false` if key missing or network error.
+`tradier_error`: error message string if `tradier_ok=false`, `null` otherwise.
 ```
 
 ---

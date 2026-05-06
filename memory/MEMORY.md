@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: signing up soon (free account, no subscription needed — confirmed by support)
 
-## Current Phase (Day 40)
-v0.28.1. Tradier is production-ready — KI-090/091/092/093 all resolved. delta coercion fix, direction-aware strike window, "ibkr_cache"→"bod_cache" rename, iv_provider tradier mapping. Smoke test passed: IB Gateway OFF, 5/5 Best Setups = data_source=tradier, 0 ITM puts, real deltas. Next: DataFlowDiagram SVG update + FOMC audit (nice-to-haves only — no blockers).
+## Current Phase (Day 41)
+v0.28.2. Polish + observability. DataFlowDiagram SVG updated: Tradier as PRIMARY LIVE (dark green), IBKR demoted to EOD-only, cascade order shown as subtext. FOMC 2026 dates verified correct in constants.py (no code changes). Tradier startup health ping: `_tradier_ok` + `_tradier_error` set at startup, surfaced in /api/health. No bug fixes. 36 tests. Next: skew computation (P0), KI-064 IVR mismatch (P1), KI-075 GateExplainer audit (P2).
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY40_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY40.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY41_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY41.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -61,7 +61,7 @@ backend/
                       New: test_resolve_underlying_hint.py (3 tests, KI-088).
 
 frontend/
-  components/DataProvenance.jsx  DONE (Day 29+34+35+38+39) — ManualBatchTriggers added Day 39 (idempotency check, two-click confirm). DataFlowDiagram SVG needs update (still shows IBKR as primary — KI Day 40).
+  components/DataProvenance.jsx  DONE (Day 29+34+35+38+39+41) — ManualBatchTriggers added Day 39. DataFlowDiagram SVG updated Day 41: Tradier PRIMARY LIVE (dark green), IBKR EOD-only, cascade subtext.
   components/BestSetups.jsx      DONE (Day 31+32) — IV/HV ratio column, 7-col grid.
 ```
 
@@ -85,12 +85,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 41 Priorities (all nice-to-haves — no blockers)
-1. **P0:** Update DataFlowDiagram SVG in DataProvenance.jsx — IBKR demoted to EOD-only, Tradier as primary.
-2. **P1:** FOMC 2026 dates audit in constants.py (verify Jun 18, Jul 30, Sep 17, Nov 4, Dec 10).
-3. **P2:** Tradier startup health ping — verify TRADIER_KEY on startup, surface in /api/health.
-4. **P3:** Skew computation from Tradier chain (put_iv_30delta - call_iv_30delta).
-5. **P4:** KI-064 investigation — IVR mismatch L2 vs L3 root cause.
+## Day 42 Priorities
+1. **P0 (NICE):** Skew computation — put_iv_30delta - call_iv_30delta from Tradier chain. Surface as `skew` field in analyze response.
+2. **P1 (MEDIUM):** KI-064 investigation — IVR mismatch L2 vs L3 root cause (~5pp gap).
+3. **P2 (LOW):** KI-075 — GateExplainer GATE_KB audit (Category 9 sweep, seller gates changed since Day 25).
+4. **P3 (LOW):** KI-077 — DirectionGuide sell_put "capped" label fix.
+5. **P4 (LOW):** KI-081 — CPI/NFP/PCE macro events calendar in constants.py.
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -101,8 +101,8 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.2.
-- `docs/versioned/KNOWN_ISSUES_DAY36.md`
-- `docs/status/PROJECT_STATUS_DAY36_SHORT.md`
+- `docs/versioned/KNOWN_ISSUES_DAY41.md`
+- `docs/status/PROJECT_STATUS_DAY41_SHORT.md`
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
 - `docs/Research/ki-plans/KI-088_Day34.md` — Opus plan for KI-088 + MarketData.app diagnostic

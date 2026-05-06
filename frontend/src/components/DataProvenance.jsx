@@ -392,9 +392,9 @@ function DataFlowDiagram() {
           <line x1="210" y1="54" x2="210" y2="72" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
 
           {/* 2. Provider row */}
-          <rect x="48" y="76" width="88" height="30" rx="4" fill="#1e40af" />
-          <text x="92" y="87" textAnchor="middle" fill="#bfdbfe" fontSize="11" fontWeight="600">IBKR</text>
-          <text x="92" y="100" textAnchor="middle" fill="#93c5fd" fontSize="9">primary</text>
+          <rect x="48" y="76" width="88" height="30" rx="4" fill="#14532d" />
+          <text x="92" y="87" textAnchor="middle" fill="#bbf7d0" fontSize="11" fontWeight="600">Tradier</text>
+          <text x="92" y="100" textAnchor="middle" fill="#86efac" fontSize="9">PRIMARY LIVE</text>
 
           <rect x="144" y="76" width="80" height="30" rx="4" fill="#065f46" />
           <text x="184" y="87" textAnchor="middle" fill="#a7f3d0" fontSize="11" fontWeight="600">Alpaca</text>
@@ -402,7 +402,7 @@ function DataFlowDiagram() {
 
           <rect x="232" y="76" width="84" height="30" rx="4" fill="#374151" />
           <text x="274" y="87" textAnchor="middle" fill="#d1d5db" fontSize="11" fontWeight="600">yfinance</text>
-          <text x="274" y="100" textAnchor="middle" fill="#9ca3af" fontSize="9">OHLCV only</text>
+          <text x="274" y="100" textAnchor="middle" fill="#9ca3af" fontSize="9">emergency</text>
 
           {/* STA — side feed (dashed blue) */}
           <rect x="326" y="76" width="90" height="30" rx="4" fill="#0c4a6e" />
@@ -416,8 +416,9 @@ function DataFlowDiagram() {
           <line x1="348" y1="106" x2="275" y2="154" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="4,3" markerEnd="url(#dfa-b)" />
 
           {/* 3. DataService Cascade */}
-          <rect x="110" y="152" width="200" height="28" rx="4" fill="#1e293b" stroke="#334155" strokeWidth="1" />
-          <text x="210" y="171" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="600">DataService Cascade</text>
+          <rect x="110" y="152" width="200" height="30" rx="4" fill="#1e293b" stroke="#334155" strokeWidth="1" />
+          <text x="210" y="164" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="600">DataService Cascade</text>
+          <text x="210" y="176" textAnchor="middle" fill="#475569" fontSize="8">BOD Cache · Tradier · Alpaca · yfinance</text>
 
           {/* MD.app supplement — dashed orange */}
           <rect x="326" y="154" width="100" height="24" rx="4" fill="#7c2d12" />
@@ -425,7 +426,7 @@ function DataFlowDiagram() {
           <text x="376" y="174" textAnchor="middle" fill="#fdba74" fontSize="9">OI / Vol / SpotIV</text>
           <line x1="326" y1="166" x2="311" y2="166" stroke="#f97316" strokeWidth="1.5" strokeDasharray="3,2" markerEnd="url(#dfa-o)" />
 
-          <line x1="210" y1="180" x2="210" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
+          <line x1="210" y1="182" x2="210" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
 
           {/* 4. iv_store.db — IVR */}
           <rect x="100" y="204" width="220" height="28" rx="4" fill="#78350f" />
@@ -471,10 +472,10 @@ function DataFlowDiagram() {
 
           {/* actions */}
           <rect x="488" y="152" width="160" height="24" rx="4" fill="#0f172a" stroke="#1e293b" strokeWidth="1" />
-          <text x="568" y="168" textAnchor="middle" fill="#94a3b8" fontSize="10">Pre-warm 16 ETF chains</text>
+          <text x="568" y="168" textAnchor="middle" fill="#94a3b8" fontSize="10">Pre-warm chains (Tradier)</text>
 
           <rect x="642" y="152" width="160" height="24" rx="4" fill="#0f172a" stroke="#1e293b" strokeWidth="1" />
-          <text x="722" y="168" textAnchor="middle" fill="#94a3b8" fontSize="10">Seed IV history + OHLCV</text>
+          <text x="722" y="168" textAnchor="middle" fill="#94a3b8" fontSize="10">Seed IV + OHLCV (IBKR)</text>
 
           <line x1="568" y1="176" x2="568" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
           <line x1="722" y1="176" x2="722" y2="200" stroke="#64748b" strokeWidth="1.5" markerEnd="url(#dfa-a)" />
@@ -499,7 +500,7 @@ function DataFlowDiagram() {
             <text x="2" y="0" fill="#334155" fontSize="10" fontWeight="700" letterSpacing="1">LEGEND</text>
             {[
               { fill: '#4c1d95', label: 'Trigger' },
-              { fill: '#1e40af', label: 'Data Source' },
+              { fill: '#14532d', label: 'Primary Src' },
               { fill: '#78350f', label: 'SQLite DB' },
               { fill: '#1e3a8a', label: 'Processing' },
               { fill: '#064e3b', label: 'Output' },

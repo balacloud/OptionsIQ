@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 40 (May 5, 2026)
-> **Current Version:** v0.28.1
+> **Last Updated:** Day 41 (May 6, 2026)
+> **Current Version:** v0.28.2
 
 ---
 
@@ -192,7 +192,8 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-091: Tradier direction-aware strike window — sell_put OTM filter + sell_call OTM filter ✅ Day 40
 - [x] KI-092: data_source label drift — "ibkr_cache" → "bod_cache" in data_service + data_health_service ✅ Day 40
 - [x] KI-093: analyze_service.py iv_provider — "tradier"/"alpaca" now map to yf_provider ✅ Day 40
-- [ ] DataFlowDiagram SVG update — show Tradier as primary, IBKR as EOD-only
+- [x] DataFlowDiagram SVG update — Tradier as PRIMARY LIVE (dark green), IBKR demoted to EOD-only, cascade subtext ✅ Day 41
+- [x] Tradier startup health ping — `_tradier_ok`/`_tradier_error` in /api/health ✅ Day 41
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -268,6 +269,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 | v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |
 | v0.21.0 | Day 29 | **Data observability + gate hardening.** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive empirical), _credit_width() in strategy_ranker, bear_call/bull_put R1/R2 wired. HV/IV VRP gate: _etf_hv_iv_seller_gate() (Sinclair — sell only when IV>HV). VIX regime gate: <15 warn, >30 warn, >40 fail. IVR thresholds: 50→35 (tastylive 60-70% frequency improvement). FOMC imminent fix (<5 days now warns, was falling through). Data Health tab: GET /api/data-health with field-level provenance per ETF (7 fields × 15 ETFs). Best Setups tab: parallel scan, manual trigger, IVR watchlist. Pre-analysis prompts + Paper Trade Dashboard shipped. Tab state retention (display:none vs unmount). IVR key mismatch fixed (was always null). Signal board display:grid override fixed. KI-083/084 discovered via data health (XLE OHLCV corrupted, XLC/XLRE missing). |
 | v0.23.0 | Day 31 | **LearnTab Perplexity redesign + UX polish + KI-084/085 resolved.** LearnTab: complete rewrite as 5-panel Perplexity-style trade education panel (Risk/Reward, Strike Zones, Breakeven, Timing/DTE, Safety Gates). Context-aware: real ETF price/strike/premium/expiry from analysis; XLF bear call defaults otherwise. SVG number line with staggered markers (no overlap regardless of proximity). VIX badge in RegimeBar — color-coded per regime (KI-085 resolved). XLRE/SCHB OHLCV seeded (KI-084/087 resolved). Paper trade workflow rebuilt: PaperTradeBanner (strategy picker + confirmation), PaperTradeDashboard (mark/close/delete), PATCH + DELETE endpoints. Best Setups as home screen: default tab 'setups', auto-scan on mount, clickable SetupCards → handleSelectFromSetups → analysis panel + tab switch. |
+| v0.28.2 | Day 41 | **Polish + observability.** DataFlowDiagram SVG: Tradier as PRIMARY LIVE, IBKR EOD-only, cascade subtext. FOMC 2026 dates verified correct. Tradier startup health ping: tradier_ok + tradier_error in /api/health. No bug fixes. 36 tests. |
 | v0.28.1 | Day 40 | **Tradier production-ready — KI-090/091/092/093 resolved.** delta coercion fix (`_f(...) or None` → key-presence check). Direction-aware OTM filter in tradier_provider (sell_put + sell_call). "ibkr_cache" → "bod_cache" rename in data_service + data_health_service. iv_provider "tradier"/"alpaca" → yf_provider. Smoke test passed: IB Gateway OFF, 5/5 Best Setups = data_source=tradier. |
 | v0.28.0 | Day 39 | **Tradier primary + KI-086/KI-067 resolved.** tradier_provider.py (165 lines). IBKR removed from DataService live path — IB Gateway EOD-only. Cascade: BOD cache → Tradier → stale → Alpaca → yfinance → Mock. best_setups_service.py extracted (app.py 497→449). QQQ sell_put ITM fix (ibkr_provider OTM filter + strategy_ranker return []). ARCH_DECISION_TRADIER_PRIMARY.md + backup. Manual BOD/EOD triggers with idempotency. startup catchup 10s→30s, _ran_on min_duration=1.0. |
 | v0.27.1 | Day 38 | DataFlowDiagram SVG in DataProvenance tab. MD.app confirmed FREE tier. |

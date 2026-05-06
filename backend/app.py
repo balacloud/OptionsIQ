@@ -65,11 +65,21 @@ except AlpacaNotAvailableError as _e:
     logger.warning("AlpacaProvider unavailable: %s", _e)
 
 _tradier_key = os.getenv("TRADIER_KEY")
+_tradier_ok: bool = False
+_tradier_error: str | None = None
 if _tradier_key:
     _tradier_provider = TradierProvider(_tradier_key)
     logger.info("TradierProvider initialised (tier 2 fallback — real-time)")
+    try:
+        _tradier_provider.get_underlying_price("QQQ")
+        _tradier_ok = True
+        logger.info("TradierProvider health check passed")
+    except Exception as _te:
+        _tradier_error = str(_te)
+        logger.warning("TradierProvider health check FAILED: %s", _te)
 else:
     _tradier_provider = None
+    _tradier_error = "TRADIER_KEY not configured"
     logger.warning("TradierProvider: TRADIER_KEY not set — Tradier fallback disabled")
 
 data_svc = DataService(
@@ -121,6 +131,8 @@ def health():
             "ibkr_error": ib_status.get("error"),
             "circuit_breaker": ib_status.get("circuit_breaker"),
             "mock_mode": not ib_status["connected"],
+            "tradier_ok": _tradier_ok,
+            "tradier_error": _tradier_error,
             "version": VERSION,
         }
     )
