@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 43 (May 6, 2026)
+> **Last Updated:** Day 44 (May 6, 2026)
 > **Current Version:** v0.30.0
-> **Project Phase:** Defect sweep — 4 known issues resolved (KI-064/075/077/081). ATM IV fix for IVR consistency. GateExplainer GATE_KB drift plugged. Macro events calendar (CPI/NFP/PCE) added to gate. fomc_days_away silent 999 bug fixed. 36 tests.
+> **Project Phase:** Verification session — KI-076 confirmed correct (no bug), Tradier live tests all 4 directions confirmed, data requirements audit (BOD zero IBKR, EOD hard IBKR). No code changes. 36 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY43_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY43.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY44_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY44.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -234,14 +234,15 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY43.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY44.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
 Open (LOW):
-2. **KI-076: TradeExplainer isBearish() not live-tested** — all 4 directions not verified live.
+2. **KI-086 partial: app.py `_run_one` still inline** — ~449 lines, Rule 4 (max 150) violated. best_setups_service.py extracted Day 39, `_run_one` closure still inline.
 
+Resolved (Day 44): KI-076 (TradeExplainer isBearish() — no bug, all 4 directions verified correct via live API). Tradier all 4 directions confirmed (Category 7).
 Resolved (Day 43): KI-064 (IVR mismatch ATM IV fix), KI-075 (GATE_KB drift + DTE constants), KI-077 (sell_put label), KI-081 (macro events CPI/NFP/PCE). Bonus: fomc_days_away silent 999 bug.
 Resolved (Day 42): KI-094 (QualityBanner ibkr_cache key), KI-095 (BatchStatusPanel UTC timestamp). Plus 4 audit MEDIUM fixes same session.
 Resolved (Day 40): KI-090/091/092/093 — Tradier delta coercion, direction-aware strike window, bod_cache rename, iv_provider tradier mapping.
@@ -291,6 +292,7 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 44 | May 6, 2026 | **Verification session (v0.30.0).** KI-076: TradeExplainer isBearish() verified correct (no bug). Tradier all 4 directions live-confirmed. Data requirements audit: BOD=zero IBKR, EOD=hard IBKR. No code changes. |
 | Day 43 | May 6, 2026 | **Defect sweep (v0.30.0).** KI-064: ATM contract IV in _extract_iv_data() — IVR L2/L3 gap eliminated. KI-075: GATE_KB hv_iv_vrp+vix_regime entries added; ETF sell_put DTE gate fixed to use ETF_DTE_SELLER_PASS_MIN/MAX (was using wrong single-stock VCP constants). KI-077: sell_put risk label. KI-081: MACRO_DATES (CPI/NFP/PCE 2026-2027) + _days_until_next_macro() + macro events in gate + fomc_days_away silent 999 bug fixed. |
 | Day 42 | May 6, 2026 | **Skew + full audit (v0.29.0).** `compute_skew()` shipped (Tradier 2-call fetch, put_iv_30d − call_iv_30d, 8-field response). Day 42 full audit (MASTER_AUDIT_FRAMEWORK v1.3): 0C · 2H · 3M — all resolved. QualityBanner ibkr_cache key fixed (KI-094). BatchStatusPanel UTC timestamp fixed (KI-095). ACCOUNT_SIZE silent default removed. Rule 16 added (restart backend after .py edits). |
 | Day 41 | May 6, 2026 | **Polish + observability (v0.28.2).** DataFlowDiagram SVG: Tradier as PRIMARY LIVE (dark green), IBKR demoted to EOD-only, cascade subtext added. FOMC 2026 dates verified correct (no code changes needed). Tradier startup health ping: `_tradier_ok` + `_tradier_error` on startup, surfaced in `/api/health`. No bug fixes. 36 tests. |
@@ -308,33 +310,24 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 
 ---
 
-## Next Session Priorities (Day 44)
+## Next Session Priorities (Day 45)
 
-### P0 — KI-076: TradeExplainer isBearish() live test (30 min, LOW)
-All 4 directions not verified live for TradeExplainer zone colors (ITM/ATM/OTM shading).
-Run buy_call, sell_call, buy_put, sell_put on XLF or XLK to verify correct zone highlighting.
+### P0 — KI-086 partial: app.py `_run_one` extraction (45 min)
+`_run_one` closure still inline in app.py. Move to best_setups_service.py or a new module.
+app.py still ~449 lines — Rule 4 max 150 still violated. Partial fix: best_setups_service.py extracted Day 39.
 
-### P1 — Category 7: Tradier live tests buy_call / sell_call / buy_put (45 min)
-Only sell_put was end-to-end tested with Tradier primary (Day 40). Test remaining 3 directions.
-Verify: non-null deltas, correct OTM filtering, gate wiring, P&L table populates.
-
-### P2 — KI-086 partial: app.py `_run_one` extraction (45 min)
-`_run_one` closure still inline in app.py. Move to best_setups_service.py or new module.
-app.py still ~449 lines — Rule 4 max 150 still violated.
-
-### P3 — Phase 7c: Weakening → sell_call for cyclical sectors (60 min, research first)
+### P1 — Phase 7c: Weakening → sell_call for cyclical sectors (60 min, research first)
 Distinguish cyclical (XLI, XLY, XLB) vs defensive (XLU, XLP). Conditions for selling calls on weakening cyclicals.
 
-### P4 — MASTER_AUDIT_FRAMEWORK weekly sweep (90 min)
-Day 43 is 1 day after last full audit (Day 42). Skip if <7 days since last. Trigger when Day 49+.
+### P2 — MASTER_AUDIT_FRAMEWORK weekly sweep (90 min)
+Last full audit Day 42. Skip until Day 49+.
 
 ### Deferred
-- Phase 7c: Weakening → sell_call for cyclical sectors
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY43.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY43_SHORT.md` — Day 43 summary
+- `docs/versioned/KNOWN_ISSUES_DAY44.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY44_SHORT.md` — Day 44 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — canonical provider decisions

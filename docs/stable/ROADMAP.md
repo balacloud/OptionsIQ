@@ -1,5 +1,5 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 43 (May 6, 2026)
+> **Last Updated:** Day 44 (May 6, 2026)
 > **Current Version:** v0.30.0
 
 ---
@@ -145,7 +145,7 @@ Interactive education page — no backend, pure frontend with mock data.
 - [x] MasterVerdict + TopThreeCards enhanced with plain English descriptions ✅ Day 25
 - [x] Multi-LLM research synthesis: GPT-4o + Gemini + Perplexity ✅ Day 25
 - [ ] Links back to Analyze tab from Learn ("this is what OptionsIQ does when you pick buy_call") — deferred
-- [ ] Live test all 4 directions to verify TradeExplainer zone colors (KI-076) — Day 26 P0
+- [x] Live test all 4 directions to verify TradeExplainer zone colors (KI-076) — confirmed correct, no bug ✅ Day 44
 See: `docs/Research/UX_Research_Synthesis_Day25.md`
 
 ## Phase 9 — Track Record + Daily Workflow (Day 28+)
@@ -273,6 +273,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 | v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |
 | v0.21.0 | Day 29 | **Data observability + gate hardening.** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive empirical), _credit_width() in strategy_ranker, bear_call/bull_put R1/R2 wired. HV/IV VRP gate: _etf_hv_iv_seller_gate() (Sinclair — sell only when IV>HV). VIX regime gate: <15 warn, >30 warn, >40 fail. IVR thresholds: 50→35 (tastylive 60-70% frequency improvement). FOMC imminent fix (<5 days now warns, was falling through). Data Health tab: GET /api/data-health with field-level provenance per ETF (7 fields × 15 ETFs). Best Setups tab: parallel scan, manual trigger, IVR watchlist. Pre-analysis prompts + Paper Trade Dashboard shipped. Tab state retention (display:none vs unmount). IVR key mismatch fixed (was always null). Signal board display:grid override fixed. KI-083/084 discovered via data health (XLE OHLCV corrupted, XLC/XLRE missing). |
 | v0.23.0 | Day 31 | **LearnTab Perplexity redesign + UX polish + KI-084/085 resolved.** LearnTab: complete rewrite as 5-panel Perplexity-style trade education panel (Risk/Reward, Strike Zones, Breakeven, Timing/DTE, Safety Gates). Context-aware: real ETF price/strike/premium/expiry from analysis; XLF bear call defaults otherwise. SVG number line with staggered markers (no overlap regardless of proximity). VIX badge in RegimeBar — color-coded per regime (KI-085 resolved). XLRE/SCHB OHLCV seeded (KI-084/087 resolved). Paper trade workflow rebuilt: PaperTradeBanner (strategy picker + confirmation), PaperTradeDashboard (mark/close/delete), PATCH + DELETE endpoints. Best Setups as home screen: default tab 'setups', auto-scan on mount, clickable SetupCards → handleSelectFromSetups → analysis panel + tab switch. |
+| v0.30.0 | Day 44 | **Verification session.** KI-076: TradeExplainer isBearish() confirmed correct for all 4 directions (no bug). Tradier live-tested for all 4 directions (buy_call/sell_call/buy_put/sell_put). Data requirements audit: BOD=zero IBKR, EOD=hard IBKR. No code changes. |
 | v0.30.0 | Day 43 | **Defect sweep.** KI-064: ATM contract IV in _extract_iv_data() (IVR L2/L3 gap fixed). KI-075: GATE_KB hv_iv_vrp+vix_regime entries; ETF sell_put DTE gate fixed (ETF_DTE_SELLER_PASS_MIN/MAX). KI-077: sell_put risk label. KI-081: MACRO_DATES (CPI/NFP/PCE 2026-2027) + _days_until_next_macro() + macro events gate. fomc_days_away silent 999 bug fixed. |
 | v0.29.0 | Day 42 | **Skew + full audit hardening.** `compute_skew()` in tradier_provider.py (30-delta put/call IV spread, 2 Tradier calls, 8-field response). Full audit: 0C · 2H · 3M all resolved. QualityBanner ibkr_cache→bod_cache (KI-094). BatchStatusPanel UTC timestamp fix (KI-095). ACCOUNT_SIZE silent default removed. Rule 16 added (restart backend). MASTER_AUDIT_FRAMEWORK v1.3. |
 | v0.28.2 | Day 41 | **Polish + observability.** DataFlowDiagram SVG: Tradier as PRIMARY LIVE, IBKR EOD-only, cascade subtext. FOMC 2026 dates verified correct. Tradier startup health ping: tradier_ok + tradier_error in /api/health. No bug fixes. 36 tests. |
