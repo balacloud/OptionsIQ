@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 45 (May 6, 2026)
-> **Current Version:** v0.30.0
-> **Project Phase:** Framework session — MASTER_AUDIT_FRAMEWORK v1.4: Category 10 (Trading Effectiveness) added. Phase 7c research scope expanded. README rewrite deferred. No code changes. 36 tests.
+> **Last Updated:** Day 46 (May 7, 2026)
+> **Current Version:** v0.30.1
+> **Project Phase:** KI-086 closed (sta_service.py extracted). ETF sell_call DTE gate fixed (_run_etf_sell_call). ETF_DTE_SELLER_PASS_MIN 21→30 (tastylive research). Category 10 live research complete. 36 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY45_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY45.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY46_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY46.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -78,7 +78,7 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | ibkr_provider.py | DONE (Day 12) | try-finally cancelMktData. OI via reqMktData confirmed unavailable (platform limit) |
 | alpaca_provider.py | DONE (Day 10) | REST fallback, greeks ✅, NO OI/volume (model limitation) |
 | analyze_service.py | DONE (Day 43) | KI-064: _extract_iv_data() uses ATM contract IV. KI-081: _days_until_next_macro() helper. _fomc_days computed once (fixes fomc_days_away=999 silent bug). |
-| app.py | ~450 lines (Day 42) | ACCOUNT_SIZE silent default removed (Rule 7). Rule 4 violation still present (>150 lines). |
+| app.py | 402 lines (Day 46) | sta_fetch logic extracted to sta_service.py (KI-086 closed). Rule 4 still technically violated (>150) but all business logic is now in service modules. |
 | batch_service.py | NEW (Day 35) | 148 lines — seed_iv_for_ticker(), run_bod_batch(), run_eod_batch(). APScheduler target functions. |
 
 ### Backend Files (current state)
@@ -234,14 +234,12 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY45.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY46.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
-Open (LOW):
-2. **KI-086 partial: app.py `_run_one` still inline** — ~449 lines, Rule 4 (max 150) violated. best_setups_service.py extracted Day 39, `_run_one` closure still inline.
-
+Resolved (Day 46): KI-086 ✅ CLOSED (sta_service.py extracted — sta_fetch 74 lines → 2 lines). ETF sell_call DTE bug fixed (pre-existing: was using stock DTE constants, now uses _run_etf_sell_call with ETF_DTE_SELLER_PASS_MIN=30). ETF_DTE_SELLER_PASS_MIN 21→30.
 Resolved (Day 44): KI-076 (TradeExplainer isBearish() — no bug, all 4 directions verified correct via live API). Tradier all 4 directions confirmed (Category 7).
 Resolved (Day 43): KI-064 (IVR mismatch ATM IV fix), KI-075 (GATE_KB drift + DTE constants), KI-077 (sell_put label), KI-081 (macro events CPI/NFP/PCE). Bonus: fomc_days_away silent 999 bug.
 Resolved (Day 42): KI-094 (QualityBanner ibkr_cache key), KI-095 (BatchStatusPanel UTC timestamp). Plus 4 audit MEDIUM fixes same session.
@@ -292,6 +290,7 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 46 | May 7, 2026 | **KI-086 closed + DTE calibration (v0.30.1).** sta_service.py extracted (sta_fetch 74 lines → 2 lines, app.py 472→402). ETF sell_call DTE bug fixed: _run_etf_sell_call() added (was using stock DTE constants 14-21, now ETF 30-45). ETF_DTE_SELLER_PASS_MIN 21→30 (tastylive 200k+ trade research). Category 10 live research: 2/11 CAUTION today, Liquidity Proxy dominant blocker, vol gates all pass at VIX=17.39. |
 | Day 44 | May 6, 2026 | **Verification session (v0.30.0).** KI-076: TradeExplainer isBearish() verified correct (no bug). Tradier all 4 directions live-confirmed. Data requirements audit: BOD=zero IBKR, EOD=hard IBKR. No code changes. |
 | Day 43 | May 6, 2026 | **Defect sweep (v0.30.0).** KI-064: ATM contract IV in _extract_iv_data() — IVR L2/L3 gap eliminated. KI-075: GATE_KB hv_iv_vrp+vix_regime entries added; ETF sell_put DTE gate fixed to use ETF_DTE_SELLER_PASS_MIN/MAX (was using wrong single-stock VCP constants). KI-077: sell_put risk label. KI-081: MACRO_DATES (CPI/NFP/PCE 2026-2027) + _days_until_next_macro() + macro events in gate + fomc_days_away silent 999 bug fixed. |
 | Day 42 | May 6, 2026 | **Skew + full audit (v0.29.0).** `compute_skew()` shipped (Tradier 2-call fetch, put_iv_30d − call_iv_30d, 8-field response). Day 42 full audit (MASTER_AUDIT_FRAMEWORK v1.3): 0C · 2H · 3M — all resolved. QualityBanner ibkr_cache key fixed (KI-094). BatchStatusPanel UTC timestamp fixed (KI-095). ACCOUNT_SIZE silent default removed. Rule 16 added (restart backend after .py edits). |
@@ -310,24 +309,29 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 
 ---
 
-## Next Session Priorities (Day 45)
+## Next Session Priorities (Day 46)
 
-### P0 — KI-086 partial: app.py `_run_one` extraction (45 min)
-`_run_one` closure still inline in app.py. Move to best_setups_service.py or a new module.
-app.py still ~449 lines — Rule 4 max 150 still violated. Partial fix: best_setups_service.py extracted Day 39.
+### P0 — README full rewrite (45 min)
+All code issues closed (KI-086 ✅, KI-059 deferred by design). Conditions met for full rewrite. See MEMORY.md "Deferred Doc Tasks" for full issue list.
 
-### P1 — Phase 7c: Weakening → sell_call for cyclical sectors (60 min, research first)
-Distinguish cyclical (XLI, XLY, XLB) vs defensive (XLU, XLP). Conditions for selling calls on weakening cyclicals.
+### P1 — Adversarial LLM review: XLF/QQQ setup (15 min)
+Check 10.4 method b — paste best setup to ChatGPT with adversarial prompt. See Phase7c_Trading_Effectiveness_Day46.md for the exact prompt.
 
-### P2 — MASTER_AUDIT_FRAMEWORK weekly sweep (90 min)
-Last full audit Day 42. Skip until Day 49+.
+### P2 — Start paper trade logging
+Check 10.4 method a — need 30-trade sample for win rate validation. Use Paper Trade Dashboard.
+
+### P3 — MASTER_AUDIT_FRAMEWORK weekly sweep
+Skip until Day 49+. Last full audit Day 42.
+
+### P4 — Phase 7c cyclical vs defensive split
+Needs Weakening cyclicals in ANALYZE mode (today: XLE/XLRE only, both WATCH). Defer until appropriate market conditions.
 
 ### Deferred
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY44.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY44_SHORT.md` — Day 44 summary
-- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger)
+- `docs/versioned/KNOWN_ISSUES_DAY46.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY46_SHORT.md` — Day 46 summary
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger) v1.4
+- `docs/Research/Phase7c_Trading_Effectiveness_Day46.md` — Category 10 live research + DTE findings
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research
-- `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — canonical provider decisions

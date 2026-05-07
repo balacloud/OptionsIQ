@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 45 (May 6, 2026)
-> **Current Version:** v0.30.0
+> **Last Updated:** Day 46 (May 7, 2026)
+> **Current Version:** v0.30.1
 
 ---
 
@@ -182,7 +182,7 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-075: GateExplainer GATE_KB drift — hv_iv_vrp + vix_regime entries added; ETF sell_put DTE gate uses correct ETF_DTE_SELLER_PASS_MIN/MAX ✅ Day 43
 - [x] KI-077: DirectionGuide sell_put risk label — honest text (naked put risk) ✅ Day 43
 - [x] KI-081: Macro events calendar (CPI/NFP/PCE) — MACRO_DATES + _days_until_next_macro() + gate extended; fomc_days_away silent 999 bug fixed ✅ Day 43
-- [~] app.py size violation (KI-086) — `_seed_iv_for_ticker` extracted to batch_service.py Day 35 (536→492 lines); `_run_one` still inline
+- [x] app.py size violation (KI-086) — sta_service.py extracted Day 46 (sta_fetch 74-line inline logic → fetch_sta_swing_data()). app.py 472→402 lines. All business logic now in service modules. ✅ Day 46
 - [x] APScheduler BOD/EOD batch infrastructure — batch_service.py (148 lines) + CronTrigger Mon-Fri 9:31/16:05 ET ✅ Day 35
 - [x] Batch status dashboard in DataProvenance — BatchStatusPanel (last 10 runs) + IVCoverageGrid (per-ETF coverage) ✅ Day 35
 - [x] MarketData.app credit tracking — X-Api-Ratelimit-Remaining/Consumed headers, ~33 credits/day confirmed ✅ Day 35
@@ -277,6 +277,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 | v0.20.0 | Day 28 | **Gate robustness — ChatGPT-driven fixes.** KI-079 resolved: ETF_KEY_HOLDINGS + COMPANY_EARNINGS (52 companies) + _etf_holdings_earnings_gate() wired into all 4 directions. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20%, spread_pct exposed on gate dict, blocking kept at >20%. FOMC gate: now warns when fomc_days < dte (inside holding window) not just when imminent. KI-082 logged: credit-to-width ratio gap. Tests: 27→29. Two ChatGPT stress tests validated fixes live (XLK + XLY). Pre-analysis prompts in UI proposed for Day 29. |
 | v0.21.0 | Day 29 | **Data observability + gate hardening.** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive empirical), _credit_width() in strategy_ranker, bear_call/bull_put R1/R2 wired. HV/IV VRP gate: _etf_hv_iv_seller_gate() (Sinclair — sell only when IV>HV). VIX regime gate: <15 warn, >30 warn, >40 fail. IVR thresholds: 50→35 (tastylive 60-70% frequency improvement). FOMC imminent fix (<5 days now warns, was falling through). Data Health tab: GET /api/data-health with field-level provenance per ETF (7 fields × 15 ETFs). Best Setups tab: parallel scan, manual trigger, IVR watchlist. Pre-analysis prompts + Paper Trade Dashboard shipped. Tab state retention (display:none vs unmount). IVR key mismatch fixed (was always null). Signal board display:grid override fixed. KI-083/084 discovered via data health (XLE OHLCV corrupted, XLC/XLRE missing). |
 | v0.23.0 | Day 31 | **LearnTab Perplexity redesign + UX polish + KI-084/085 resolved.** LearnTab: complete rewrite as 5-panel Perplexity-style trade education panel (Risk/Reward, Strike Zones, Breakeven, Timing/DTE, Safety Gates). Context-aware: real ETF price/strike/premium/expiry from analysis; XLF bear call defaults otherwise. SVG number line with staggered markers (no overlap regardless of proximity). VIX badge in RegimeBar — color-coded per regime (KI-085 resolved). XLRE/SCHB OHLCV seeded (KI-084/087 resolved). Paper trade workflow rebuilt: PaperTradeBanner (strategy picker + confirmation), PaperTradeDashboard (mark/close/delete), PATCH + DELETE endpoints. Best Setups as home screen: default tab 'setups', auto-scan on mount, clickable SetupCards → handleSelectFromSetups → analysis panel + tab switch. |
+| v0.30.1 | Day 46 | **KI-086 closed + DTE calibration hardening.** sta_service.py extracted (sta_fetch 74 lines → 2 lines, app.py 472→402). Pre-existing ETF sell_call DTE bug fixed: _run_etf_sell_call() created (was using stock DTE constants 14-21, ETF should use 30-45). ETF_DTE_SELLER_PASS_MIN 21→30 (tastylive 200k+ trade research). Category 10 live scan: 2/11 CAUTION, Liquidity Proxy dominant blocker, vol gates all pass VIX=17.39. |
 | v0.30.0 | Day 45 | **Framework/docs session.** MASTER_AUDIT_FRAMEWORK v1.4: Category 10 (Trading Effectiveness Audit) added — 5 checks: gate pass rate, "always one direction", DTE calibration, unbiased evaluation, expected value sanity. Phase 7c scope expanded in ROADMAP. README rewrite deferred. No code changes. |
 | v0.30.0 | Day 44 | **Verification session.** KI-076: TradeExplainer isBearish() confirmed correct for all 4 directions (no bug). Tradier live-tested for all 4 directions (buy_call/sell_call/buy_put/sell_put). Data requirements audit: BOD=zero IBKR, EOD=hard IBKR. No code changes. |
 | v0.30.0 | Day 43 | **Defect sweep.** KI-064: ATM contract IV in _extract_iv_data() (IVR L2/L3 gap fixed). KI-075: GATE_KB hv_iv_vrp+vix_regime entries; ETF sell_put DTE gate fixed (ETF_DTE_SELLER_PASS_MIN/MAX). KI-077: sell_put risk label. KI-081: MACRO_DATES (CPI/NFP/PCE 2026-2027) + _days_until_next_macro() + macro events gate. fomc_days_away silent 999 bug fixed. |

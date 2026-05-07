@@ -12,7 +12,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 
-import requests as _requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -30,6 +29,7 @@ from pnl_calculator import PnLCalculator
 from strategy_ranker import StrategyRanker
 from yfinance_provider import YFinanceProvider
 from analyze_service import analyze_etf, get_live_price, _extract_iv_data, get_vix_status, _fetch_vix
+from sta_service import fetch_sta_swing_data
 from data_health_service import build_data_health
 from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch, run_startup_catchup
 from best_setups_service import run_one_setup
@@ -290,78 +290,8 @@ def batch_status():
 
 @app.get("/api/integrate/sta-fetch/<ticker>")
 def sta_fetch(ticker: str):
-    """
-    Fetch swing data from STA (localhost:5001) and return assembled fields.
-    Frontend SwingImportStrip calls this to pre-fill the analysis form.
-    """
-    symbol = ticker.upper().strip()
-    timeout = 3.0
-    try:
-        sr = _requests.get(f"{STA_BASE_URL}/api/sr/{symbol}", timeout=timeout).json()
-        stock = _requests.get(f"{STA_BASE_URL}/api/stock/{symbol}", timeout=timeout).json()
-        patterns = _requests.get(f"{STA_BASE_URL}/api/patterns/{symbol}", timeout=timeout).json()
-        context = _requests.get(f"{STA_BASE_URL}/api/context/SPY", timeout=timeout).json()
-        earnings = _requests.get(f"{STA_BASE_URL}/api/earnings/{symbol}", timeout=timeout).json()
-    except Exception as exc:
-        logger.warning("STA fetch failed for %s: %s", symbol, exc)
-        return jsonify({
-            "status": "offline",
-            "source": "manual",
-            "message": f"STA not reachable at {STA_BASE_URL} — use Manual mode",
-        })
-
-    meta = sr.get("meta", {})
-    vcp = patterns.get("patterns", {}).get("vcp", {})
-
-    fomc_days = None
-    for card in context.get("cycles", {}).get("cards", []):
-        if "FOMC" in card.get("name", ""):
-            fomc_days = card.get("raw_value")
-            break
-
-    viable = meta.get("tradeViability", {}).get("viable", "")
-    swing_signal = "BUY" if viable == "YES" else "SELL"
-
-    support_levels = sr.get("support", [])
-    s1_support = support_levels[-1] if support_levels else None
-
-    spy_above_200sma = True
-    spy_5day_return = None
-    try:
-        import yfinance as yf
-        spy_hist = yf.Ticker("SPY").history(period="1y", interval="1d")
-        if not spy_hist.empty and len(spy_hist) >= 200:
-            latest_close = float(spy_hist["Close"].iloc[-1])
-            sma200 = float(spy_hist["Close"].iloc[-200:].mean())
-            spy_above_200sma = latest_close > sma200
-            if len(spy_hist) >= 6:
-                five_day_ago = float(spy_hist["Close"].iloc[-6])
-                spy_5day_return = round((latest_close - five_day_ago) / five_day_ago * 100, 2)
-    except Exception as exc:
-        logger.warning("SPY regime fetch failed: %s", exc)
-
-    return jsonify({
-        "status": "ok",
-        "source": "sta_live",
-        "ticker": symbol,
-        "swing_signal": swing_signal,
-        "entry_pullback": sr.get("suggestedEntry"),
-        "entry_momentum": stock.get("currentPrice"),
-        "stop_loss": sr.get("suggestedStop"),
-        "target1": sr.get("suggestedTarget"),
-        "target2": None,
-        "risk_reward": sr.get("riskReward"),
-        "vcp_pivot": vcp.get("pivot_price"),
-        "vcp_confidence": vcp.get("confidence"),
-        "adx": meta.get("adx", {}).get("adx"),
-        "last_close": stock.get("currentPrice"),
-        "s1_support": s1_support,
-        "spy_above_200sma": spy_above_200sma,
-        "spy_5day_return": spy_5day_return,
-        "earnings_days_away": earnings.get("days_until"),
-        "pattern": patterns.get("pattern"),
-        "fomc_days_away": fomc_days,
-    })
+    """Fetch swing data from STA (localhost:5001) and return assembled fields."""
+    return jsonify(fetch_sta_swing_data(ticker.upper().strip()))
 
 
 @app.post("/api/integrate/status")

@@ -87,10 +87,7 @@ class GateEngine:
             if direction == "buy_call":
                 return self._run_etf_buy_call(payload)
             if direction == "sell_call":
-                # _run_sell_call is ETF-clean; append holdings gate for ETF context
-                gates = self._run_sell_call(payload)
-                gates.append(self._etf_holdings_earnings_gate(payload))
-                return gates
+                return self._run_etf_sell_call(payload)
             if direction == "buy_put":
                 return self._run_etf_buy_put(payload)
             return self._run_etf_sell_put(payload)   # sell_put ETF track
@@ -1096,5 +1093,125 @@ class GateEngine:
             s, r = "fail", "Max loss exceeds 20% of account"
         out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}",
                          f"<={MAX_LOSS_WARN_PCT:.0%} pass, >{MAX_LOSS_FAIL_PCT:.0%} fail", r, s == "fail"))
+
+        return out
+
+    def _run_etf_sell_call(self, p: dict) -> list[dict]:
+        """
+        ETF sell_call gate track (bear_call_spread).
+        Identical to _run_sell_call but uses ETF_DTE_SELLER_PASS_MIN/MAX (30-45)
+        instead of stock DTE constants (14-21). Entries below 30 DTE enter the
+        gamma acceleration zone — empirical research (tastylive 200k+ trades) shows
+        30-45 DTE captures 46% of high-Sharpe profit before gamma amplifies. (Day 46)
+        """
+        out = []
+
+        # Gate 1: IVR — sellers want HIGH IV to maximize premium collected
+        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+        if ivr >= IVR_SELLER_PASS_PCT:
+            s, r = "pass", "Premium expensive — ideal for selling calls"
+        elif ivr >= IVR_SELLER_MIN_PCT:
+            s, r = "warn", "Minimum viable IV for call selling"
+        else:
+            s, r = "fail", "IV too cheap — insufficient premium for call selling"
+        out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
+                         f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+
+        # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
+        out.append(self._etf_hv_iv_seller_gate(p))
+
+        # Gate 3: VIX regime — block crisis, warn thin vol
+        out.append(self._vix_regime_gate(p))
+
+        # Gate 4: Strike OTM check — sell_call strike must be above current price
+        strike = float(p.get("strike", 0.0) or 0.0)
+        und = float(p.get("underlying_price", 0.0) or 0.0)
+        if und > 0:
+            otm_pct = (strike - und) / und * 100
+            if otm_pct >= SELL_CALL_OTM_PASS_PCT:
+                s, r = "pass", f"Strike {otm_pct:.1f}% OTM — safe for call selling"
+            elif otm_pct >= 0:
+                s, r = "warn", "Strike near ATM — elevated assignment risk"
+            else:
+                s, r = "fail", "Strike is ITM — call selling into immediate loss"
+        else:
+            s, r = "warn", "Unable to verify strike vs underlying"
+        out.append(_gate("strike_otm", "Strike OTM Check", s, f"strike {strike:.2f}, und {und:.2f}",
+                         f">={SELL_CALL_OTM_PASS_PCT}% OTM pass; ATM warn; ITM fail", r, s == "fail"))
+
+        # Gate 5: DTE seller window — ETF-specific: 30–45 DTE entry floor
+        dte = int(p.get("selected_expiry_dte", 0) or 0)
+        if ETF_DTE_SELLER_PASS_MIN <= dte <= ETF_DTE_SELLER_PASS_MAX:
+            s, r = "pass", f"ETF seller sweet spot — DTE {dte} within {ETF_DTE_SELLER_PASS_MIN}-{ETF_DTE_SELLER_PASS_MAX} range"
+        elif DEFAULT_MIN_DTE <= dte < ETF_DTE_SELLER_PASS_MIN:
+            s, r = "warn", f"Below ETF entry floor ({ETF_DTE_SELLER_PASS_MIN} DTE) — gamma risk elevated"
+        elif dte > 60 or dte < 7:
+            s, r = "fail", "Outside seller DTE window"
+        else:
+            s, r = "warn", "Suboptimal DTE window"
+        out.append(_gate("dte_seller", "DTE (Seller)", s, f"DTE {dte}",
+                         f"{ETF_DTE_SELLER_PASS_MIN}–{ETF_DTE_SELLER_PASS_MAX} pass; <{ETF_DTE_SELLER_PASS_MIN} warn; >60 or <7 fail", r, s == "fail"))
+
+        # Gate 6: Events — earnings + FOMC + macro (CPI/NFP/PCE)
+        earn_days = int(p.get("earnings_days_away", 999) or 999)
+        fomc_days = int(p.get("fomc_days_away", 999) or 999)
+        macro_days = int(p.get("macro_days_away", 999) or 999)
+        macro_name = p.get("macro_event_name") or "Macro"
+        nearest_event_days = min(fomc_days, macro_days)
+        nearest_event_name = "FOMC" if fomc_days <= macro_days else macro_name
+        if earn_days <= dte:
+            s, r = "fail", "Earnings inside expiry window"
+            block = True
+        elif nearest_event_days < 5:
+            s, r = "warn", f"{nearest_event_name} imminent ({nearest_event_days}d) — vol event inside holding window"
+            block = False
+        elif nearest_event_days <= 10:
+            s, r = "warn", f"{nearest_event_name} event near expiry"
+            block = False
+        else:
+            s, r = "pass", "No major event conflict"
+            block = False
+        out.append(_gate("events", "Event Calendar", s,
+                         f"earn {earn_days}d · FOMC {fomc_days}d · {macro_name} {macro_days}d",
+                         "earnings > DTE and events >10d", r, block))
+
+        # Gate 7: Liquidity
+        out.append(self._liquidity_gate(p))
+
+        # Gate 8: Market regime — call sellers want flat or bearish market
+        spy_5d_raw = p.get("spy_5day_return")
+        if spy_5d_raw is None:
+            s, r = "warn", "SPY regime unavailable — verify STA connection"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s, "SPY regime unavailable", "flat/weak market required", r, False))
+        else:
+            spy_above = bool(p.get("spy_above_200sma", False))
+            spy_5d = float(spy_5d_raw)
+            if not spy_above or spy_5d < SPY_SELLCALL_5D_PASS:
+                s, r = "pass", "Market flat/weak — favorable for call selling"
+            elif spy_above and spy_5d < SPY_SELLCALL_5D_WARN:
+                s, r = "warn", "Market bullish but contained — monitor closely"
+            else:
+                s, r = "fail", "Strong bull market — elevated call assignment risk — sector RS/momentum weakness"
+            out.append(_gate("market_regime_seller", "Market Regime (Seller)", s,
+                             f"200SMA {spy_above}, 5d {spy_5d:.2%}",
+                             f"flat/weak (5d<{SPY_SELLCALL_5D_PASS:.0%}) pass; strong bull (5d>={SPY_SELLCALL_5D_WARN:.0%}) fail", r, s == "fail"))
+
+        # Gate 9: McMillan Historical Stress Check
+        out.append(self._historical_stress_gate(p, "sell_call"))
+
+        # Gate 10: Risk defined — spread (defined max loss) is better than naked
+        max_gain = float(p.get("max_gain_per_lot", -1.0) or -1.0)
+        premium = float(p.get("premium", 0.0) or 0.0)
+        if max_gain > 0:
+            s, r = "pass", f"Defined risk spread — max gain ${max_gain:.2f}"
+        elif premium > 0:
+            s, r = "warn", "Naked call — uncapped upside risk; confirm sizing"
+        else:
+            s, r = "warn", "Strategy type unclear"
+        out.append(_gate("risk_defined", "Risk Defined", s, f"max_gain ${max_gain:.2f}",
+                         "spread preferred over naked call", r, False))
+
+        # Gate 11: Key Holdings Earnings (ETF-specific)
+        out.append(self._etf_holdings_earnings_gate(p))
 
         return out
