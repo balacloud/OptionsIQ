@@ -1,8 +1,8 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 42 (May 6, 2026)
-> **Version:** v1.3
+> **Last Updated:** Day 45 (May 6, 2026)
+> **Version:** v1.4
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
-> **Time estimate:** 30-45 mins per full audit. Run all 9 categories or specify one by name.
+> **Time estimate:** 30-45 mins for Categories 1-9. Category 10 (effectiveness) runs monthly or when setups are dry.
 
 ---
 
@@ -401,18 +401,24 @@ After running all 8 categories, tally findings:
 
 ## How to Run
 
-**Full audit:**
+**Full audit (Categories 1-9):**
 > "Run the full audit"
-Claude reads all 8 categories against the current codebase, produces findings table.
+Claude reads all 9 categories against the current codebase, produces findings table.
 
 **Targeted audit:**
 > "Run Category 3 — quant correctness"
 > "Audit direction coverage"
 > "Check threading safety"
+> "Run Category 10 — trading effectiveness"
 
 **Weekly trigger (Monday before market open):**
 > "Weekly audit"
 Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction coverage), Category 6 (API sync) — the 4 highest-value categories for trading safety.
+
+**Monthly trigger OR when "I can't find any setups":**
+> "Run trading effectiveness audit" or "Run Category 10"
+Claude runs Check 10.1 (gate pass rate) and 10.2 (always one direction) live. Produces gate blocker diagnosis.
+Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value) are review/research — Claude summarizes current state.
 
 ---
 
@@ -428,6 +434,7 @@ Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction cover
 | Day 25 Category 9 Added | Apr 17, 2026 | 9 | New category | 0 | 0 | Frontend UX Accuracy audit added. Phase 8 UX overhaul introduced hardcoded GATE_KB + isBearish() zone logic — needs sync audit trigger. |
 | Day 27 Full Audit | Apr 21, 2026 | 1-9 | 5 findings | 0 | 1 found+fixed | bull_put_spread missing in pnl_calculator (P&L table all zeros for ETF sell_put) — FIXED. API_CONTRACTS updated (seed fields, OI source, ETF enforcement note). Direction table corrected (all 4 directions live tested Day 21+27). Post-fix: 0C/0H. |
 | Day 42 Full Audit | May 6, 2026 | 1-9 | 0 CRITICAL · 2 HIGH · 3 MEDIUM | 2 HIGH + 1 MEDIUM fixed same session | 2 MEDIUM fixed end of session | First audit with Tradier as primary. Framework updated to v1.3 before run. All findings resolved. |
+| Day 45 Framework Update | May 6, 2026 | 10 (new) | Category 10 added — Trading Effectiveness | 0 | 0 | Gate pass rate, "always one direction" claim, DTE calibration, adversarial LLM review, expected value sanity. v1.4. Not yet run against live data. |
 
 ---
 
@@ -498,6 +505,110 @@ Claude runs Category 1 (claims), Category 3 (quant), Category 7 (direction cover
 - `GATE_KB` text contradicts gate_engine logic → **HIGH** (wrong advice for beginner)
 - Category misassignment in GATE_KB → **MEDIUM** (confusing but not dangerous)
 - LearnTab text inconsistency → **LOW** (educational, not trading decision)
+
+---
+
+---
+
+### Category 10: Trading Effectiveness Audit
+**Added:** Day 45 (May 6, 2026)
+**Principle:** R21 (think like a quant trader) — correctness is necessary but not sufficient. A system that never finds trades, or whose gate pass rate is near zero, is useless regardless of how correct the code is.
+
+**Why this matters:** Categories 1-9 verify that the code does what we claim. Category 10 verifies that what we claim is actually useful — that the system surfaces actionable setups at a reasonable rate, that the DTE/threshold choices are empirically grounded, and that we have a method for knowing when the system is wrong.
+
+**When to run:** Monthly, OR whenever the user says "I can't find any setups" or "everything is blocked."
+
+---
+
+#### Check 10.1 — Gate Pass Rate (measurable, run today)
+```
+[ ] Trigger Best Setups scan (or run 15 ETFs × 4 directions manually).
+    Count: how many ETF/direction combinations return non-BLOCKED verdict?
+
+    Target calibration:
+      < 2 setups surfaced   → gates are OVER-TUNED. Find the single biggest blocker.
+      3-6 setups surfaced   → HEALTHY. Market has some opportunity.
+      > 10 setups surfaced  → gates are UNDER-TUNED. Standards are too loose.
+
+    If blocked: identify the gate blocking the most ETFs.
+    Is it: events (CPI/FOMC window)? liquidity (bid-ask too wide)? IVR? DTE?
+    One gate causing >50% of blocks = recalibration candidate.
+```
+
+#### Check 10.2 — "Always One Direction" Claim (verifiable)
+```
+[ ] Claim: given a clear VIX regime (VIX 12-20 = normal, VIX 20-30 = elevated, VIX>30 = stress),
+    at least one of the 15 ETFs should surface a CAUTION or GO verdict in at least one direction.
+
+    Verify today: is the claim true?
+      YES → system is functioning. Blocked setups are legitimately blocked.
+      NO (all 15 ETFs blocked in all 4 directions) → gate miscalibration.
+        Diagnosis: which gate is unanimously failing?
+        Action: check if that gate's threshold is empirically justified or was set conservatively
+                and never recalibrated.
+```
+
+#### Check 10.3 — DTE Calibration (research-grounded, run quarterly)
+```
+[ ] Current config: buyers = 45-90 DTE, sellers = 21-45 DTE.
+    Tastylive framework: open at 45 DTE, manage/close at 21 DTE (theta inflection point).
+
+    Questions to answer with Perplexity/tastylive data before changing:
+      Q1: Does the 45 DTE → 21 DTE exit framework hold for ETF sector options specifically?
+          (Lower OI than SPY/QQQ — does the theta curve behave the same?)
+      Q2: What is the empirical win-rate difference between opening at 45 DTE vs 21 DTE?
+          (21 DTE = more theta acceleration but less buffer if trade goes against you)
+      Q3: Is the events gate (CPI/FOMC within DTE window) causing most blocks for sellers?
+          If yes: lowering DTE to 21 doesn't fix it — CPI is still inside 21 days.
+
+    Only change DTE thresholds after answering Q1-Q3 with sourced data.
+    Do NOT change based on intuition — wrong DTE calibration affects every trade.
+```
+
+#### Check 10.4 — Unbiased Evaluation (three methods)
+```
+[ ] Method A — Paper Trade Prediction Test (30-trade sample):
+    For every setup with GO verdict: record the predicted outcome
+    (e.g., "profit if XLF stays above $50.63 by May 29").
+    After 30 closed trades:
+      Win rate < 50% → gates are passing wrong setups. Tighten thresholds.
+      Win rate > 70% → gates may be too conservative. Are we blocking good setups?
+      Win rate 55-65% → reasonable for defined-risk premium selling.
+
+[ ] Method B — Adversarial LLM Review (per trade, already in Daily_Trade_Prompts.md):
+    Paste best setup into Perplexity or ChatGPT with this prompt:
+    "I am considering this options trade: [full setup details].
+     Act as an adversarial options risk manager. List every reason NOT to take this trade,
+     ranked by severity. Do not soften your objections. Be specific about the numbers."
+    If the LLM finds a gate that our system missed → add that gate.
+    If the LLM objects to something our gates already caught → our gates are working.
+
+[ ] Method C — Weekly Gate Pass Rate Log (track over time):
+    Each week, record: {date, etfs_scanned, setups_surfaced, top_blocker_gate}.
+    After 4 weeks:
+      Consistently 0-1 setups/week → structural gate problem or permanently unfavorable market.
+      Consistently 4-8 setups/week → system is healthy.
+      Setups cluster around same 2-3 ETFs always → sector coverage bias (check RS quadrant data).
+```
+
+#### Check 10.5 — Expected Value Sanity (quant filter)
+```
+[ ] For the top recommended setup, verify:
+    credit_to_width_ratio ≥ 33% (MIN_CREDIT_WIDTH_RATIO enforced by strategy_ranker) ✓
+    breakeven is outside the expected 1-sigma move for the DTE:
+      expected_move ≈ underlying_price × IV × sqrt(DTE/365)
+      short strike should be beyond expected_move for sellers
+      (e.g., sell_put at $50.63 breakeven on XLF $51.59 = only $0.96 buffer on $51 underlying.
+       With IV=18%, 23 DTE: expected move ≈ 51.59 × 0.18 × sqrt(23/365) ≈ $2.46.
+       Short strike is INSIDE the 1-sigma move → high assignment risk despite passing other gates.)
+    If short strike is inside expected move → stress_check gate should WARN. Verify it does.
+```
+
+**Severity mapping:**
+- Gate pass rate = 0 for >2 consecutive weeks → **HIGH** (system not surfacing trades)
+- Short strike inside expected move with no warning → **HIGH** (quant blind spot)
+- DTE thresholds not sourced from empirical research → **MEDIUM** (assumption not validated)
+- Paper trade win rate < 45% over 30 trades → **CRITICAL** (gates are selecting losers)
 
 ---
 

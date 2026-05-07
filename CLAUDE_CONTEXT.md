@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 44 (May 6, 2026)
+> **Last Updated:** Day 45 (May 6, 2026)
 > **Current Version:** v0.30.0
-> **Project Phase:** Verification session — KI-076 confirmed correct (no bug), Tradier live tests all 4 directions confirmed, data requirements audit (BOD zero IBKR, EOD hard IBKR). No code changes. 36 tests.
+> **Project Phase:** Framework session — MASTER_AUDIT_FRAMEWORK v1.4: Category 10 (Trading Effectiveness) added. Phase 7c research scope expanded. README rewrite deferred. No code changes. 36 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY44_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY44.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY45_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY45.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -234,7 +234,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY44.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY45.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
