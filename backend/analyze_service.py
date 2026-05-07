@@ -25,6 +25,7 @@ from constants import (
     ETF_DTE_SELLER_PASS_MIN,
     ETF_KEY_HOLDINGS,
     ETF_MIN_PREMIUM_DOLLAR,
+    ETF_OPTIONS_LIQUID_TIER1,
     ETF_TICKERS,
     FOMC_DATES,
     MACRO_DATES,
@@ -37,6 +38,18 @@ from constants import (
 from gate_engine import GateEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _is_early_market_session() -> bool:
+    """True if within first 30 min of NYSE open (9:30-10:00 AM ET) on a weekday.
+    OTM option bid-ask spreads are typically 2-3x wider in this window.
+    Uses UTC with a DST-aware approximation: EDT=UTC-4 (Mar-Nov), EST=UTC-5 (Nov-Mar)."""
+    now_utc = datetime.utcnow()
+    if now_utc.weekday() >= 5:
+        return False
+    et_offset = -4 if 3 <= now_utc.month <= 11 else -5
+    et_hour = (now_utc.hour + et_offset) % 24
+    return et_hour == 9 and now_utc.minute >= 30
 
 
 def _days_until_next_fomc() -> int:
@@ -581,14 +594,28 @@ def apply_etf_gate_adjustments(gates: list[dict], direction: str,
                     )
                 elif raw_spread is not None and raw_spread > SPREAD_DATA_FAIL_PCT:
                     g["blocking"] = True
-                    g["reason"] = (
-                        f"Bid-ask spread {raw_spread:.1f}% — data unreliable at this width; "
-                        "do not trade until spread narrows"
-                    )
+                    _t = gate_payload.get("ticker", "")
+                    _parts = [f"Bid-ask spread {raw_spread:.1f}% — too wide for efficient execution"]
+                    if _t and _t not in ETF_OPTIONS_LIQUID_TIER1:
+                        _parts.append(
+                            f"{_t} options have moderate liquidity; QQQ/XLF/IWM offer tighter OTM spreads "
+                            "for the same directional exposure"
+                        )
+                    if _is_early_market_session():
+                        _parts.append(
+                            "Early session: OTM spreads typically narrow after 10:00 AM ET — rescan later"
+                        )
+                    g["reason"] = ". ".join(_parts)
                 else:
                     g["status"] = "warn"
                     g["blocking"] = False
-                    g["reason"] = "ETF OTM spread wider than stock threshold — review bid-ask before entry"
+                    _t = gate_payload.get("ticker", "")
+                    _w_parts = [f"OTM spread {raw_spread:.1f}% — wider than ideal, review bid-ask before entry"
+                                if raw_spread is not None else
+                                "ETF OTM spread wider than stock threshold — review bid-ask before entry"]
+                    if _is_early_market_session():
+                        _w_parts.append("may tighten after 10:00 AM ET")
+                    g["reason"] = "; ".join(_w_parts)
 
     # 2. sell_call market_regime_seller → non-blocking
     if direction == "sell_call":
@@ -816,6 +843,7 @@ def analyze_etf(payload: dict, ticker: str, *,
         "max_21d_drawdown_pct": _stress.get("max_drawdown_pct"),
         "max_21d_rally_pct": _stress.get("max_rally_pct"),
         "stress_bars_available": _stress.get("bars_available", 0),
+        "ticker": ticker,
     }
 
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)

@@ -402,6 +402,13 @@ DIVIDEND_WARN_DAYS      = 3                         # Short calls: WARN 3 days b
 CYCLICAL_SECTORS        = {"XLI", "XLY", "XLB", "XLF"}   # Risk-On favored
 DEFENSIVE_SECTORS       = {"XLU", "XLV", "XLP"}           # Risk-Off favored
 
+# ETF options liquidity tiers (source: Market Chameleon average daily options volume, Day 47)
+# Tier 1: OTM call/put bid-ask spreads typically <5% — liquid at 0.30 delta.
+#         QQQ (top-5 most-traded ETF options globally), IWM/XLF/XLK/XLY all >500k contracts/day.
+# Non-Tier1 (Tier 2): OTM spreads commonly 10-40% on sector ETFs — wide due to lower volume.
+#         Verify bid-ask pre-trade; same-direction QQQ/XLF preferred when Tier2 is blocked.
+ETF_OPTIONS_LIQUID_TIER1 = frozenset({"QQQ", "IWM", "XLF", "XLK", "XLY"})
+
 # Quadrant → action mapping (research-corrected Day 13)
 # Leading/Improving = ANALYZE, Weakening = WATCH, Lagging = SKIP
 QUADRANT_ANALYZE        = {"Leading", "Improving"}

@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 46 (May 7, 2026)
-> **Current Version:** v0.30.1
-> **Project Phase:** KI-086 closed (sta_service.py extracted). ETF sell_call DTE gate fixed (_run_etf_sell_call). ETF_DTE_SELLER_PASS_MIN 21→30 (tastylive research). Category 10 live research complete. 36 tests.
+> **Last Updated:** Day 47 (May 7, 2026)
+> **Current Version:** v0.31.0
+> **Project Phase:** README full rewrite complete. Phase 7c code: ETF liquidity tiers + time-of-day advisory + actionable liquidity gate messages. All code issues closed (KI-059 deferred). 36 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY46_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY46.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY47_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY47.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -234,11 +234,12 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY46.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY47.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
+Resolved (Day 47): No new KI resolutions. All code issues closed.
 Resolved (Day 46): KI-086 ✅ CLOSED (sta_service.py extracted — sta_fetch 74 lines → 2 lines). ETF sell_call DTE bug fixed (pre-existing: was using stock DTE constants, now uses _run_etf_sell_call with ETF_DTE_SELLER_PASS_MIN=30). ETF_DTE_SELLER_PASS_MIN 21→30.
 Resolved (Day 44): KI-076 (TradeExplainer isBearish() — no bug, all 4 directions verified correct via live API). Tradier all 4 directions confirmed (Category 7).
 Resolved (Day 43): KI-064 (IVR mismatch ATM IV fix), KI-075 (GATE_KB drift + DTE constants), KI-077 (sell_put label), KI-081 (macro events CPI/NFP/PCE). Bonus: fomc_days_away silent 999 bug.
@@ -290,6 +291,7 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 47 | May 7, 2026 | **README full rewrite + Phase 7c code improvements (v0.31.0).** README rewritten — 9+ stale sections fixed (Tradier as primary, 15 ETFs not 16, all 21 backend files, 22 frontend components, API table 10→21 endpoints, version history through v0.30.1). Phase 7c: ETF_OPTIONS_LIQUID_TIER1 in constants, _is_early_market_session() helper, ticker in gate_payload, actionable liquidity messages (Tier2 ETF → "try QQQ/XLF", early session → "rescan after 10 AM"). Phase7c_Actionable_Day47.md created. |
 | Day 46 | May 7, 2026 | **KI-086 closed + DTE calibration (v0.30.1).** sta_service.py extracted (sta_fetch 74 lines → 2 lines, app.py 472→402). ETF sell_call DTE bug fixed: _run_etf_sell_call() added (was using stock DTE constants 14-21, now ETF 30-45). ETF_DTE_SELLER_PASS_MIN 21→30 (tastylive 200k+ trade research). Category 10 live research: 2/11 CAUTION today, Liquidity Proxy dominant blocker, vol gates all pass at VIX=17.39. |
 | Day 44 | May 6, 2026 | **Verification session (v0.30.0).** KI-076: TradeExplainer isBearish() verified correct (no bug). Tradier all 4 directions live-confirmed. Data requirements audit: BOD=zero IBKR, EOD=hard IBKR. No code changes. |
 | Day 43 | May 6, 2026 | **Defect sweep (v0.30.0).** KI-064: ATM contract IV in _extract_iv_data() — IVR L2/L3 gap eliminated. KI-075: GATE_KB hv_iv_vrp+vix_regime entries added; ETF sell_put DTE gate fixed to use ETF_DTE_SELLER_PASS_MIN/MAX (was using wrong single-stock VCP constants). KI-077: sell_put risk label. KI-081: MACRO_DATES (CPI/NFP/PCE 2026-2027) + _days_until_next_macro() + macro events in gate + fomc_days_away silent 999 bug fixed. |
@@ -309,22 +311,22 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 
 ---
 
-## Next Session Priorities (Day 46)
+## Next Session Priorities (Day 48)
 
-### P0 — README full rewrite (45 min)
-All code issues closed (KI-086 ✅, KI-059 deferred by design). Conditions met for full rewrite. See MEMORY.md "Deferred Doc Tasks" for full issue list.
+### P0 — Adversarial LLM review: XLF/QQQ setup (15 min, user action)
+Check 10.4 method b — paste best setup to ChatGPT/Opus with adversarial prompt. See Phase7c_Actionable_Day47.md for the exact prompt.
 
-### P1 — Adversarial LLM review: XLF/QQQ setup (15 min)
-Check 10.4 method b — paste best setup to ChatGPT with adversarial prompt. See Phase7c_Trading_Effectiveness_Day46.md for the exact prompt.
-
-### P2 — Start paper trade logging
+### P1 — Start paper trade logging
 Check 10.4 method a — need 30-trade sample for win rate validation. Use Paper Trade Dashboard.
 
-### P3 — MASTER_AUDIT_FRAMEWORK weekly sweep
+### P2 — MASTER_AUDIT_FRAMEWORK weekly sweep
 Skip until Day 49+. Last full audit Day 42.
 
-### P4 — Phase 7c cyclical vs defensive split
+### P3 — Phase 7c cyclical vs defensive split
 Needs Weakening cyclicals in ANALYZE mode (today: XLE/XLRE only, both WATCH). Defer until appropriate market conditions.
+
+### P4 — Weekly gate pass rate log
+Track second data point in Phase7c_Actionable_Day47.md (Check 10.1 table).
 
 ### Deferred
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.

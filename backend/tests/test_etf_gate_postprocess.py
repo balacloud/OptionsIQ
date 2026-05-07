@@ -107,7 +107,7 @@ def test_spread_fail_27pct_stays_blocking_for_etf():
     apply_etf_gate_adjustments(gates, "sell_put", 25000.0, {}, [])
     assert gates[0]["status"] == "fail"
     assert gates[0]["blocking"] is True
-    assert "data unreliable" in gates[0]["reason"]
+    assert "too wide for efficient execution" in gates[0]["reason"]
 
 
 def test_dte_seller_promoted_within_etf_range():
