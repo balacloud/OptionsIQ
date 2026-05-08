@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 48 (May 8, 2026)
-> **Current Version:** v0.31.0
+> **Last Updated:** Day 49 (May 8, 2026)
+> **Current Version:** v0.32.0
 
 ---
 
@@ -202,6 +202,10 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-093: analyze_service.py iv_provider — "tradier"/"alpaca" now map to yf_provider ✅ Day 40
 - [x] DataFlowDiagram SVG update — Tradier as PRIMARY LIVE (dark green), IBKR demoted to EOD-only, cascade subtext ✅ Day 41
 - [x] Tradier startup health ping — `_tradier_ok`/`_tradier_error` in /api/health ✅ Day 41
+- [x] KI-098: Absolute trend gate — `weekChange` param in `quadrant_to_direction()`, Lagging skips bear_call_spread when tape rising ✅ Day 49
+- [x] KI-096: IVR null confidence — `ivr_confidence="unknown"` in gate_payload, seller IVR gates WARN not FAIL when no history ✅ Day 49
+- [x] KI-097: Event density gate — `_etf_event_density_gate()` counts ALL events in DTE window (FOMC/CPI/NFP/PCE), weighted scores, rate-sensitive escalation ✅ Day 49
+- [x] KI-100: Tier 1 GO rate — `tier1_summary` in /api/best-setups response, pills bar in BestSetups.jsx ✅ Day 49
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.

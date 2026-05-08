@@ -11,7 +11,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests as _requests
 
@@ -27,6 +27,7 @@ from constants import (
     ETF_MIN_PREMIUM_DOLLAR,
     ETF_OPTIONS_LIQUID_TIER1,
     ETF_TICKERS,
+    EVENT_WEIGHTS,
     FOMC_DATES,
     MACRO_DATES,
     IVR_BUYER_PASS_PCT,
@@ -79,6 +80,33 @@ def _days_until_next_macro() -> tuple[int, str]:
                     nearest_name = event_name
                 break
     return nearest_days, nearest_name
+
+
+def _count_macro_events_in_window(dte: int) -> tuple[int, int]:
+    """Count all macro events (FOMC + CPI/NFP/PCE) within the DTE window.
+    Returns (event_count, weighted_score). KI-097.
+    """
+    today = datetime.utcnow().date()
+    cutoff = today + timedelta(days=dte)
+    count, score = 0, 0
+
+    for date_str in FOMC_DATES:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        if today <= d <= cutoff:
+            count += 1
+            score += EVENT_WEIGHTS.get("FOMC", 3)
+
+    for event_name, dates in MACRO_DATES.items():
+        w = EVENT_WEIGHTS.get(event_name, 2)
+        for date_str in sorted(dates):
+            d = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if d < today:
+                continue
+            if d <= cutoff:
+                count += 1
+                score += w
+
+    return count, score
 
 
 def _resolve_underlying_hint(ticker: str, payload: dict) -> float | None:
@@ -769,6 +797,9 @@ def analyze_etf(payload: dict, ticker: str, *,
         preview_dte = 45
     strategies_preview = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=preview_dte)
     selected = strategies_preview[0] if strategies_preview else {}
+    # KI-097: count all macro events in the selected DTE window for event density gate
+    _selected_dte = int(selected.get("dte", 21)) if selected else 21
+    _event_count, _event_score = _count_macro_events_in_window(_selected_dte)
 
     # MarketData.app OI/volume supplement — fills the IBKR platform gap (OI always 0 via reqMktData).
     # McMillan Stress Check — worst 21-day move from OHLCV history
@@ -807,11 +838,15 @@ def analyze_etf(payload: dict, ticker: str, *,
             "iv_source": "marketdata",
         }
 
+    # KI-096: track whether IVR was actually known before coercing to 0.0.
+    # Seller gates use ivr_confidence to distinguish "low IVR" from "no IVR history."
+    ivr_confidence = "known" if ivr_data.get("ivr_pct") is not None else "unknown"
     ivr_for_gates = {k: (0.0 if v is None else v) for k, v in ivr_data.items()}
     vix_value, vix_source = _fetch_vix()
 
     gate_payload = {
         **ivr_for_gates,
+        "ivr_confidence": ivr_confidence,
         **swing_data,
         "underlying_price": underlying,
         "selected_expiry_dte": int(selected.get("dte", 21)),
@@ -834,6 +869,8 @@ def analyze_etf(payload: dict, ticker: str, *,
         "fomc_days_away": _fomc_days,
         "macro_days_away": _macro_days,
         "macro_event_name": _macro_name,
+        "macro_event_count": _event_count,
+        "macro_event_score": _event_score,
         "vix": vix_value,
         "lots": _f(payload.get("lots"), 1.0),
         "etf_holdings_at_risk": (

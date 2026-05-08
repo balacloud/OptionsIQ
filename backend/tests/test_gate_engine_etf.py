@@ -50,6 +50,65 @@ def test_verdict_go_when_all_pass():
     assert verdict["status"] in ("pass", "warn")
 
 
+# ---------------------------------------------------------------------------
+# KI-096: IVR unknown (no history) must WARN, not FAIL, on seller tracks
+# ---------------------------------------------------------------------------
+def test_seller_unknown_ivr_warns_not_fails():
+    """sell_put with ivr_confidence=unknown → ivr_seller gate is WARN (non-blocking), not FAIL."""
+    payload = make_gate_payload(ivr_pct=None, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="unknown")
+    payload["hv_iv_ratio"] = 1.1  # pass VRP gate
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    ivr_gate = _find_gate(gates, "ivr_seller")
+    assert ivr_gate is not None
+    assert ivr_gate["status"] == "warn"
+    assert ivr_gate["blocking"] is False
+
+
+def test_seller_known_low_ivr_still_fails():
+    """sell_put with ivr_confidence=known and low IVR → ivr_seller gate still FAILs (existing behavior preserved)."""
+    payload = make_gate_payload(ivr_pct=5.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    ivr_gate = _find_gate(gates, "ivr_seller")
+    assert ivr_gate is not None
+    assert ivr_gate["status"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# KI-097: event density gate — count events in DTE window
+# ---------------------------------------------------------------------------
+def test_event_density_high_count_blocks_rate_sensitive_etf():
+    """4+ events in DTE window should BLOCK for rate-sensitive ETF (XLF)."""
+    payload = make_gate_payload(ivr_pct=45.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    payload["macro_event_count"] = 4
+    payload["macro_event_score"] = 10
+    payload["ticker"] = "XLF"
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    density_gate = _find_gate(gates, "event_density")
+    assert density_gate is not None
+    assert density_gate["status"] == "fail"
+    assert density_gate["blocking"] is True
+
+
+def test_event_density_low_count_passes():
+    """1 event in DTE window should PASS for any ETF."""
+    payload = make_gate_payload(ivr_pct=45.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    payload["macro_event_count"] = 1
+    payload["macro_event_score"] = 2
+    payload["ticker"] = "XLF"
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    density_gate = _find_gate(gates, "event_density")
+    assert density_gate is not None
+    assert density_gate["status"] == "pass"
+
+
 def test_verdict_fail_when_blocking_gate_fails():
     """A blocking fail should produce fail verdict."""
     payload = make_gate_payload(ivr_pct=95.0, hv_20=10.0)

@@ -106,6 +106,7 @@ export default function BestSetups({ onSelect }) {
   const allResults = (data?.all_results || []).filter(r => !r.error);
   const go = setups.filter(s => s.verdict_color === 'green');
   const caution = setups.filter(s => s.verdict_color === 'yellow');
+  const tier1 = data?.tier1_summary;
   const blocked = allResults
     .filter(r => r.verdict_color === 'red' || (!r.verdict_color && r.gates_total > 0))
     .sort((a, b) => (b.pass_rate ?? 0) - (a.pass_rate ?? 0));
@@ -145,6 +146,26 @@ export default function BestSetups({ onSelect }) {
         </div>
         <button className="bs-refresh" onClick={load}>↻ Refresh</button>
       </div>
+
+      {tier1 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, opacity: 0.5, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Tier 1 ({tier1.tickers.join(' · ')}):
+          </span>
+          <span style={{ fontSize: 12, background: 'rgba(0,200,150,0.15)', color: '#00c896', borderRadius: 4, padding: '2px 8px' }}>
+            {tier1.go} GO
+          </span>
+          <span style={{ fontSize: 12, background: 'rgba(250,180,50,0.12)', color: '#f5a623', borderRadius: 4, padding: '2px 8px' }}>
+            {tier1.caution} CAUTION
+          </span>
+          <span style={{ fontSize: 12, background: 'rgba(220,60,60,0.10)', color: '#e05252', borderRadius: 4, padding: '2px 8px' }}>
+            {tier1.blocked} BLOCKED
+          </span>
+          <span style={{ fontSize: 11, opacity: 0.4 }}>
+            (Tier 2 ETFs are structurally blocked by liquidity — use Tier 1 GO rate for calibration)
+          </span>
+        </div>
+      )}
 
       {setups.length === 0 && (
         <div className="bs-empty">

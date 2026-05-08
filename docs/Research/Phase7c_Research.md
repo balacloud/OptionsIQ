@@ -1,5 +1,5 @@
 # Phase 7c — Trading Effectiveness Research
-> **Started:** Day 46 (2026-05-07) | **Last updated:** Day 48 (2026-05-08)
+> **Started:** Day 46 (2026-05-07) | **Last updated:** Day 49 (2026-05-08)
 > **Framework:** MASTER_AUDIT_FRAMEWORK v1.4, Category 10
 
 ---
@@ -294,6 +294,179 @@ Key findings:
 
 ---
 
+## External Audit — Perplexity (Day 49, 2026-05-08)
+
+> **Context fed:** README.md + Phase7c_Research.md. All 4 prompts (D1–D4).
+
+### D1 — Direction logic / tape-fighting
+
+**Verdict: Yes — bear_call_spread recommended on sectors rising in absolute terms. Serious design gap (confirms ChatGPT).**
+
+Key quote: *"RS is a ranking tool, not a directional tool. The Lagging quadrant tells you where to underweight, not where to short."*
+
+**Recommended 3-tier absolute trend filter:**
+
+| Scenario | RS Signal | weekChange | Allowed Action |
+|----------|-----------|------------|----------------|
+| Lagging + ETF down on week | rs_ratio < 98 | ≤ −0.5% | bear_call_spread — allowed |
+| Lagging + ETF flat | rs_ratio < 98 | −0.5% to +0.5% | CAUTION only — no GO |
+| Lagging + ETF up on week | rs_ratio < 98 | > +0.5% | BLOCK bearish direction |
+| Lagging + ETF up + SPY above 200SMA | both | both rising | **HARD BLOCK** |
+| Lagging + SPY below 200SMA | rs_ratio < 98 | any | bearish more acceptable |
+
+**Minimum viable code change:** `weekChange <= 0` required in `quadrant_to_direction()` for `bear_call_spread`. (Perplexity adds optional ±0.5% dead zone; ChatGPT uses simple `<= 0`. Start with `<= 0`.)
+
+---
+
+### D2 — Event density
+
+**Verdict: Single-next-event is a beginner-level safety check — underpowered for any DTE > 14 (confirms ChatGPT). Identical weighted severity model proposed.**
+
+**Weighted event severity:**
+
+| Event | Weight |
+|-------|--------|
+| FOMC rate decision | 3 |
+| CPI | 3 |
+| NFP / jobs report | 2 |
+| PCE inflation | 2 |
+| FOMC minutes | 1–2 |
+| Fed Chair speech | 1–2 |
+
+**Escalation table (seller trades):**
+
+| Events in DTE window | Weighted score | DTE 30–45 | DTE 21–29 | Under 21 |
+|---------------------|----------------|-----------|-----------|---------|
+| 0 events | 0 | PASS | WARN | BLOCK |
+| 1 minor | 1–2 | PASS | WARN | BLOCK |
+| 1 major (FOMC/CPI) | 3 | WARN | WARN | BLOCK |
+| 2+ events | 4–5 | WARN | BLOCK | BLOCK |
+| 3+ or score ≥ 6 | 6+ | **BLOCK** | BLOCK | BLOCK |
+| 4+ any events | any | **BLOCK** | BLOCK | BLOCK |
+
+Rate-sensitive ETFs (XLF, XLRE, XLU, XLE, IWM, QQQ) escalate one tier earlier.
+
+---
+
+### D3 — Gate calibration
+
+**Verdict: 0 GO is not automatically miscalibration — but the 15-ETF aggregate metric is misleading (confirms ChatGPT).**
+
+Key insight: effective tradable universe = ~5 Tier 1 ETFs. Tier 2 ETFs are structurally blocked by liquidity in most conditions. The right metric is Tier 1 GO rate.
+
+**Healthy target ranges (confirmed by both audits):**
+
+| Weekly GO count (Tier 1 only) | Interpretation |
+|-------------------------------|----------------|
+| 0 GO for 1 week | Acceptable |
+| 0 GO for 2–3 weeks | Watch |
+| 0 GO for 4+ weeks | Calibration or universe problem |
+| 1–3 GO/week | Healthy target |
+| 4–5 GO/week consistently | Suspiciously loose |
+
+**Expected win rates (calibrated system):**
+
+| Setup type | Expected win rate |
+|-----------|------------------|
+| GO credit spreads | 65–75% |
+| CAUTION credit spreads | 55–65% |
+| CAUTION + clustered macro | Below 55% — avoid |
+| CAUTION + liquidity warn | Often not worth slippage |
+
+Do NOT loosen the 20% bid-ask block to hit a GO target — a 39% spread means ~$2,000 slippage per 100 contracts before the trade starts.
+
+---
+
+### D4 — Buy vs sell structure
+
+**Verdict: IVR null → 0.0 is a design flaw (confirms ChatGPT). Missing data ≠ low volatility.**
+
+Key insight: IVR null ETFs fall into a dead zone — fail seller threshold (IVR < 35%), fall through to buyer path, but buyer path blocked by tape-fighting logic → no direction recommended.
+
+**Correct IVR null handling:**
+
+| IVR state | Current | Correct |
+|-----------|---------|---------|
+| Known ≥ 35% | Seller gates run | ✅ Keep |
+| Known < 30% | Buyer path eligible | ✅ Keep |
+| Known 30–50% | Ambiguous | Prefer debit spread in bull trend |
+| **Null / unknown** | **Coerced to 0.0 → fails seller** | **"IVR Unknown" — separate gate path, WARN** |
+
+**Recommended 4-step structure selection (Perplexity — matches ChatGPT framework):**
+
+| Step | Input | Decision |
+|------|-------|----------|
+| 1 — Market regime | SPY vs 200SMA, VIX | Bullish/bearish/neutral bias |
+| 2 — Sector trend | Quadrant + weekChange (absolute) | Direction allowed or WAIT |
+| 3 — Vol valuation | IVR (if known), IV/HV | Debit vs credit structure |
+| 4 — Liquidity | bid-ask spread, OI | Trade or no trade |
+
+**bull_call_spread** is the highest expected-value structure in low-VIX, SPY-above-200SMA, unknown/mid IVR — directionally aligned, theta-neutral, no Vol Risk Premium gate required.
+
+---
+
+### Priority Fixes (Perplexity ranking)
+
+| Priority | Fix | File | Complexity |
+|----------|-----|------|-----------|
+| 1 | Absolute trend gate: `weekChange ≤ 0` for `bear_call_spread` | `sector_scan_service.py` | Low |
+| 2 | Event density: events-in-window count + weighted score | `gate_engine.py` | Medium |
+| 3 | IVR null handling: separate unknown path, never coerce to 0.0 | `analyze_service.py` + `gate_engine.py` | Medium |
+| 4 | Tier 1 GO rate reporting separate from 15-ETF aggregate | `best_setups_service.py` + `DataProvenance.jsx` | Low |
+| 5 | `bull_call_spread` for Leading/Improving + IVR 30–50 or null in bull regime | `sector_scan_service.py` + `analyze_service.py` | High |
+
+---
+
+## External Audit — Gemini (Day 49, 2026-05-08)
+
+> **Context fed:** README.md + Phase7c_Research.md. All 4 prompts (D1–D4).
+
+**D1:** Yes — tape-fighting confirmed. `rs_ratio < 98 AND rs_momentum < -0.5` is a relative ranking tool, not a directional tool. In SPY > 200SMA, sector +2% while SPY +5% still means the sector is appreciating. Fix: require `weekChange <= 0` for any `bear_call_spread`. If Lagging but rising with SPY above 200SMA → hard block.
+
+**D2:** Single-next-event logic is underpowered for credit spreads in 30–45 DTE window. Credit spreads are exposed to full path until expiry, not just the nearest event. Fix: compute weighted event density score (FOMC=3, CPI=3, NFP=2, PCE=2) within DTE window. 2+ events in sub-30 DTE → automatic BLOCK. Rate-sensitive ETFs (XLF, XLRE, IWM) require stricter thresholds.
+
+**D3:** 0 GO is not miscalibration, but evaluating against 15 ETFs is a flawed metric. True tradable universe = ~5 Tier 1 ETFs. Do NOT loosen the 20% bid-ask block — $2,000 slippage on 100 contracts before the trade starts. Track GO rate vs Tier 1 only. Healthy target: 1–3 GO/week. 0 GO for 4+ weeks on Tier 1 = calibration issue. Expected CAUTION win rate (well-calibrated): 55–65%.
+
+**D4:** `IVR null → 0.0` is a severe design flaw — missing data is not low volatility. Fix: treat null IVR as "Unknown Confidence", issue WARN, do not route to buyer logic. `IVR < 30%` threshold for long calls is too restrictive — long options viable at 30–50% IVR if absolute trend is strong. `bull_call_spread` is the correct primary structure in low-VIX, SPY > 200SMA, mid-range or unknown IVR: directionally aligned, theta-neutral, no VRP gate required.
+
+---
+
+## External Audit — Synthesis (ChatGPT + Perplexity + Gemini)
+
+> 3/3 LLMs agree on all 5 gaps. External audit complete.
+
+### Agreement Matrix
+
+| KI | Gap | ChatGPT | Perplexity | Gemini | Agreement |
+|----|-----|---------|------------|--------|-----------|
+| KI-098 | Absolute trend gate — weekChange ≤ 0 for bear_call_spread | ✅ P1 | ✅ P1 | ✅ P1 | **3/3 Full** |
+| KI-097 | Event density — count events in DTE window | ✅ P2 | ✅ P2 | ✅ P2 | **3/3 Full** |
+| KI-096 | IVR null ≠ 0.0 — treat as unknown confidence | ✅ P3 | ✅ P3 | ✅ P3 | **3/3 Full** |
+| KI-100 | Tier 1 GO rate reporting separate from 15-ETF | ✅ P4 | ✅ P4 | ✅ P4 | **3/3 Full** |
+| KI-099 | bull_call_spread for Leading/Improving mid-IVR | ✅ P5 | ✅ P5 | ✅ P5 | **3/3 Full** |
+
+**All three audits share the same framing:**
+- Gate math is correct. Liquidity gates are correct. Do NOT loosen them.
+- The bugs are *decision-context bugs* — upstream of the gate engine, in how the system decides what to evaluate before gates run.
+- Bear call spread in SPY-above-200SMA + VIX-17 is the lowest expected-value structure the system currently recommends.
+
+**Useful nuance from Perplexity (not in others):**
+- ±0.5% dead zone: flat-week ETF → CAUTION only, not GO. Optional refinement after the minimal `weekChange ≤ 0` fix.
+
+### Implementation Order (confirmed by both audits)
+
+| Order | KI | Complexity | Rationale |
+|-------|----|-----------|-----------|
+| 1st | KI-098 | Low (3-line change) | Highest P&L impact, confirmed safe, zero risk of breaking other paths |
+| 2nd | KI-096 | Medium | Fixes null-IVR dead zone; unblocks correct direction recommendations |
+| 3rd | KI-097 | Medium | Improves event risk control; existing calendar data, no new deps |
+| 4th | KI-100 | Low (display only) | Better calibration visibility; no gate logic changes |
+| 5th | KI-099 | High | Adds new direction path; needs full testing of all 4 directions post-change |
+
+**Wait for Gemini before starting KI-097 or KI-099** — these are more complex and Gemini may add nuance. KI-098 is confirmed safe to implement now.
+
+---
+
 ## Check 10.5 — EV Sanity
 
 **Formula:** Expected move = underlying × IV × sqrt(DTE/365)
@@ -329,15 +502,17 @@ Key findings:
 
 ---
 
-## Pending Code Changes (awaiting external audit results)
+## Pending Code Changes
 
-| Priority | Item | Gap | Change needed |
-|----------|------|-----|---------------|
-| 1 | Absolute trend gate | Lagging → bear_call_spread even if sector rising absolute | `weekChange ≤ 0` required in `quadrant_to_direction()` |
-| 2 | Event density gate | Single-next-event logic misses 4 events in 22 DTE | Count events in DTE window, escalate WARN→BLOCK at N events |
-| 3 | IVR null handling | `None → 0.0` coercion makes missing data behave like low vol | Treat as unknown confidence; separate null path in gate logic |
-| 4 | Tier 1 GO rate reporting | 15-ETF aggregate hides that Tier 2 is structurally untradable | Track and display GO rate for Tier 1 (QQQ/IWM/XLF/XLK/XLY) separately |
-| 5 | bull_call_spread direction | Low/mid IVR bull setups have no debit spread option | Add bull_call_spread as direction for Leading/Improving + IVR 30–50 |
+> External audit complete: ChatGPT + Perplexity = full agreement on all 5 items. Gemini pending (does not block KI-098).
+
+| Priority | KI | Item | Gap | Change needed | Status |
+|----------|----|------|-----|---------------|--------|
+| 1 | KI-098 | Absolute trend gate | Lagging → bear_call_spread even if sector rising absolute | `weekChange ≤ 0` required in `quadrant_to_direction()` | **Ready — 3/3 confirmed** |
+| 2 | KI-096 | IVR null handling | `None → 0.0` coercion — missing data treated as low vol | Treat as unknown confidence; separate null path in gate logic | **Ready — 3/3 confirmed** |
+| 3 | KI-097 | Event density gate | Single-next-event misses 4 events in 22 DTE | Count events in DTE window, weighted score, escalate WARN→BLOCK | **Ready — 3/3 confirmed** |
+| 4 | KI-100 | Tier 1 GO rate reporting | 15-ETF aggregate hides structural Tier 2 block | Track and display GO rate for Tier 1 (QQQ/IWM/XLF/XLK/XLY) separately | After KI-098/096 |
+| 5 | KI-099 | bull_call_spread direction | Low/mid IVR bull setups have no debit spread option | Add bull_call_spread as direction for Leading/Improving + IVR 30–50 | After KI-097 |
 
 ---
 
@@ -351,7 +526,8 @@ Key findings:
 | Ongoing | Paper trade win rate (30 trades) | 0/30 logged |
 | Ongoing | Adversarial LLM review | Monthly |
 | Ongoing | Weekly gate pass rate log | Weekly |
-| Pending | Absolute trend gate (weekChange ≤ 0 for bear_call_spread) | After external audit |
-| Pending | Event density gate (events-in-window count) | After external audit |
+| **Ready** | Absolute trend gate — KI-098 | 3/3 confirmed — implement now |
+| **Ready** | IVR null handling — KI-096 | 3/3 confirmed — after KI-098 |
+| **Ready** | Event density gate — KI-097 | 3/3 confirmed — after KI-096 |
 | Future | Cyclical vs defensive Weakening logic | When Weakening cyclicals active |
 | Future | Alternative strike search (higher delta for Tier 2 ETFs) | Research needed |

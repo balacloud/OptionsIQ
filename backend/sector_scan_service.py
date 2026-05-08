@@ -42,7 +42,7 @@ _SCAN_CACHE_TTL = 60  # seconds — L1 data is STA-sourced, 1 min freshness is f
 # ---------------------------------------------------------------------------
 # Quadrant → direction mapping (research-verified Day 13, Phase 7b Day 19)
 # ---------------------------------------------------------------------------
-def quadrant_to_direction(quadrant, ivr=None, rs_ratio=None, rs_momentum=None):
+def quadrant_to_direction(quadrant, ivr=None, rs_ratio=None, rs_momentum=None, week_change=None):
     """
     IVR-aware direction mapping (research-verified Day 13 + Phase 7b Day 19 + Day 22):
 
@@ -54,8 +54,9 @@ def quadrant_to_direction(quadrant, ivr=None, rs_ratio=None, rs_momentum=None):
     - Leading:   IVR-tiered above
     - Improving: IVR-tiered above (same logic, slightly weaker RS)
     - Weakening: None (WAIT — still RS>100, not bearish)
-    - Lagging:   bear_call_spread if RS < 98 AND momentum < -0.5
-                 (defined risk credit spread on sustained underperformance)
+    - Lagging:   bear_call_spread if RS < 98 AND momentum < -0.5 AND week_change <= 0
+                 (KI-098: absolute trend gate — sector rising in absolute terms while
+                  Lagging vs SPY = tape-fighting. weekChange from STA response.)
     """
     if quadrant in ("Leading", "Improving"):
         if ivr is not None and ivr >= 50:
@@ -69,6 +70,10 @@ def quadrant_to_direction(quadrant, ivr=None, rs_ratio=None, rs_momentum=None):
         # mom < -0.5 = still declining (not bottoming)
         if (rs_ratio is not None and rs_ratio < RS_LAGGING_BEAR_RS
                 and rs_momentum is not None and rs_momentum < RS_LAGGING_BEAR_MOM):
+            # KI-098: block if sector rising in absolute terms — RS is a ranking tool,
+            # not a directional tool. Lagging + rising = tape-fight.
+            if week_change is not None and week_change > 0:
+                return None
             return "bear_call_spread"
         return None
     # Weakening: no position (still RS>100, not bearish)
@@ -254,7 +259,10 @@ def scan_sectors(iv_store=None):
         rs = s.get("rsRatio")
         mom = s.get("rsMomentum")
         ivr_pct = _get_ivr(etf)
-        direction = quadrant_to_direction(quadrant, ivr=ivr_pct, rs_ratio=rs, rs_momentum=mom)
+        week_change = s.get("weekChange")
+        direction = quadrant_to_direction(
+            quadrant, ivr=ivr_pct, rs_ratio=rs, rs_momentum=mom, week_change=week_change,
+        )
         # If a direction is suggested (including bear), action = ANALYZE
         action = "ANALYZE" if direction is not None else quadrant_to_action(quadrant)
         catalyst = _catalyst_warnings(etf)
@@ -267,7 +275,7 @@ def scan_sectors(iv_store=None):
             "rs_momentum": mom,
             "quadrant": quadrant,
             "price": s.get("price"),
-            "week_change": s.get("weekChange"),
+            "week_change": week_change,
             "month_change": s.get("monthChange"),
             "suggested_direction": direction,
             "action": action,
@@ -290,7 +298,12 @@ def scan_sectors(iv_store=None):
             quad = "Lagging"
 
         ivr_pct = _get_ivr(etf)
-        direction = quadrant_to_direction(quad, ivr=ivr_pct, rs_ratio=rs, rs_momentum=mom)
+        # Size rotation ETFs: STA does not return weekChange for QQQ/MDY/IWM —
+        # week_change will be None, so KI-098 absolute trend gate is bypassed (correct).
+        sr_week_change = sr.get("weekChange")
+        direction = quadrant_to_direction(
+            quad, ivr=ivr_pct, rs_ratio=rs, rs_momentum=mom, week_change=sr_week_change,
+        )
         action = "ANALYZE" if direction is not None else quadrant_to_action(quad)
         catalyst = _catalyst_warnings(etf)
 
@@ -302,7 +315,7 @@ def scan_sectors(iv_store=None):
             "rs_momentum": mom,
             "quadrant": quad,
             "price": sr.get("price"),
-            "week_change": sr.get("weekChange"),
+            "week_change": sr_week_change,
             "month_change": sr.get("monthChange"),
             "suggested_direction": direction,
             "action": action,
@@ -445,6 +458,7 @@ def analyze_sector_etf(ticker, data_service=None, ib_worker=None, iv_store=None)
     rs_momentum = etf_data.get("rs_momentum")
     direction_with_ivr = quadrant_to_direction(
         quadrant, ivr=ivr, rs_ratio=rs_ratio, rs_momentum=rs_momentum,
+        week_change=etf_data.get("week_change"),
     )
 
     # Phase 7b: IVR soft warning for bear credit spreads

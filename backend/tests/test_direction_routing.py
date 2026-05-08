@@ -2,9 +2,45 @@
 from helpers import make_chain
 from constants import DIRECTION_TO_CHAIN_DIR
 from strategy_ranker import StrategyRanker
+from sector_scan_service import quadrant_to_direction
 
 
 ranker = StrategyRanker()
+
+
+# ---------------------------------------------------------------------------
+# KI-098: absolute trend gate — weekChange blocks tape-fighting bear_call_spread
+# ---------------------------------------------------------------------------
+def test_lagging_sector_down_on_week_returns_bear_call_spread():
+    """Lagging + week_change negative → bear_call_spread allowed."""
+    result = quadrant_to_direction(
+        "Lagging", rs_ratio=96.0, rs_momentum=-0.8, week_change=-1.5
+    )
+    assert result == "bear_call_spread"
+
+
+def test_lagging_sector_up_on_week_blocked():
+    """Lagging + week_change positive → tape-fighting, return None."""
+    result = quadrant_to_direction(
+        "Lagging", rs_ratio=96.0, rs_momentum=-0.8, week_change=2.1
+    )
+    assert result is None
+
+
+def test_lagging_sector_week_change_zero_returns_bear_call_spread():
+    """Lagging + week_change exactly 0 → flat week, allow (not rising)."""
+    result = quadrant_to_direction(
+        "Lagging", rs_ratio=96.0, rs_momentum=-0.8, week_change=0.0
+    )
+    assert result == "bear_call_spread"
+
+
+def test_lagging_sector_week_change_none_returns_bear_call_spread():
+    """Lagging + week_change None (size ETF, data unavailable) → gate bypassed."""
+    result = quadrant_to_direction(
+        "Lagging", rs_ratio=96.0, rs_momentum=-0.8, week_change=None
+    )
+    assert result == "bear_call_spread"
 
 
 def test_bear_call_spread_normalizes_to_sell_call():

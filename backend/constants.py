@@ -394,6 +394,19 @@ FOMC_HIGH_SENSITIVITY   = {"XLF", "XLRE"}    # Biggest movers on Fed days
 FOMC_LOW_SENSITIVITY    = {"XLU", "XLP"}      # Barely move on Fed days
 FOMC_WARN_DAYS          = 3                    # WARN (not BLOCK) within 3 days
 
+# Event density gate (KI-097) — macro events within DTE window
+# 3/3 external audit consensus: single-next-event logic underpowered for credit spreads.
+# Count all FOMC + CPI/NFP/PCE events in DTE window. Weighted score for escalation.
+EVENT_WEIGHTS           = {"FOMC": 3, "CPI": 3, "NFP": 2, "PCE": 2}  # severity weights
+EVENT_DENSITY_WARN_COUNT   = 3   # any ETF: ≥3 events in window → WARN
+EVENT_DENSITY_BLOCK_COUNT  = 4   # any ETF: ≥4 events in window → BLOCK
+EVENT_DENSITY_WARN_COUNT_SENSITIVE  = 2  # rate-sensitive ETFs escalate one tier earlier
+EVENT_DENSITY_BLOCK_COUNT_SENSITIVE = 3
+EVENT_DENSITY_SCORE_WARN   = 5   # weighted score ≥5 → WARN (e.g., CPI+NFP)
+EVENT_DENSITY_SCORE_BLOCK  = 7   # weighted score ≥7 → BLOCK (e.g., FOMC+CPI+any)
+# ETFs with amplified rate/macro sensitivity (3/3 audit consensus + FOMC_HIGH_SENSITIVITY)
+EVENT_DENSITY_RATE_SENSITIVE = {"XLF", "XLRE", "XLU", "XLE", "IWM", "QQQ"}
+
 # Dividend risk (VERIFIED: Webull, Schwab, Fidelity, CBOE)
 HIGH_DIVIDEND_ETFS      = {"XLU", "XLRE", "XLF"}  # Yield > 1.4%
 DIVIDEND_WARN_DAYS      = 3                         # Short calls: WARN 3 days before ex-date

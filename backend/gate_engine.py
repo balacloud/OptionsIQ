@@ -53,6 +53,13 @@ from constants import (
     THETA_BURN_WARN_PCT,
     VCP_HIGH_CONF_PCT,
     VCP_MED_CONF_PCT,
+    EVENT_DENSITY_WARN_COUNT,
+    EVENT_DENSITY_BLOCK_COUNT,
+    EVENT_DENSITY_WARN_COUNT_SENSITIVE,
+    EVENT_DENSITY_BLOCK_COUNT_SENSITIVE,
+    EVENT_DENSITY_SCORE_WARN,
+    EVENT_DENSITY_SCORE_BLOCK,
+    EVENT_DENSITY_RATE_SENSITIVE,
 )
 
 
@@ -271,14 +278,20 @@ class GateEngine:
 
     def _run_track_b(self, p: dict) -> list[dict]:
         out = []
-        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
-        if ivr >= IVR_SELLER_PASS_PCT:
-            s, r = "pass", "Premium expensive — ideal for selling"
-        elif ivr >= IVR_SELLER_MIN_PCT:
-            s, r = "warn", "Minimum viable IV for put selling"
+        # KI-096: unknown IVR (no history) is not the same as low IVR — warn, don't fail
+        if p.get("ivr_confidence") == "unknown":
+            s, r = "warn", "No IV history — cannot confirm premium is elevated. Treat as CAUTION."
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, "IVR unknown",
+                             f">={IVR_SELLER_PASS_PCT} pass, <{IVR_SELLER_MIN_PCT} fail", r, False))
         else:
-            s, r = "fail", "IV too cheap — insufficient premium"
-        out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+            ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+            if ivr >= IVR_SELLER_PASS_PCT:
+                s, r = "pass", "Premium expensive — ideal for selling"
+            elif ivr >= IVR_SELLER_MIN_PCT:
+                s, r = "warn", "Minimum viable IV for put selling"
+            else:
+                s, r = "fail", "IV too cheap — insufficient premium"
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
 
         strike = float(p.get("strike", 0.0) or 0.0)
         s1 = float(p.get("s1_support", 0.0) or 0.0)
@@ -354,14 +367,20 @@ class GateEngine:
         out = []
 
         # Gate 1: IVR — sellers want HIGH IV to maximize premium collected
-        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
-        if ivr >= IVR_SELLER_PASS_PCT:
-            s, r = "pass", "Premium expensive — ideal for selling calls"
-        elif ivr >= IVR_SELLER_MIN_PCT:
-            s, r = "warn", "Minimum viable IV for call selling"
+        # KI-096: unknown IVR (no history) is not the same as low IVR — warn, don't fail
+        if p.get("ivr_confidence") == "unknown":
+            s, r = "warn", "No IV history — cannot confirm premium is elevated. Treat as CAUTION."
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, "IVR unknown",
+                             f">={IVR_SELLER_PASS_PCT} pass, <{IVR_SELLER_MIN_PCT} fail", r, False))
         else:
-            s, r = "fail", "IV too cheap — insufficient premium for call selling"
-        out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+            ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+            if ivr >= IVR_SELLER_PASS_PCT:
+                s, r = "pass", "Premium expensive — ideal for selling calls"
+            elif ivr >= IVR_SELLER_MIN_PCT:
+                s, r = "warn", "Minimum viable IV for call selling"
+            else:
+                s, r = "fail", "IV too cheap — insufficient premium for call selling"
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -813,6 +832,36 @@ class GateEngine:
                      "warn if any key holding reports inside DTE window",
                      r, False)
 
+    def _etf_event_density_gate(self, p: dict, dte: int) -> dict:
+        """KI-097: count ALL macro events in the DTE window, not just the nearest one.
+        Rate-sensitive ETFs (XLF, XLRE, XLU, XLE, IWM, QQQ) escalate one tier earlier.
+        """
+        event_count = int(p.get("macro_event_count", 0) or 0)
+        event_score = int(p.get("macro_event_score", 0) or 0)
+        ticker = p.get("ticker", "")
+        sensitive = ticker in EVENT_DENSITY_RATE_SENSITIVE
+
+        warn_count  = EVENT_DENSITY_WARN_COUNT_SENSITIVE  if sensitive else EVENT_DENSITY_WARN_COUNT
+        block_count = EVENT_DENSITY_BLOCK_COUNT_SENSITIVE if sensitive else EVENT_DENSITY_BLOCK_COUNT
+
+        if event_count >= block_count or event_score >= EVENT_DENSITY_SCORE_BLOCK:
+            s = "fail"
+            r = (f"{event_count} macro events in {dte} DTE window (score={event_score}) — "
+                 "excessive macro path risk for credit spread")
+            block = True
+        elif event_count >= warn_count or event_score >= EVENT_DENSITY_SCORE_WARN:
+            s = "fail" if (sensitive and event_count >= block_count) else "warn"
+            r = (f"{event_count} macro events in {dte} DTE window (score={event_score}) — "
+                 "elevated macro path risk; consider reducing size")
+            block = False
+        else:
+            s, r, block = "pass", f"{event_count} event(s) in {dte} DTE window — acceptable", False
+
+        return _gate("event_density", "Event Density", s,
+                     f"{event_count} events · score {event_score} · DTE {dte}",
+                     f"<{warn_count} events pass, ≥{warn_count} warn, ≥{block_count} block",
+                     r, block)
+
     def _etf_fomc_gate(self, p: dict, dte: int) -> dict:
         """FOMC + macro event proximity check (CPI, NFP, PCE).
         Warns whenever any major scheduled event falls inside the holding window.
@@ -1002,15 +1051,21 @@ class GateEngine:
         out = []
 
         # Gate 1: IVR seller — wants HIGH IV
-        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
-        if ivr >= IVR_SELLER_PASS_PCT:
-            s, r = "pass", "Premium expensive — ideal for put selling"
-        elif ivr >= IVR_SELLER_MIN_PCT:
-            s, r = "warn", "Minimum viable IV for put selling"
+        # KI-096: unknown IVR (no history) is not the same as low IVR — warn, don't fail
+        if p.get("ivr_confidence") == "unknown":
+            s, r = "warn", "No IV history — cannot confirm premium is elevated. Treat as CAUTION."
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, "IVR unknown",
+                             f">={IVR_SELLER_PASS_PCT} pass, <{IVR_SELLER_MIN_PCT} fail", r, False))
         else:
-            s, r = "fail", "IV too cheap — insufficient premium to sell puts"
-        out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.1f}%",
-                         f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+            ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+            if ivr >= IVR_SELLER_PASS_PCT:
+                s, r = "pass", "Premium expensive — ideal for put selling"
+            elif ivr >= IVR_SELLER_MIN_PCT:
+                s, r = "warn", "Minimum viable IV for put selling"
+            else:
+                s, r = "fail", "IV too cheap — insufficient premium to sell puts"
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.1f}%",
+                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -1048,8 +1103,11 @@ class GateEngine:
         out.append(_gate("dte_seller", "DTE (Seller)", s, f"DTE {dte}",
                          f"{ETF_DTE_SELLER_PASS_MIN}–{ETF_DTE_SELLER_PASS_MAX} pass; <{ETF_DTE_SELLER_PASS_MIN} warn; >60 or <7 fail", r, s == "fail"))
 
-        # Gate 4: FOMC event
+        # Gate 4: FOMC event (nearest single event)
         out.append(self._etf_fomc_gate(p, dte))
+
+        # Gate 4b: Event density (KI-097) — all events in DTE window, not just nearest
+        out.append(self._etf_event_density_gate(p, dte))
 
         # Gate 5: Holdings earnings risk
         out.append(self._etf_holdings_earnings_gate(p))
@@ -1107,15 +1165,21 @@ class GateEngine:
         out = []
 
         # Gate 1: IVR — sellers want HIGH IV to maximize premium collected
-        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
-        if ivr >= IVR_SELLER_PASS_PCT:
-            s, r = "pass", "Premium expensive — ideal for selling calls"
-        elif ivr >= IVR_SELLER_MIN_PCT:
-            s, r = "warn", "Minimum viable IV for call selling"
+        # KI-096: unknown IVR (no history) is not the same as low IVR — warn, don't fail
+        if p.get("ivr_confidence") == "unknown":
+            s, r = "warn", "No IV history — cannot confirm premium is elevated. Treat as CAUTION."
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, "IVR unknown",
+                             f">={IVR_SELLER_PASS_PCT} pass, <{IVR_SELLER_MIN_PCT} fail", r, False))
         else:
-            s, r = "fail", "IV too cheap — insufficient premium for call selling"
-        out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
-                         f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+            ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+            if ivr >= IVR_SELLER_PASS_PCT:
+                s, r = "pass", "Premium expensive — ideal for selling calls"
+            elif ivr >= IVR_SELLER_MIN_PCT:
+                s, r = "warn", "Minimum viable IV for call selling"
+            else:
+                s, r = "fail", "IV too cheap — insufficient premium for call selling"
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
+                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -1174,6 +1238,9 @@ class GateEngine:
         out.append(_gate("events", "Event Calendar", s,
                          f"earn {earn_days}d · FOMC {fomc_days}d · {macro_name} {macro_days}d",
                          "earnings > DTE and events >10d", r, block))
+
+        # Gate 6b: Event density (KI-097) — all events in DTE window, not just nearest
+        out.append(self._etf_event_density_gate(p, dte))
 
         # Gate 7: Liquidity
         out.append(self._liquidity_gate(p))

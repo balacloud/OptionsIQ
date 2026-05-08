@@ -15,7 +15,7 @@ load_dotenv(Path(__file__).resolve().with_name(".env"))
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from constants import STA_BASE_URL, ETF_TICKERS
+from constants import STA_BASE_URL, ETF_TICKERS, ETF_OPTIONS_LIQUID_TIER1
 from sector_scan_service import scan_sectors, analyze_sector_etf, _spy_regime
 from data_service import DataService
 from gate_engine import GateEngine
@@ -369,11 +369,25 @@ def best_setups():
     good = [r for r in results if not r.get("error") and r.get("verdict_color") in ("green", "yellow")]
     good.sort(key=lambda r: (order.get(r["verdict_color"], 3), -r.get("pass_rate", 0)))
 
+    # KI-100: Tier 1 GO rate — track separately from 15-ETF aggregate.
+    # Tier 2 ETFs are structurally blocked by liquidity; aggregate masks true system calibration.
+    tier1_results = [r for r in results if not r.get("error") and r.get("ticker") in ETF_OPTIONS_LIQUID_TIER1]
+    tier1_go     = sum(1 for r in tier1_results if r.get("verdict_color") == "green")
+    tier1_caution = sum(1 for r in tier1_results if r.get("verdict_color") == "yellow")
+    tier1_blocked = sum(1 for r in tier1_results if r.get("verdict_color") == "red")
+
     return jsonify({
         "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "candidates_scanned": len(candidates),
         "setups": good[:8],
         "all_results": results,
+        "tier1_summary": {
+            "tickers": sorted(ETF_OPTIONS_LIQUID_TIER1),
+            "go": tier1_go,
+            "caution": tier1_caution,
+            "blocked": tier1_blocked,
+            "total": len(tier1_results),
+        },
     })
 
 

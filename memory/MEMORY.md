@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 48)
-v0.31.0. Phase 7c external audit (Day 48): ChatGPT 4-question audit complete — 5 design gaps found (KI-096 IVR null coercion, KI-097 event density, KI-098 absolute trend gate, KI-099 bull_call_spread direction, KI-100 Tier 1 GO rate). STA backend.py reviewed: RS midpoint normalization confirmed, weekChange returned but unused. Phase7c files consolidated into Phase7c_Research.md. Awaiting Gemini/Perplexity before implementing. 36 tests.
+## Current Phase (Day 49)
+v0.32.0. KI-096/097/098/100 all implemented and tested. 44 tests (was 36). KI-096: ivr_confidence="known"/"unknown" in gate_payload — seller IVR gates WARN not FAIL on no-history ETFs. KI-097: _etf_event_density_gate() new method (Rule 5) — counts all FOMC/CPI/NFP/PCE in DTE window, weighted scores, rate-sensitive escalation. KI-098: weekChange gate in quadrant_to_direction() — Lagging→bear_call_spread blocked when tape rising. KI-100: tier1_summary in /api/best-setups + Tier 1 pills bar in BestSetups.jsx. Open: KI-059 (deferred), KI-099 (deferred, high complexity). Next: paper trade logging (0/30), MASTER_AUDIT_FRAMEWORK sweep, Claude skill discussion.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY48_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY48.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY49_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY49.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -48,23 +48,27 @@ backend/
   ibkr_provider.py    DONE (Day 12) — try-finally cancelMktData. OI unavailable (platform). readonly=True.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      DONE (Day 21+27+28+29+32+43) — all 4 tracks with VRP + VIX gates for sellers.
-                      Day 43: _etf_fomc_gate() extended to check macro events (CPI/NFP/PCE). _run_sell_call gate 4 same.
-                      ETF_DTE_SELLER_PASS_MIN/MAX imported and used correctly (was using wrong VCP constants).
+  gate_engine.py      DONE (Day 21+27+28+29+32+43+49) — all 4 tracks with VRP + VIX gates for sellers.
+                      Day 43: _etf_fomc_gate() extended to check macro events (CPI/NFP/PCE).
+                      Day 49: KI-096: seller IVR gates check ivr_confidence first — unknown → warn (non-blocking).
+                      Day 49: KI-097: _etf_event_density_gate() new method (Rule 5). Weighted event count in DTE window.
+                      Rate-sensitive ETFs: {XLF,XLRE,XLU,XLE,IWM,QQQ} — escalate one tier earlier.
   strategy_ranker.py  DONE (Day 23+29) — credit_to_width_ratio on bear_call/bull_put R1/R2.
   pnl_calculator.py   DONE (Day 27) — bull_put_spread handler. All 6 strategy types covered.
   iv_store.py         DONE (Day 29+35) — get_iv_stats(), get_ohlcv_stats(), compute_max_21d_move(). batch_run_log table + log_batch_run() + get_batch_runs() added Day 35.
   data_health_service.py  DONE (Day 29+34) — 8 fields now (underlying_price added Day 34).
-  sector_scan_service.py  DONE (Day 19) — STA consumer + L1 scan + L2 analyze + Phase 7b bear logic.
-  tests/              DONE (Day 24+28+30+34) — 36 tests (pytest). 6 files.
-                      New: test_resolve_underlying_hint.py (3 tests, KI-088).
+  sector_scan_service.py  DONE (Day 19+49) — STA consumer + L1 scan + L2 analyze + Phase 7b bear logic.
+                      Day 49: KI-098: quadrant_to_direction() takes week_change param. Lagging→bear_call_spread
+                      blocked when week_change > 0 (tape-fighting). Size rotation ETFs bypass (no weekChange from STA).
+  tests/              DONE (Day 24+28+30+34+49) — 44 tests (pytest). 6 files.
+                      +4 test_direction_routing.py (KI-098), +2 test_gate_engine_etf.py (KI-096+097 each).
 
 frontend/
   components/DataProvenance.jsx  DONE (Day 29+34+35+38+39+41+42) — ManualBatchTriggers added Day 39. DataFlowDiagram SVG updated Day 41. fmtTime() UTC fix Day 42.
   components/GateExplainer.jsx   DONE (Day 25+43) — hv_iv_vrp + vix_regime GATE_KB entries added Day 43. events entry updated for CPI/NFP/PCE.
   components/DirectionGuide.jsx  DONE (Day 25+43) — sell_put risk label fix Day 43 (KI-077).
   App.jsx                        DONE (Day 21+25+29+31+42) — QualityBanner ibkr_cache→bod_cache (Day 42), tradier added to no-banner early-return.
-  components/BestSetups.jsx      DONE (Day 31+32) — IV/HV ratio column, 7-col grid.
+  components/BestSetups.jsx      DONE (Day 31+32+49) — IV/HV ratio column, 7-col grid. Day 49: KI-100 Tier 1 pills bar (GO/CAUTION/BLOCKED for IWM/QQQ/XLF/XLK/XLY separate from full aggregate).
 ```
 
 ## STA Architectural Role (updated Day 34)
@@ -87,12 +91,11 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 49 Priorities
-1. **P0:** Consolidate Gemini/Perplexity audit results into Phase7c_Research.md — compare with ChatGPT findings.
-2. **P1:** Implement KI-098 — absolute trend gate: `weekChange ≤ 0` required for `bear_call_spread` in `quadrant_to_direction()`. 3-line change + 2 call sites + 1 test.
-3. **P2:** Implement KI-096 — IVR null handling: treat None as "unknown confidence", not 0.0.
-4. **P3:** Implement KI-097 — event density gate: count events in DTE window, escalate at 3+.
-5. **P4:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
+## Day 50 Priorities
+1. **P0:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
+2. **P1:** KI-099 scoping — bull_call_spread for Leading/Improving + IVR 30–50%. Read direction track code before planning.
+3. **P2:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42. Focus Category 10 (gate calibration).
+4. **P3:** Claude skill discussion — user explicitly asked: "how creating a claude skill can enhance our app."
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -103,8 +106,8 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.3 (Day 42).
-- `docs/versioned/KNOWN_ISSUES_DAY47.md`
-- `docs/status/PROJECT_STATUS_DAY47_SHORT.md`
+- `docs/versioned/KNOWN_ISSUES_DAY49.md`
+- `docs/status/PROJECT_STATUS_DAY49_SHORT.md`
 - `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
