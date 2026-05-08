@@ -4,7 +4,7 @@
 
 OptionsIQ scans 15 sector ETFs using STA's relative-strength data, runs a multi-gate quality framework against live Tradier options chain data, and recommends the best strike/expiry for defined-risk vertical spreads. It covers all four directions (buy call, sell call, buy put, sell put) with empirically grounded gate thresholds and a step-by-step IBKR Client Portal execution guide.
 
-> **v0.31.0** — Day 47 (May 7, 2026)
+> **v0.31.0** — Day 48 (May 8, 2026)
 
 ---
 
@@ -341,7 +341,7 @@ options-iq/
     ├── versioned/KNOWN_ISSUES_DAY*.md
     ├── status/PROJECT_STATUS_DAY*_SHORT.md
     └── Research/
-        ├── Phase7c_Trading_Effectiveness_Day46.md  # Category 10 live scan results
+        ├── Phase7c_Research.md                     # Phase 7c: scan findings, fixes, audit prompts, roadmap
         ├── Daily_Trade_Prompts.md                  # 7 pre-trade research prompts
         ├── data-providers/DATA_PROVIDERS_SYNTHESIS.md
         └── [sector-rotation/, ux-design/, ki-plans/, ...]

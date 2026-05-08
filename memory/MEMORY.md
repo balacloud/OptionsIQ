@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 47)
-v0.31.0. README full rewrite (Day 47): fixed 9+ stale sections — Tradier as primary, 15 ETFs, 36 tests, all 21 backend files, 22 frontend components, API table complete (21 endpoints), version history through v0.30.1. Phase 7c code: ETF_OPTIONS_LIQUID_TIER1 in constants (QQQ/IWM/XLF/XLK/XLY), _is_early_market_session() helper, ticker in gate_payload, actionable liquidity messages (Tier2 ETF suggests QQQ/XLF; early session suggests rescan after 10 AM). All code issues closed (KI-059 deferred). 36 tests. Next: adversarial LLM review (P0), paper trade logging (P1).
+## Current Phase (Day 48)
+v0.31.0. Phase 7c external audit (Day 48): ChatGPT 4-question audit complete — 5 design gaps found (KI-096 IVR null coercion, KI-097 event density, KI-098 absolute trend gate, KI-099 bull_call_spread direction, KI-100 Tier 1 GO rate). STA backend.py reviewed: RS midpoint normalization confirmed, weekChange returned but unused. Phase7c files consolidated into Phase7c_Research.md. Awaiting Gemini/Perplexity before implementing. 36 tests.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY47_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY47.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY48_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY48.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -87,12 +87,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 48 Priorities
-1. **P0:** Adversarial LLM review — paste XLF/QQQ setup to ChatGPT/Opus using prompt in Phase7c_Actionable_Day47.md (user action, 15 min).
-2. **P1:** Start paper trade logging — log next XLF or QQQ CAUTION setup to Paper Trade Dashboard (Check 10.4 method a, need 30 trades).
-3. **P2:** MASTER_AUDIT_FRAMEWORK sweep — skip until Day 49+.
-4. **P3:** Phase 7c cyclical vs defensive split — deferred until Weakening cyclicals in ANALYZE mode.
-5. **P4:** Weekly gate pass rate log — second data point in Phase7c_Actionable_Day47.md Check 10.1 table.
+## Day 49 Priorities
+1. **P0:** Consolidate Gemini/Perplexity audit results into Phase7c_Research.md — compare with ChatGPT findings.
+2. **P1:** Implement KI-098 — absolute trend gate: `weekChange ≤ 0` required for `bear_call_spread` in `quadrant_to_direction()`. 3-line change + 2 call sites + 1 test.
+3. **P2:** Implement KI-096 — IVR null handling: treat None as "unknown confidence", not 0.0.
+4. **P3:** Implement KI-097 — event density gate: count events in DTE window, escalate at 3+.
+5. **P4:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -105,7 +105,7 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.3 (Day 42).
 - `docs/versioned/KNOWN_ISSUES_DAY47.md`
 - `docs/status/PROJECT_STATUS_DAY47_SHORT.md`
-- `docs/Research/Phase7c_Actionable_Day47.md` — Phase 7c actionable improvements + adversarial LLM prompt + weekly gate pass rate log
+- `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
 - `docs/Research/ki-plans/KI-088_Day34.md` — Opus plan for KI-088 + MarketData.app diagnostic
