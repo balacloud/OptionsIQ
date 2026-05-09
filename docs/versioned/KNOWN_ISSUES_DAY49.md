@@ -29,6 +29,11 @@
 
 ## Still Open (Carried Forward)
 
+### KI-101: Best Setups watchlist IV/HV ratio shows — when chain IV is missing (MEDIUM — OPEN)
+**Symptom:** Watchlist column shows `—` for IV/HV ratio even when ETF has OHLCV data (HV-20 available), because `current_iv` is null when Tradier chain returns no IV.
+**Root cause:** TBD
+**Fix:** Pending
+
 ### KI-059: Single-stock bear untested (HIGH — DEFERRED)
 Stocks still return HTTP 400 (ETF-only mode). Bear directions for stocks untested since ETF pivot Day 21. Deferred by design.
 
