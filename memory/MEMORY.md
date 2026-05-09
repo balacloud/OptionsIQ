@@ -11,7 +11,7 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
 ## Current Phase (Day 49)
-v0.32.0. KI-096/097/098/100 all implemented and tested. 44 tests (was 36). KI-096: ivr_confidence="known"/"unknown" in gate_payload — seller IVR gates WARN not FAIL on no-history ETFs. KI-097: _etf_event_density_gate() new method (Rule 5) — counts all FOMC/CPI/NFP/PCE in DTE window, weighted scores, rate-sensitive escalation. KI-098: weekChange gate in quadrant_to_direction() — Lagging→bear_call_spread blocked when tape rising. KI-100: tier1_summary in /api/best-setups + Tier 1 pills bar in BestSetups.jsx. Open: KI-059 (deferred), KI-099 (deferred, high complexity). Next: paper trade logging (0/30), MASTER_AUDIT_FRAMEWORK sweep, Claude skill discussion.
+v0.32.0. KI-096/097/098/100 all implemented and tested. 44 tests (was 36). /ki slash command added (.claude/commands/ki.md) — type `/ki "description"` to log a numbered KI instantly. KI-101 found (MEDIUM): IV/HV ratio shows `—` in Best Setups watchlist when chain IV null. Open: KI-101 (MEDIUM), KI-099 (LOW deferred), KI-059 (HIGH deferred). Next: paper trade logging (0/30), KI-101 fix, MASTER_AUDIT_FRAMEWORK sweep.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
@@ -93,9 +93,9 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 
 ## Day 50 Priorities
 1. **P0:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
-2. **P1:** KI-099 scoping — bull_call_spread for Leading/Improving + IVR 30–50%. Read direction track code before planning.
-3. **P2:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42. Focus Category 10 (gate calibration).
-4. **P3:** Claude skill discussion — user explicitly asked: "how creating a claude skill can enhance our app."
+2. **P1:** KI-101 fix — IV/HV watchlist shows `—` when Tradier chain has no IV but OHLCV/HV-20 exists. MEDIUM.
+3. **P2:** KI-099 scoping — bull_call_spread for Leading/Improving + IVR 30–50%. Read direction track code before planning.
+4. **P3:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42. Focus Category 10 (gate calibration).
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)

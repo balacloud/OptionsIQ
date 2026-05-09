@@ -206,6 +206,7 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-096: IVR null confidence — `ivr_confidence="unknown"` in gate_payload, seller IVR gates WARN not FAIL when no history ✅ Day 49
 - [x] KI-097: Event density gate — `_etf_event_density_gate()` counts ALL events in DTE window (FOMC/CPI/NFP/PCE), weighted scores, rate-sensitive escalation ✅ Day 49
 - [x] KI-100: Tier 1 GO rate — `tier1_summary` in /api/best-setups response, pills bar in BestSetups.jsx ✅ Day 49
+- [x] `/ki` slash command — `.claude/commands/ki.md`, auto-logs numbered KI entry to active KNOWN_ISSUES file ✅ Day 49
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.

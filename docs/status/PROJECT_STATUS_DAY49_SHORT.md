@@ -18,12 +18,15 @@ KI-098, KI-096, KI-097, KI-100 all implemented and tested. 8 new tests (36 → 4
 ## Test Count
 44 (from 36): +4 direction routing (KI-098), +2 gate engine (KI-096), +2 gate engine (KI-097)
 
+**`/ki` slash command:** `.claude/commands/ki.md` created. Type `/ki "description"` during any session to instantly log a numbered KI entry to the active KNOWN_ISSUES file. Auto-detects day, finds next KI number, inserts formatted entry with severity.
+
 ## Open Issues
-- KI-059: single-stock bear (deferred, by design)
-- KI-099: bull_call_spread direction for Leading/Improving (deferred, high complexity)
+- KI-101: Best Setups watchlist IV/HV shows `—` when chain IV missing (MEDIUM)
+- KI-099: bull_call_spread direction for Leading/Improving (LOW, deferred)
+- KI-059: single-stock bear (HIGH, deferred by design)
 
 ## Next Session Priorities
 1. **P0:** Paper trade logging — log next XLF or QQQ setup. Need 30 trades for win rate data. Still 0.
 2. **P1:** KI-099 assessment — bull_call_spread for Leading/Improving + IVR 30–50%. Decide scope.
-3. **P2:** MASTER_AUDIT_FRAMEWORK sweep (Day 49 — overdue since Day 42).
-4. **P3:** Claude skill discussion — user explicitly asked: "how creating a claude skill can enhance our app."
+3. **P2:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42.
+4. **P3:** KI-101 fix — IV/HV ratio in watchlist when chain IV null.

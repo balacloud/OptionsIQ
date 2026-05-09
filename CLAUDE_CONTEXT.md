@@ -239,8 +239,11 @@ Full list: `docs/versioned/KNOWN_ISSUES_DAY48.md`
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
 
+Open (MEDIUM):
+2. **KI-101:** Best Setups watchlist IV/HV ratio shows `—` when chain IV null but OHLCV/HV data is available
+
 Open (LOW):
-2. **KI-099:** bull_call_spread missing as direction for Leading/Improving + IVR 30–50% (deferred, high complexity)
+3. **KI-099:** bull_call_spread missing as direction for Leading/Improving + IVR 30–50% (deferred, high complexity)
 
 Resolved (Day 49): KI-096 ✅ (IVR null→unknown confidence), KI-097 ✅ (event density gate), KI-098 ✅ (weekChange tape-fight gate), KI-100 ✅ (Tier 1 GO rate reporting). 8 new tests (36→44).
 Resolved (Day 48): No code resolutions — research session only. 5 new design gaps logged.
@@ -296,7 +299,7 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
-| Day 49 | May 8, 2026 | **Phase 7c KI sweep — KI-096/097/098/100 all resolved (v0.32.0).** Perplexity+Gemini audit results consolidated into Phase7c_Research.md — 3/3 LLM consensus confirmed all 5 KIs before implementing. KI-098: `weekChange` gate in `quadrant_to_direction()` — Lagging ETFs skip bear_call_spread when tape is rising. KI-096: `ivr_confidence` flag in gate_payload — seller IVR gates WARN (not FAIL) when no IV history. KI-097: `_etf_event_density_gate()` counts all FOMC/CPI/NFP/PCE in DTE window with weighted scores (Rule 5 new function). KI-100: `tier1_summary` in best-setups response + Tier 1 pills bar in BestSetups.jsx. Tests: 36→44. |
+| Day 49 | May 8, 2026 | **Phase 7c KI sweep + `/ki` slash command (v0.32.0).** KI-096/097/098/100 all resolved (36→44 tests). 3/3 LLM audit consensus confirmed before implementing. KI-098: weekChange tape-fight gate. KI-096: ivr_confidence flag (WARN not FAIL on no history). KI-097: _etf_event_density_gate() weighted event count. KI-100: tier1_summary in best-setups + Tier 1 pills UI. New: `/ki` command (.claude/commands/ki.md) — type `/ki "description"` to instantly log a numbered KI entry. KI-101 found: IV/HV shows `—` in watchlist when chain IV null. |
 | Day 48 | May 8, 2026 | **Phase 7c external audit + STA code review (v0.31.0 — no code changes).** STA backend.py reviewed — RS ratio = midpoint normalization (swing-trading RRG variant), weekChange computed and returned but unused by quadrant_to_direction(). Phase7c two-file redundancy eliminated → Phase7c_Research.md (single consolidated doc). ChatGPT 4-question audit stored: 5 design gaps logged as KI-096–100 (IVR null coercion, event density, absolute trend gate, bull_call_spread direction, Tier 1 GO rate reporting). Awaiting Gemini/Perplexity results before implementing. |
 | Day 47 | May 7, 2026 | **README full rewrite + Phase 7c code improvements (v0.31.0).** README rewritten — 9+ stale sections fixed (Tradier as primary, 15 ETFs not 16, all 21 backend files, 22 frontend components, API table 10→21 endpoints, version history through v0.30.1). Phase 7c: ETF_OPTIONS_LIQUID_TIER1 in constants, _is_early_market_session() helper, ticker in gate_payload, actionable liquidity messages (Tier2 ETF → "try QQQ/XLF", early session → "rescan after 10 AM"). Phase7c_Research.md created (merged from Day46+47 docs). |
 | Day 46 | May 7, 2026 | **KI-086 closed + DTE calibration (v0.30.1).** sta_service.py extracted (sta_fetch 74 lines → 2 lines, app.py 472→402). ETF sell_call DTE bug fixed: _run_etf_sell_call() added (was using stock DTE constants 14-21, now ETF 30-45). ETF_DTE_SELLER_PASS_MIN 21→30 (tastylive 200k+ trade research). Category 10 live research: 2/11 CAUTION today, Liquidity Proxy dominant blocker, vol gates all pass at VIX=17.39. |
@@ -323,14 +326,14 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 ### P0 — Paper trade logging (user action)
 Log next XLF or QQQ CAUTION setup to Paper Trade Dashboard. Need 30 trades for win rate data. Still at 0.
 
-### P1 — KI-099: bull_call_spread direction for Leading/Improving
+### P1 — KI-101: IV/HV ratio null in watchlist
+Best Setups watchlist shows `—` for IV/HV when Tradier chain returns no IV. Should fall back to HV-20 only display or mark as "HV only". MEDIUM effort.
+
+### P2 — KI-099: bull_call_spread direction for Leading/Improving
 For Leading/Improving ETFs + IVR 30–50%, add `bull_call_spread` as suggested direction. High complexity — read existing direction track code first, plan before touching.
 
-### P2 — MASTER_AUDIT_FRAMEWORK sweep
+### P3 — MASTER_AUDIT_FRAMEWORK sweep
 Overdue since Day 42. Run all 10 categories. Focus on Category 10 (Trading Effectiveness) and gate calibration (are 3–5 GO/CAUTION setups surfacing per week?).
-
-### P3 — Claude skill discussion
-User explicitly wants to discuss: "how creating a claude skill can enhance our app." Schedule as explicit agenda item.
 
 ### Deferred
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
