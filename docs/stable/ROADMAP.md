@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 51 (May 21, 2026)
-> **Current Version:** v0.33.1
+> **Last Updated:** Day 52 (May 21, 2026)
+> **Current Version:** v0.33.2
 
 ---
 
@@ -261,6 +261,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.33.2 | Day 52 | **IBKR batch fix — reqMktData streaming → reqHistoricalData.** reqMktData streaming returned all-nan in IBWorker threading model (event loop only runs during ib.sleep()). Replaced with reqHistoricalData OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY (Historical Data Farm, request-response). 7/7 ETFs return live IV/HV. reqScannerSubscription identified as P2 for put/call ratio. |
 | v0.33.1 | Day 51 | **Scanner live test + 4 bug fixes.** XLI/XLB OHLCV corruption (Apr 25-26) deleted — HV corrected 193%→20%. scanner_service: is_connected() false-negative replaced with 0.5s port check. ibkr_provider: snapshot=True invalid with genericTickList (→snapshot=False); tick 104 invalid for STK (→106,411,100,105). Architecture finding: IBKR market data subscription required for ETF reqMktData. |
 | v0.33.0 | Day 50 | **IBKR scanner data integration.** `ibkr_provider.get_iv_hv_batch()` — reqMktData ticks 104/106/29/30 batch for all 15 ETFs in one call. `scanner_service.py` — live IBKR priority, `/etf-scan` screenshot cache fallback (4h TTL). KI-101 resolved: IV/HV no longer shows `—` in Best Setups watchlist. Data gap audit: Tradier+IBKR covers all critical fields; put/call ratio now flows but not yet gated. |
 | v0.1 | Day 1 | Scaffold — Codex files ported, Phase 0 docs complete |

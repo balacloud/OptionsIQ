@@ -367,53 +367,62 @@ class IBKRProvider:
 
     def get_iv_hv_batch(self, tickers: list[str]) -> dict[str, dict]:
         """
-        Fetch implied vol (tick 106) + historical vol (tick 104) + option volume
-        (ticks 29/30) for multiple ETFs in one reqMktData batch.
+        Fetch implied vol + historical vol for ETFs via reqHistoricalData.
 
-        One ib.sleep() covers all tickers — far faster than per-ticker calls.
+        Uses Historical Data Farm (whatToShow=OPTION_IMPLIED_VOLATILITY / HISTORICAL_VOLATILITY)
+        — request-response, no streaming subscription required. Returns last daily bar close
+        which is today's intraday reading during market hours, or yesterday's close after hours.
+
         Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
-        Fields are None when IBKR doesn't return them (e.g. market closed).
+        Fields are None when IBKR doesn't return data (e.g. no options on ETF).
         """
         from ib_insync import Stock
 
         self._ensure_connected()
 
-        contracts = [Stock(sym.upper(), "SMART", "USD") for sym in tickers]
-        qualified = self.ib.qualifyContracts(*contracts)
-        logger.debug("IV batch: qualified %d/%d contracts", len(qualified), len(contracts))
-
-        # snapshot=True is invalid with genericTickList (IBKR Error 321).
-        # snapshot=False (streaming) requires a paid IBKR market data subscription for ETF ticks.
-        # Without the subscription, all ticks return nan — the batch returns {} gracefully.
-        tk_map = {}
-        for contract in contracts:
-            tk_map[contract.symbol] = self.ib.reqMktData(
-                contract,
-                genericTickList="106,411,100,105",  # impVol, rtHistVol, optVol, avgOptVol
-                snapshot=False,
-                regulatorySnapshot=False,
-            )
-
-        self.ib.sleep(4.0)  # wait for streaming ticks; nan if no market data subscription
-
         results = {}
-        for contract in contracts:
-            sym = contract.symbol
-            tk = tk_map[sym]
-            logger.debug("IV batch tick %s: bid=%s ask=%s last=%s impliedVol=%s histVol=%s",
-                         sym, tk.bid, tk.ask, tk.last, tk.impliedVolatility, tk.histVolatility)
-            iv = float(tk.impliedVolatility) if tk.impliedVolatility and tk.impliedVolatility > 0 else None
-            hv = float(tk.histVolatility) if tk.histVolatility and tk.histVolatility > 0 else None
-            # tick 100 = total option volume (put/call split via ticks 29/30 not valid for STK)
-            opt_v = int(tk.optVolume) if getattr(tk, "optVolume", None) and tk.optVolume > 0 else None
-            results[sym] = {
-                "iv": iv,
-                "hv": hv,
-                "iv_hv_pct": round(iv / hv * 100, 1) if iv and hv else None,
-                "iv_hv_ratio": round(iv / hv, 3) if iv and hv else None,
-                "opt_volume": opt_v,
-            }
-            self.ib.cancelMktData(contract)
+        for sym in tickers:
+            try:
+                contract = Stock(sym.upper(), "SMART", "USD")
+                self.ib.qualifyContracts(contract)
+
+                iv_bars = self.ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    durationStr="5 D",
+                    barSizeSetting="1 day",
+                    whatToShow="OPTION_IMPLIED_VOLATILITY",
+                    useRTH=True,
+                    formatDate=1,
+                    keepUpToDate=False,
+                )
+                hv_bars = self.ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    durationStr="5 D",
+                    barSizeSetting="1 day",
+                    whatToShow="HISTORICAL_VOLATILITY",
+                    useRTH=True,
+                    formatDate=1,
+                    keepUpToDate=False,
+                )
+
+                iv = float(iv_bars[-1].close) if iv_bars else None
+                hv = float(hv_bars[-1].close) if hv_bars else None
+
+                logger.debug("IV histData %s: iv=%.4f hv=%.4f", sym,
+                            iv if iv else 0.0, hv if hv else 0.0)
+                results[sym] = {
+                    "iv": iv,
+                    "hv": hv,
+                    "iv_hv_pct": round(iv / hv * 100, 1) if iv and hv else None,
+                    "iv_hv_ratio": round(iv / hv, 3) if iv and hv else None,
+                    "opt_volume": None,  # not available via historical data
+                }
+            except Exception as exc:
+                logger.warning("IV histData %s failed: %s", sym, exc)
+                results[sym] = {"iv": None, "hv": None, "iv_hv_pct": None,
+                                "iv_hv_ratio": None, "opt_volume": None}
 
         return results
 

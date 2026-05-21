@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 51)
-v0.33.1. Scanner integration live-tested. 4 bugs fixed: XLI/XLB OHLCV corruption (Apr 25-26 deleted, HV 193%→20%), scanner_service is_connected() false-negative → 0.5s port check, ibkr_provider snapshot=True invalid with genericTickList → snapshot=False, tick 104 invalid for STK → 106+411+100+105. Architecture finding: IBKR market data subscription required for ETF reqMktData — Tradier provides chain IV correctly without subscription. 44 tests. Open: KI-059 (HIGH deferred), KI-099 (LOW deferred). Next: paper trade logging (0/30), full audit, put/call ratio via Tradier.
+## Current Phase (Day 52)
+v0.33.2. IBKR batch fixed: reqMktData streaming returned all-nan in IBWorker threading model (event loop only runs during ib.sleep() — insufficient for stream establishment). Replaced with reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY) from Historical Data Farm. 7/7 ETFs return real data. UI watchlist IV/HV confirmed populated. reqScannerSubscription identified as better P2 approach — one call gives IV/HV + IVR + put/call ratio for all ETFs in universe. 44 tests. Open: KI-059 (HIGH deferred), KI-099 (LOW deferred). Next: paper trade logging (0/30), audit sweep, scanner API.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY51_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY51.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY52_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY52.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -45,9 +45,10 @@ backend/
   ib_worker.py        DONE — single IB() thread, submit() queue, expires_at queue poisoning fix
   yfinance_provider.py DONE — middle tier, BS greeks fill
   data_service.py     DONE (Day 12+29) — provider cascade + SQLite WAL + CB + Alpaca tier
-  ibkr_provider.py    UPDATED (Day 51) — get_iv_hv_batch(): snapshot=False (True invalid with genericTickList).
-                      Tick list corrected to 106,411,100,105 (104 was invalid for STK). Returns {} gracefully.
-                      IBKR market data subscription required for ETF reqMktData — code ready, subscription optional.
+  ibkr_provider.py    UPDATED (Day 52) — get_iv_hv_batch(): reqMktData streaming → reqHistoricalData.
+                      whatToShow=OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY (Historical Data Farm).
+                      7/7 ETFs return real data. reqMktData streaming all-nan: IBWorker only runs event loop
+                      during ib.sleep() — insufficient for streaming. reqHistoricalData is request-response.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
   gate_engine.py      DONE (Day 21+27+28+29+32+43+49) — all 4 tracks with VRP + VIX gates for sellers.
@@ -93,12 +94,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 52 Priorities
+## Day 53 Priorities
 1. **P0:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
-2. **P1:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42 (9 sessions). All 10 categories.
-3. **P2:** Put/call ratio gate via Tradier — ticks 29/30 invalid for STK via reqMktData. Use Tradier chain callVolume/putVolume instead.
+2. **P1:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42 (10 sessions). All 10 categories.
+3. **P2:** IBKR `reqScannerSubscription` — replace reqHistoricalData batch with scanner API. One call gives IV/HV + IVR + put/call ratio for ETF universe. Cross-reference with 15 ETF list. Plan before implementing.
 4. **P3:** KI-099 — bull_call_spread for Leading/Improving + IVR 30–50%. Plan before touching.
-5. **P4:** IBKR market data subscription — ~$6/month, enables live IV/HV batch immediately.
+5. **P4:** deferred (reqHistoricalData works — no paid subscription needed for Historical Data Farm).
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -122,3 +123,4 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - [feedback_save_plans.md](feedback_save_plans.md) — Always save plans/synthesis to docs/Research/ as .md files
 - [feedback_readme_update.md](feedback_readme_update.md) — Update README.md version badge at every session close
 - [feedback_ibkr_reqmktdata.md](feedback_ibkr_reqmktdata.md) — IBKR reqMktData: snapshot=True invalid with genericTickList; tick 104 invalid for STK; market data subscription required for non-owned ETFs
+- [feedback_ibkr_ibworker_streaming.md](feedback_ibkr_ibworker_streaming.md) — reqMktData streaming all-nan in IBWorker model; use reqHistoricalData instead; reqScannerSubscription is the best approach

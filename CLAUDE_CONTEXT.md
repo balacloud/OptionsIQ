@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 51 (May 21, 2026)
-> **Current Version:** v0.33.1
-> **Project Phase:** Scanner integration live-tested. 4 bugs fixed (OHLCV corruption, is_connected false-negative, snapshot+genericTickList, tick 104). IBKR market data subscription required for ETF live batch — Tradier fills IV correctly. 44 tests. Next: paper trade logging (0/30), full audit.
+> **Last Updated:** Day 52 (May 21, 2026)
+> **Current Version:** v0.33.2
+> **Project Phase:** IBKR batch fixed (reqMktData streaming → reqHistoricalData). 7/7 ETFs return live IV/HV from Historical Data Farm. reqScannerSubscription identified as better P2 approach (puts/call ratio for free). 44 tests. Next: paper trade logging (0/30), audit sweep, scanner API.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY51_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY51.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY52_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY52.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -75,8 +75,8 @@ It is NOT a broker. It sends zero orders to IBKR. Analysis only.
 | ib_worker.py | DONE (Day 5) | Queue poisoning + heartbeat + RequestTimeout |
 | yfinance_provider.py | DONE | Middle tier, BS greeks fill (NO greeks — computed via BS only) |
 | data_service.py | DONE (Day 12) | Provider cascade + SQLite WAL + CB + Alpaca tier |
-| ibkr_provider.py | UPDATED (Day 51) | get_iv_hv_batch(): fixed tick list to 106,411,100,105 (104 invalid for STK). snapshot=False (snapshot=True invalid with genericTickList). Returns {} gracefully — IBKR market data subscription required for ETF ticks. |
-| scanner_service.py | UPDATED (Day 51) | fetch_live_iv_hv_batch(): replaced is_connected() check with 0.5s port check (was false-negative on lazy connect). Logs DEBUG when 0 tickers return IV. |
+| ibkr_provider.py | UPDATED (Day 52) | get_iv_hv_batch(): reqMktData streaming → reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY). 7/7 ETFs return real data from Historical Data Farm. reqMktData streaming was all-nan: IBWorker only processes events during ib.sleep(), insufficient for stream establishment. |
+| scanner_service.py | UPDATED (Day 52) | fetch_live_iv_hv_batch(): timeout 35s→90s for sequential reqHistoricalData calls. Docstring updated. Port check + INFO summary logging preserved. |
 | alpaca_provider.py | DONE (Day 10) | REST fallback, greeks ✅, NO OI/volume (model limitation) |
 | analyze_service.py | DONE (Day 43) | KI-064: _extract_iv_data() uses ATM contract IV. KI-081: _days_until_next_macro() helper. _fomc_days computed once (fixes fomc_days_away=999 silent bug). |
 | app.py | 402 lines (Day 46) | sta_fetch logic extracted to sta_service.py (KI-086 closed). Rule 4 still technically violated (>150) but all business logic is now in service modules. |
@@ -243,8 +243,9 @@ Open (HIGH):
 Open (LOW):
 2. **KI-099:** bull_call_spread missing as direction for Leading/Improving + IVR 30–50% (deferred, high complexity)
 
-Architecture note: IBKR market data subscription required for ETF generic ticks via reqMktData (not a code bug — subscription is ~$6/month, Tradier covers the same data for free).
+Architecture note: reqMktData streaming fails in IBWorker threading model (IBWorker only runs event loop during ib.sleep() — insufficient for streaming). reqHistoricalData (Historical Data Farm) works correctly — request-response, no persistent event loop needed.
 
+Resolved (Day 52): KI-106 ✅ (IBKR batch all-nan — reqMktData streaming → reqHistoricalData, 7/7 ETFs working).
 Resolved (Day 51): KI-102 ✅ (XLI/XLB OHLCV corruption Apr 25-26 deleted), KI-103 ✅ (is_connected false-negative), KI-104 ✅ (snapshot=True invalid with genericTickList), KI-105 ✅ (tick 104 invalid for STK).
 Resolved (Day 50): KI-101 ✅ (IV/HV null in watchlist — live IBKR batch + screenshot cache fallback).
 Resolved (Day 49): KI-096 ✅ (IVR null→unknown confidence), KI-097 ✅ (event density gate), KI-098 ✅ (weekChange tape-fight gate), KI-100 ✅ (Tier 1 GO rate reporting). 8 new tests (36→44).
@@ -301,6 +302,7 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 52 | May 21, 2026 | **IBKR batch fix (v0.33.2).** reqMktData streaming all-nan in IBWorker model → replaced with reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY). 7/7 ETFs live: XLK 1.13, XLF 1.16, XLI 1.25, XLB 1.31 IV/HV. reqScannerSubscription identified as P2 (gets IV/HV + put/call ratio in 1 call). |
 | Day 51 | May 21, 2026 | **Scanner live test + 4 bug fixes (v0.33.1).** XLI/XLB OHLCV corruption deleted (HV 193%→20%). scanner_service.py: is_connected() → port check. ibkr_provider: snapshot=False, tick list 104→411 (invalid for STK). IBKR market data subscription required for live ETF batch — Tradier fills IV correctly. |
 | Day 50 | May 21, 2026 | **IBKR scanner data integration (v0.33.0).** KI-101 resolved. `ibkr_provider.get_iv_hv_batch()` — reqMktData ticks 104/106/29/30, one batch call for all 15 ETFs. `scanner_service.py` — live IBKR + screenshot cache fallback. `/etf-scan` command. Data gap audit: Tradier + IBKR covers all critical fields. |
 | Day 49 | May 8, 2026 | **Phase 7c KI sweep + `/ki` slash command (v0.32.0).** KI-096/097/098/100 all resolved (36→44 tests). 3/3 LLM audit consensus confirmed before implementing. KI-098: weekChange tape-fight gate. KI-096: ivr_confidence flag (WARN not FAIL on no history). KI-097: _etf_event_density_gate() weighted event count. KI-100: tier1_summary in best-setups + Tier 1 pills UI. New: `/ki` command (.claude/commands/ki.md) — type `/ki "description"` to instantly log a numbered KI entry. KI-101 found: IV/HV shows `—` in watchlist when chain IV null. |
@@ -325,30 +327,26 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 
 ---
 
-## Next Session Priorities (Day 52)
+## Next Session Priorities (Day 53)
 
 ### P0 — Paper trade logging (user action)
 Log next XLF or QQQ CAUTION setup to Paper Trade Dashboard. Need 30 trades for win rate data. Still at 0. Cannot calibrate gates without this sample. ~5 min user action.
 
 ### P1 — MASTER_AUDIT_FRAMEWORK sweep
-Overdue since Day 42 (9 sessions). Run all 10 categories. Focus on Category 10 (Trading Effectiveness) and gate calibration.
+Overdue since Day 42 (10 sessions). Run all 10 categories. Focus on Category 10 (Trading Effectiveness) and gate calibration.
 
-### P2 — Put/call ratio gate via Tradier
-Ticks 29/30 are invalid for STK via reqMktData (IBKR limitation). If put/call ratio is desired, source from Tradier `GET /v1/markets/options/strikes` or the existing chain data (callVolume/putVolume fields already in Tradier response). ~20 lines.
+### P2 — IBKR `reqScannerSubscription` for put/call ratio + IV/HV
+Replace reqHistoricalData batch (14 calls) with scanner approach (1-2 calls). User's "Options-iq-gemini" scanner shows available data: IV/HV%, IVR, put/call volume, avg option volume. Design: run ETF scanner → cross-reference with 15 ETF universe → fall back to reqHistoricalData for ETFs not in top N. Plan before implementing.
 
 ### P3 — KI-099: bull_call_spread direction
 For Leading/Improving ETFs + IVR 30–50%, add bull_call_spread. High complexity — plan before touching.
-
-### P4 — IBKR market data subscription
-Subscribe to US Equity data in IBKR account settings to enable live IV/HV batch. ~15 min setup, ~$6/month. Code is ready — batch will populate immediately.
 
 ### Deferred
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY51.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY51_SHORT.md` — Day 51 summary
+- `docs/versioned/KNOWN_ISSUES_DAY52.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY52_SHORT.md` — Day 52 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger) v1.4
 - `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
-- `docs/Research/IBKR_ETF_Scanner_Day50.md` — IBKR ETF screener setup + /etf-scan workflow
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research

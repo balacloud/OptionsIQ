@@ -57,10 +57,11 @@ def get_scanner_data(ticker: str) -> dict:
 
 def fetch_live_iv_hv_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
     """
-    Fetch IV + HV for all ETFs via one IBWorker call (reqMktData ticks 104/106/29/30).
+    Fetch IV + HV for ETFs via IBKR reqHistoricalData (Historical Data Farm).
 
-    Call once before a Best Setups scan — one 4-second IBKR round-trip covers all
-    15 ETFs. Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
+    Uses OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY bar data — request-response,
+    no streaming subscription required. Returns last daily bar close.
+    Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
     Returns {} gracefully when IB Gateway is offline or unavailable.
     """
     if ib_worker is None or ib_worker.provider is None:
@@ -76,20 +77,19 @@ def fetch_live_iv_hv_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
     except OSError:
         logger.debug("fetch_live_iv_hv_batch: IB Gateway not reachable — skipping")
         return {}
-    logger.debug("fetch_live_iv_hv_batch: attempting IBKR batch for %d tickers", len(tickers))
+    logger.debug("fetch_live_iv_hv_batch: attempting IBKR histData batch for %d tickers", len(tickers))
     try:
         result = ib_worker.submit(
             ib_worker.provider.get_iv_hv_batch,
             tickers,
-            timeout=35.0,  # 4s sleep + 15 qualifyContracts + buffer
+            timeout=90.0,  # reqHistoricalData: ~2s/ticker × 7 tickers × 2 calls + buffer
         )
         populated = {k: v for k, v in result.items() if v.get("iv") is not None}
         if populated:
             logger.info("fetch_live_iv_hv_batch: got IV for %d/%d tickers: %s",
                         len(populated), len(result), list(populated.keys()))
         else:
-            logger.debug("fetch_live_iv_hv_batch: 0/%d tickers returned IV "
-                         "(IBKR market data subscription may be required for ETF ticks)", len(result))
+            logger.debug("fetch_live_iv_hv_batch: 0/%d tickers returned IV", len(result))
         return result
     except Exception as exc:
         logger.warning("fetch_live_iv_hv_batch failed: %s", exc)
