@@ -363,6 +363,54 @@ class IBKRProvider:
         except Exception as exc:
             raise IBKRNotAvailableError("IB Gateway not available") from exc
 
+    # ─── IV / HV batch fetch (for Best Setups pre-population) ───────────────
+
+    def get_iv_hv_batch(self, tickers: list[str]) -> dict[str, dict]:
+        """
+        Fetch implied vol (tick 106) + historical vol (tick 104) + option volume
+        (ticks 29/30) for multiple ETFs in one reqMktData batch.
+
+        One ib.sleep() covers all tickers — far faster than per-ticker calls.
+        Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
+        Fields are None when IBKR doesn't return them (e.g. market closed).
+        """
+        from ib_insync import Stock
+
+        self._ensure_connected()
+
+        contracts = [Stock(sym.upper(), "SMART", "USD") for sym in tickers]
+        self.ib.qualifyContracts(*contracts)  # batch qualify — faster than one-by-one
+
+        tk_map = {}
+        for contract in contracts:
+            tk_map[contract.symbol] = self.ib.reqMktData(
+                contract,
+                genericTickList="104,106,29,30",  # histVol, impliedVol, callVol, putVol
+                snapshot=True,
+                regulatorySnapshot=False,
+            )
+
+        self.ib.sleep(4.0)  # single wait covers all 15 snapshots
+
+        results = {}
+        for contract in contracts:
+            sym = contract.symbol
+            tk = tk_map[sym]
+            iv = float(tk.impliedVolatility) if tk.impliedVolatility and tk.impliedVolatility > 0 else None
+            hv = float(tk.histVolatility) if tk.histVolatility and tk.histVolatility > 0 else None
+            call_v = int(tk.callVolume) if tk.callVolume and tk.callVolume > 0 else None
+            put_v = int(tk.putVolume) if tk.putVolume and tk.putVolume > 0 else None
+            results[sym] = {
+                "iv": iv,
+                "hv": hv,
+                "iv_hv_pct": round(iv / hv * 100, 1) if iv and hv else None,
+                "iv_hv_ratio": round(iv / hv, 3) if iv and hv else None,
+                "opt_volume": (call_v or 0) + (put_v or 0) or None,
+            }
+            self.ib.cancelMktData(contract)
+
+        return results
+
     # ─── Options chain (main) ────────────────────────────────────────────────
 
     def get_options_chain(

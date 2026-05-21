@@ -9,6 +9,7 @@ import logging
 import os
 
 from analyze_service import analyze_etf
+from scanner_service import get_scanner_data  # file cache (from /etf-scan command)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def run_one_setup(
     md_provider,
     account_size: float,
     risk_pct: float,
+    live_scanner: dict | None = None,
 ) -> dict:
     """Run gate analysis for one ETF sector candidate. Returns a result dict or error dict."""
     ticker = s["etf"]
@@ -57,6 +59,17 @@ def run_one_setup(
         raw_color = verdict.get("color", "red")
         color = "yellow" if raw_color == "amber" else raw_color
         label_map = {"green": "GO", "yellow": "CAUTION", "red": "BLOCKED"}
+
+        # Inject scanner data when chain values are null (KI-101 fix).
+        # Priority: live IBKR batch (fetched pre-scan) > /etf-scan file cache > None.
+        scanner = (live_scanner or {}).get(ticker) or get_scanner_data(ticker)
+        ivr = result.get("ivr_data", {}).get("ivr_pct")
+        if ivr is None and scanner.get("ivr_52w") is not None:
+            ivr = float(scanner["ivr_52w"])
+        iv_hv_ratio = result.get("ivr_data", {}).get("hv_iv_ratio")
+        if iv_hv_ratio is None and scanner.get("iv_hv_pct") is not None:
+            iv_hv_ratio = round(scanner["iv_hv_pct"] / 100.0, 3)
+
         return {
             "ticker": ticker,
             "direction": direction,
@@ -69,8 +82,8 @@ def run_one_setup(
             "gates_passed": passed,
             "gates_total": total,
             "failed_gates": failed,
-            "ivr": result.get("ivr_data", {}).get("ivr_pct"),
-            "iv_hv_ratio": result.get("ivr_data", {}).get("hv_iv_ratio"),
+            "ivr": ivr,
+            "iv_hv_ratio": iv_hv_ratio,
             "hv_20": result.get("ivr_data", {}).get("hv_20"),
             "current_iv": result.get("ivr_data", {}).get("current_iv"),
             "premium": top.get("premium"),

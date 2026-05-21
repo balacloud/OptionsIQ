@@ -29,10 +29,10 @@
 
 ## Still Open (Carried Forward)
 
-### KI-101: Best Setups watchlist IV/HV ratio shows — when chain IV is missing (MEDIUM — OPEN)
-**Symptom:** Watchlist column shows `—` for IV/HV ratio even when ETF has OHLCV data (HV-20 available), because `current_iv` is null when Tradier chain returns no IV.
-**Root cause:** TBD
-**Fix:** Pending
+### KI-101: Best Setups watchlist IV/HV ratio shows — when chain IV is missing ✅ RESOLVED Day 50
+**Symptom:** Watchlist column showed `—` for IV/HV ratio when Tradier chain returned no IV.
+**Root cause:** `hv_iv_ratio` in best_setups_service came solely from `ivr_data.hv_iv_ratio`, which was null whenever `current_iv` was null.
+**Fix:** `/etf-scan` Claude command reads IBKR ETF screener screenshot → writes `backend/data/scanner_cache.json` with live `iv_hv_pct` (= IBKR `IMPLIED VOL./HIST. VOL %`) + `ivr_52w`. `scanner_service.get_scanner_data(ticker)` reads the cache (4h TTL). `best_setups_service.run_one_setup()` injects scanner values when chain data is null. Requires user to run `/etf-scan` once per session after opening IBKR "Options-iq-ETF" screener.
 
 ### KI-059: Single-stock bear untested (HIGH — DEFERRED)
 Stocks still return HTTP 400 (ETF-only mode). Bear directions for stocks untested since ETF pivot Day 21. Deferred by design.

@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 49 (May 8, 2026)
-> **Current Version:** v0.32.0
+> **Last Updated:** Day 50 (May 21, 2026)
+> **Current Version:** v0.33.0
 
 ---
 
@@ -207,6 +207,10 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-097: Event density gate — `_etf_event_density_gate()` counts ALL events in DTE window (FOMC/CPI/NFP/PCE), weighted scores, rate-sensitive escalation ✅ Day 49
 - [x] KI-100: Tier 1 GO rate — `tier1_summary` in /api/best-setups response, pills bar in BestSetups.jsx ✅ Day 49
 - [x] `/ki` slash command — `.claude/commands/ki.md`, auto-logs numbered KI entry to active KNOWN_ISSUES file ✅ Day 49
+- [x] IBKR live IV/HV batch fetch — `ibkr_provider.get_iv_hv_batch()` reqMktData ticks 104/106/29/30, one round-trip for all ETFs ✅ Day 50
+- [x] `scanner_service.py` — dual-layer IV/HV source: live IBKR batch + `/etf-scan` screenshot cache (4h TTL) ✅ Day 50
+- [x] `/etf-scan` Claude command — IBKR ETF screener screenshot → ranked gate analysis → `scanner_cache.json` ✅ Day 50
+- [x] KI-101: IV/HV null in Best Setups watchlist — resolved via live batch + file cache fallback ✅ Day 50
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -252,6 +256,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.33.0 | Day 50 | **IBKR scanner data integration.** `ibkr_provider.get_iv_hv_batch()` — reqMktData ticks 104/106/29/30 batch for all 15 ETFs in one call. `scanner_service.py` — live IBKR priority, `/etf-scan` screenshot cache fallback (4h TTL). KI-101 resolved: IV/HV no longer shows `—` in Best Setups watchlist. Data gap audit: Tradier+IBKR covers all critical fields; put/call ratio now flows but not yet gated. |
 | v0.1 | Day 1 | Scaffold — Codex files ported, Phase 0 docs complete |
 | v0.2 | Day 2 | Frontend redesigned — two-panel layout, verdict hero, collapsible sections |
 | v0.3 | Day 3 | Data layer complete — IBWorker, DataService, direction-aware fetch, live IBKR confirmed |
