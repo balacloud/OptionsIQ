@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 50 (May 21, 2026)
-> **Current Version:** v0.33.0
+> **Last Updated:** Day 51 (May 21, 2026)
+> **Current Version:** v0.33.1
 
 ---
 
@@ -211,6 +211,11 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] `scanner_service.py` — dual-layer IV/HV source: live IBKR batch + `/etf-scan` screenshot cache (4h TTL) ✅ Day 50
 - [x] `/etf-scan` Claude command — IBKR ETF screener screenshot → ranked gate analysis → `scanner_cache.json` ✅ Day 50
 - [x] KI-101: IV/HV null in Best Setups watchlist — resolved via live batch + file cache fallback ✅ Day 50
+- [x] KI-102: XLI/XLB OHLCV corruption (Apr 25-26) — 4 bad rows deleted, HV corrected 193%→20% ✅ Day 51
+- [x] KI-103: scanner fetch_live_iv_hv_batch false-negative skip — is_connected() → 0.5s port check ✅ Day 51
+- [x] KI-104: reqMktData snapshot=True invalid with genericTickList — switched to snapshot=False ✅ Day 51
+- [x] KI-105: tick 104 invalid for STK contracts — corrected to 106,411,100,105 ✅ Day 51
+- [ ] IBKR market data subscription — required for ETF generic ticks via reqMktData (~$6/month, optional — Tradier covers same data free)
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -256,6 +261,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.33.1 | Day 51 | **Scanner live test + 4 bug fixes.** XLI/XLB OHLCV corruption (Apr 25-26) deleted — HV corrected 193%→20%. scanner_service: is_connected() false-negative replaced with 0.5s port check. ibkr_provider: snapshot=True invalid with genericTickList (→snapshot=False); tick 104 invalid for STK (→106,411,100,105). Architecture finding: IBKR market data subscription required for ETF reqMktData. |
 | v0.33.0 | Day 50 | **IBKR scanner data integration.** `ibkr_provider.get_iv_hv_batch()` — reqMktData ticks 104/106/29/30 batch for all 15 ETFs in one call. `scanner_service.py` — live IBKR priority, `/etf-scan` screenshot cache fallback (4h TTL). KI-101 resolved: IV/HV no longer shows `—` in Best Setups watchlist. Data gap audit: Tradier+IBKR covers all critical fields; put/call ratio now flows but not yet gated. |
 | v0.1 | Day 1 | Scaffold — Codex files ported, Phase 0 docs complete |
 | v0.2 | Day 2 | Frontend redesigned — two-panel layout, verdict hero, collapsible sections |

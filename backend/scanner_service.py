@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -62,17 +63,34 @@ def fetch_live_iv_hv_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
     15 ETFs. Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
     Returns {} gracefully when IB Gateway is offline or unavailable.
     """
-    if ib_worker is None or not ib_worker.is_connected():
-        logger.debug("fetch_live_iv_hv_batch: IB Gateway offline — skipping live fetch")
+    if ib_worker is None or ib_worker.provider is None:
         return {}
     if not tickers:
         return {}
+    # Quick port check — avoid 12s of client-ID scan when IB Gateway is offline
+    _host = os.getenv("IBKR_HOST", "127.0.0.1")
+    _port = int(os.getenv("IBKR_PORT", "4001"))
     try:
-        return ib_worker.submit(
+        with socket.create_connection((_host, _port), timeout=0.5):
+            pass
+    except OSError:
+        logger.debug("fetch_live_iv_hv_batch: IB Gateway not reachable — skipping")
+        return {}
+    logger.debug("fetch_live_iv_hv_batch: attempting IBKR batch for %d tickers", len(tickers))
+    try:
+        result = ib_worker.submit(
             ib_worker.provider.get_iv_hv_batch,
             tickers,
             timeout=35.0,  # 4s sleep + 15 qualifyContracts + buffer
         )
+        populated = {k: v for k, v in result.items() if v.get("iv") is not None}
+        if populated:
+            logger.info("fetch_live_iv_hv_batch: got IV for %d/%d tickers: %s",
+                        len(populated), len(result), list(populated.keys()))
+        else:
+            logger.debug("fetch_live_iv_hv_batch: 0/%d tickers returned IV "
+                         "(IBKR market data subscription may be required for ETF ticks)", len(result))
+        return result
     except Exception as exc:
         logger.warning("fetch_live_iv_hv_batch failed: %s", exc)
         return {}
