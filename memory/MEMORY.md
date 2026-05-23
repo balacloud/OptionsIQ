@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 52)
-v0.33.2. IBKR batch fixed: reqMktData streaming returned all-nan in IBWorker threading model (event loop only runs during ib.sleep() — insufficient for stream establishment). Replaced with reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY) from Historical Data Farm. 7/7 ETFs return real data. UI watchlist IV/HV confirmed populated. reqScannerSubscription identified as better P2 approach — one call gives IV/HV + IVR + put/call ratio for all ETFs in universe. 44 tests. Open: KI-059 (HIGH deferred), KI-099 (LOW deferred). Next: paper trade logging (0/30), audit sweep, scanner API.
+## Current Phase (Day 53)
+v0.33.2. Research session — no code changes. IBKR Market Screener 2.0 factor scales confirmed from live screener (143 ETF universe): Opt.IV% is in DECIMAL format (0.01=1%, multiply by 100 for %); Last price cap at $100 excludes XLK/QQQ/IWM/MDY (must use $1-$9999); IVR range 0-45.6% in universe (set to 0-99.99 to capture all ETFs). 8-column MultiSort config finalized for reqScannerSubscription P2. 44 tests. Open: KI-059 (HIGH deferred), KI-099 (LOW deferred). Next: paper trade logging (0/30), audit sweep, scanner API implementation.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY52_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY52.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY53_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY53.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -94,12 +94,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 53 Priorities
+## Day 54 Priorities
 1. **P0:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
-2. **P1:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42 (10 sessions). All 10 categories.
-3. **P2:** IBKR `reqScannerSubscription` — replace reqHistoricalData batch with scanner API. One call gives IV/HV + IVR + put/call ratio for ETF universe. Cross-reference with 15 ETF list. Plan before implementing.
+2. **P1:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42 (11 sessions). All 10 categories.
+3. **P2:** IBKR `reqScannerSubscription` implementation — screener config fully researched Day 53. Key: Opt.IV% is DECIMAL (×100), Last must be $1-$9999, IVR 0-99.99. One call replaces 14 reqHistoricalData + adds put/call ratio gate.
 4. **P3:** KI-099 — bull_call_spread for Leading/Improving + IVR 30–50%. Plan before touching.
-5. **P4:** deferred (reqHistoricalData works — no paid subscription needed for Historical Data Farm).
+5. **P4:** deferred.
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
@@ -124,3 +124,4 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - [feedback_readme_update.md](feedback_readme_update.md) — Update README.md version badge at every session close
 - [feedback_ibkr_reqmktdata.md](feedback_ibkr_reqmktdata.md) — IBKR reqMktData: snapshot=True invalid with genericTickList; tick 104 invalid for STK; market data subscription required for non-owned ETFs
 - [feedback_ibkr_ibworker_streaming.md](feedback_ibkr_ibworker_streaming.md) — reqMktData streaming all-nan in IBWorker model; use reqHistoricalData instead; reqScannerSubscription is the best approach
+- [project_ibkr_screener_config.md](project_ibkr_screener_config.md) — IBKR Screener 2.0 actual data scales: Opt.IV% decimal (×100), Last cap $100 (use $1-$9999), IVR 0-99.99; correct MultiSort values for all 8 columns
