@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 54 (May 23, 2026)
+> **Last Updated:** Day 55 (May 25, 2026)
 > **Current Version:** v0.34.0
-> **Project Phase:** P2 (reqScannerSubscription) implemented + live tested. Scanner approach ruled out: sector ETFs don't rank in top-50 of market-wide screens. fetch_scanner_subscription_batch() simplified to reqHistoricalData direct path. Put/call sentiment gate added (non-blocking, Gates 7b/11b). 44 tests. Next: paper trade logging (0/30), audit sweep.
+> **Project Phase:** Architectural research session (Day 55). Scanner approach ruled out confirmed. STA priceHistory gap identified: 260 bars available for all ETFs → SMA/RSI computable at zero extra HTTP cost. compute_skew() wired but gate_engine ignores it. Gate calibration requires paper trade data (0/30). 44 tests. Next: paper trade logging, audit sweep, STA SMA batch.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY54_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY54.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY55_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY55.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -235,7 +235,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY51.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY55.md`
 
 Open (HIGH):
 1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
@@ -302,6 +302,8 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 55 | May 25, 2026 | **Architectural research (v0.34.0 — no code change).** reqScannerSubscription approach confirmed unsuitable (live test reviewed). STA priceHistory gap identified: 260 bars available for all ETFs → SMA20/50/200 + RSI(14) + momentum computable at zero extra HTTP cost. compute_skew() in tradier_provider.py computed but gate_engine has 0 references. Complete data gap inventory documented. Gate calibration requires paper trade data (0/30 — structural blocker). Research doc: Data_Gaps_STA_SMA_Day55.md. |
+| Day 54 | May 23, 2026 | **P2 reqScannerSubscription — implemented, live tested, scanner ruled out (v0.34.0).** 7 files updated. Scanner approach confirmed unsuitable: IBKR scanner hard-limited to top-50 of ~12,000 stocks; sector ETFs never rank. fetch_scanner_subscription_batch() simplified to direct reqHistoricalData delegation (removes 25s wasted latency). Put/call sentiment gate added: _put_call_sentiment_gate() in gate_engine (Gates 7b/11b, non-blocking WARN, handles None as advisory pass). 44 tests. |
 | Day 53 | May 23, 2026 | **IBKR screener config research (v0.33.2 — no code change).** All Screener 2.0 factor categories reviewed. Actual data scales confirmed from live screener: Opt.IV% in decimal (0.01=1%), Last price cap at $100 excludes XLK/QQQ/IWM/MDY, IVR universe max 45.6% needs expanding. Corrected 8-column MultiSort config documented. reqScannerSubscription P2 fully spec'd. |
 | Day 52 | May 21, 2026 | **IBKR batch fix (v0.33.2).** reqMktData streaming all-nan in IBWorker model → replaced with reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY). 7/7 ETFs live: XLK 1.13, XLF 1.16, XLI 1.25, XLB 1.31 IV/HV. reqScannerSubscription identified as P2 (gets IV/HV + put/call ratio in 1 call). |
 | Day 51 | May 21, 2026 | **Scanner live test + 4 bug fixes (v0.33.1).** XLI/XLB OHLCV corruption deleted (HV 193%→20%). scanner_service.py: is_connected() → port check. ibkr_provider: snapshot=False, tick list 104→411 (invalid for STK). IBKR market data subscription required for live ETF batch — Tradier fills IV correctly. |
@@ -328,31 +330,33 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 
 ---
 
-## Next Session Priorities (Day 54)
+## Next Session Priorities (Day 56)
 
 ### P0 — Paper trade logging (user action)
 Log next XLF or QQQ CAUTION setup to Paper Trade Dashboard. Need 30 trades for win rate data. Still at 0. Cannot calibrate gates without this sample. ~5 min user action.
 
 ### P1 — MASTER_AUDIT_FRAMEWORK sweep
-Overdue since Day 42 (11 sessions). Run all 10 categories. Focus on Category 10 (Trading Effectiveness) and gate calibration.
+Overdue since Day 42 (13 sessions). Run all 10 categories. Focus on Category 10 (Trading Effectiveness) and gate calibration.
 
-### P2 — IBKR `reqScannerSubscription` implementation
-Screener config fully researched (Day 53). Implement in code:
-1. Save "options-iq" screener in IBKR ETFs tab with 8 columns + corrected MultiSort values
-2. Call via `reqScannerSubscription` in ibkr_provider.py
-3. Parse: Opt.IV% (×100 for %), IV/HV% (direct), IVR (direct), put/call (direct), avg opt vol (direct)
-4. Merge results with 15 ETF list → fall back to reqHistoricalData for missing ETFs
-5. Wire put/call ratio into gate_engine as sentiment WARN
+### P2 — STA SMA batch (most dangerous gap)
+`fetch_etf_sma_batch(tickers)` in `sta_service.py`. STA priceHistory (260 bars, same call already made) → SMA20/50/200 + RSI(14) + momentum. Wire through analyze_service → gate_payload → gate_engine `_chart_trend_gate()` (non-blocking WARN). ~50 lines. Prevents recommending sell_put during confirmed downtrend (e.g., XLF below 200 SMA).
 
-### P3 — KI-099: bull_call_spread direction
-For Leading/Improving ETFs + IVR 30–50%, add bull_call_spread. High complexity — plan before touching.
+### P3 — Tradier put/call ratio
+`compute_put_call_ratio()` in tradier_provider.py (~30 lines). Sums put/call volume from `get_options_chain()` for near-term expiry. Fills Gate 7b/11b which always passes as None currently.
+
+### P4 — Wire skew into gate
+`compute_skew()` in tradier_provider.py returns put/call IV spread but gate_engine has 0 references. ~10 lines advisory WARN in gate_engine.
+
+### P5 (deferred) — KI-099: bull_call_spread direction
+For Leading/Improving ETFs + IVR 30–50%. High complexity — plan before touching.
 
 ### Deferred
 - **Backtesting** — explicitly deferred. Full rationale in ROADMAP.md.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY53.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY53_SHORT.md` — Day 53 summary
+- `docs/versioned/KNOWN_ISSUES_DAY55.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY55_SHORT.md` — Day 55 summary
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger) v1.4
+- `docs/Research/Data_Gaps_STA_SMA_Day55.md` — Day 55 data gap inventory + STA SMA architecture plan
 - `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
 - `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research

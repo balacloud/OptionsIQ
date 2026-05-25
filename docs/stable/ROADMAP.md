@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 53 (May 23, 2026)
-> **Current Version:** v0.33.2
+> **Last Updated:** Day 55 (May 25, 2026)
+> **Current Version:** v0.34.0
 
 ---
 
@@ -131,6 +131,9 @@ code-complete but untested. Phase 7 closes this gap across both single-stock and
 - [ ] Research: conditions for selling calls on weakening cyclicals (avoid defensive inflows)
 - [ ] Backtesting: validate sell_call on Weakening ETFs doesn't get squeezed by rotation
 - [ ] **Gate calibration audit**: What % of 15 ETFs surface an actionable setup on a typical week? If consistently <3/15, gates are over-tuned. Target: 3-5 actionable setups per week across the universe.
+- [ ] **STA SMA chart trend gate** — `fetch_etf_sma_batch(tickers)` in sta_service.py. STA priceHistory (260 bars, zero new HTTP calls) → SMA20/50/200 + RSI(14) + momentum → `_chart_trend_gate()` in gate_engine (non-blocking WARN). Closes most dangerous gap: prevents sell_put during confirmed downtrend.
+- [ ] **Tradier put/call ratio** — `compute_put_call_ratio()` in tradier_provider.py (~30 lines). Fills existing Gate 7b/11b which always passes as None.
+- [ ] **Wire skew** — compute_skew() exists but gate_engine ignores it. ~10 lines advisory WARN on elevated put/call IV spread.
 - [ ] **DTE research**: Should sellers open at 21 DTE (not 45)? Tastylive framework = open at 45 DTE, close at 21. Does opening at 21 DTE change expected value meaningfully? Are we blocking too many setups by requiring 45+ DTE for buyers?
 - [ ] **"Always one direction" principle**: At any given VIX/regime, at least one direction should have edge. If all 4 are blocked simultaneously for an ETF, is that a calibration problem or a genuine no-trade signal? Define the threshold.
 - [ ] **Unbiased evaluation methodology**: (a) paper trade dashboard — track win rate vs gate prediction over 30 real trades; (b) adversarial multi-LLM review — paste best setup to Perplexity/ChatGPT, ask it to find reasons NOT to take the trade; (c) weekly gate pass rate logging — trend over time to detect drift.
@@ -261,6 +264,8 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.34.0 | Day 55 | **Architectural research — no code changes.** reqScannerSubscription confirmed unsuitable (IBKR hard-limited to top-50 of ~12,000 stocks; sector ETFs never surface). STA priceHistory gap identified: 260 daily bars available for all ETFs from same API call already made → SMA20/50/200 + RSI(14) + momentum computable at zero extra HTTP cost. compute_skew() computed but gate_engine has 0 references. Gate calibration requires paper trade data (0/30). Research doc: Data_Gaps_STA_SMA_Day55.md. |
+| v0.34.0 | Day 54 | **P2 reqScannerSubscription — implemented + live tested + scanner ruled out.** 7 files: constants.py (PUT_CALL_RATIO thresholds), ibkr_provider.py (get_scanner_batch()), scanner_service.py (simplified — delegates to reqHistoricalData), app.py, gate_engine.py (_put_call_sentiment_gate() — Gates 7b/11b non-blocking WARN), analyze_service.py (put_call_volume in gate_payload), best_setups_service.py (scanner data injected). Scanner confirmed unsuitable: 0/15 ETFs in all 3 codes. fetch_scanner_subscription_batch() now direct path to get_iv_hv_batch(). |
 | v0.33.2 | Day 52–53 | **IBKR batch fix + screener config research.** Day 52: reqMktData streaming → reqHistoricalData (7/7 ETFs). Day 53: IBKR Screener 2.0 factor scales confirmed — Opt.IV% decimal format, Last price $100 cap, IVR range issue. reqScannerSubscription P2 fully spec'd. |
 | v0.33.2 | Day 52 | **IBKR batch fix — reqMktData streaming → reqHistoricalData.** reqMktData streaming returned all-nan in IBWorker threading model (event loop only runs during ib.sleep()). Replaced with reqHistoricalData OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY (Historical Data Farm, request-response). 7/7 ETFs return live IV/HV. reqScannerSubscription identified as P2 for put/call ratio. |
 | v0.33.1 | Day 51 | **Scanner live test + 4 bug fixes.** XLI/XLB OHLCV corruption (Apr 25-26) deleted — HV corrected 193%→20%. scanner_service: is_connected() false-negative replaced with 0.5s port check. ibkr_provider: snapshot=True invalid with genericTickList (→snapshot=False); tick 104 invalid for STK (→106,411,100,105). Architecture finding: IBKR market data subscription required for ETF reqMktData. |
