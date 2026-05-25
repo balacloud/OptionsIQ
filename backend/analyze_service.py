@@ -881,6 +881,7 @@ def analyze_etf(payload: dict, ticker: str, *,
         "max_21d_rally_pct": _stress.get("max_rally_pct"),
         "stress_bars_available": _stress.get("bars_available", 0),
         "ticker": ticker,
+        "put_call_volume": payload.get("put_call_volume"),
     }
 
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)

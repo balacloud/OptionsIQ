@@ -41,6 +41,12 @@ def run_one_setup(
         "planned_hold_days": 21,
     }
     try:
+        # Inject scanner data into payload so gate_engine can use put_call_volume.
+        # Priority: live IBKR scanner > /etf-scan file cache.
+        _scanner_pre = (live_scanner or {}).get(ticker) or get_scanner_data(ticker)
+        if _scanner_pre.get("put_call_volume") is not None:
+            payload["put_call_volume"] = float(_scanner_pre["put_call_volume"])
+
         result = analyze_etf(
             payload, ticker,
             data_svc=data_svc, ib_worker=ib_worker,

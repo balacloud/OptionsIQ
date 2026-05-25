@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 53 (May 23, 2026)
-> **Current Version:** v0.33.2
-> **Project Phase:** Research session — IBKR Screener 2.0 factor scales confirmed. Screener config finalized for reqScannerSubscription P2 (8 columns, MultiSort values corrected for decimal IV format and price range). No code changes. 44 tests. Next: paper trade logging (0/30), audit sweep, scanner API implementation.
+> **Last Updated:** Day 54 (May 23, 2026)
+> **Current Version:** v0.34.0
+> **Project Phase:** P2 (reqScannerSubscription) implemented + live tested. Scanner approach ruled out: sector ETFs don't rank in top-50 of market-wide screens. fetch_scanner_subscription_batch() simplified to reqHistoricalData direct path. Put/call sentiment gate added (non-blocking, Gates 7b/11b). 44 tests. Next: paper trade logging (0/30), audit sweep.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY53_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY53.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY54_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY54.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"

@@ -33,7 +33,7 @@ from sta_service import fetch_sta_swing_data
 from data_health_service import build_data_health
 from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch, run_startup_catchup
 from best_setups_service import run_one_setup
-from scanner_service import fetch_live_iv_hv_batch
+from scanner_service import fetch_scanner_subscription_batch
 
 VERSION = "2.0"
 
@@ -352,11 +352,11 @@ def best_setups():
     account_size = float(os.getenv("ACCOUNT_SIZE"))  # validated at startup (Rule 7)
     risk_pct = float(os.getenv("RISK_PCT", 0.01))
 
-    # Fetch IV + HV for all ETFs in one IBKR batch call before the per-ETF loop.
-    # One 4-second round-trip covers all 15 tickers — used to fill IV/HV gaps (KI-101).
+    # Fetch IV/HV for all ETFs via reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY).
+    # reqScannerSubscription tested Day 54 — unsuitable: sector ETFs don't rank in market-wide top-50.
     # Returns {} gracefully when IB Gateway offline — falls back to scanner_cache.json.
     all_tickers = [s["etf"] for s in candidates if s.get("etf")]
-    live_scanner = fetch_live_iv_hv_batch(all_tickers, _ib_worker)
+    live_scanner = fetch_scanner_subscription_batch(all_tickers, _ib_worker)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         results = list(pool.map(

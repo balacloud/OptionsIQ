@@ -60,6 +60,8 @@ from constants import (
     EVENT_DENSITY_SCORE_WARN,
     EVENT_DENSITY_SCORE_BLOCK,
     EVENT_DENSITY_RATE_SENSITIVE,
+    PUT_CALL_RATIO_BEAR_WARN,
+    PUT_CALL_RATIO_BULL_WARN,
 )
 
 
@@ -1002,6 +1004,34 @@ class GateEngine:
         return _gate("stress_check", "McMillan Stress Check", "warn",
                      "n/a", "sell tracks only", "Stress check applies to sell tracks only", False)
 
+    def _put_call_sentiment_gate(self, p: dict) -> dict:
+        """Put/call volume ratio sentiment check (non-blocking WARN).
+        Source: reqScannerSubscription HIGH_OPT_VOLUME_PUT_CALL_RATIO (Day 54 P2).
+        >1.3 = heavy put buying → crowded bearish, extra caution for sellers.
+        <0.6 = heavy call buying → complacency/euphoria, extra caution for buyers.
+        """
+        pc = p.get("put_call_volume")
+        if pc is None:
+            return _gate("put_call_sentiment", "Put/Call Sentiment", "pass",
+                         "no data", "advisory only",
+                         "Put/call ratio unavailable — scanner data missing", False)
+        pc = float(pc)
+        if pc > PUT_CALL_RATIO_BEAR_WARN:
+            s = "warn"
+            r = (f"Put/call ratio {pc:.2f} > {PUT_CALL_RATIO_BEAR_WARN} — "
+                 "heavy put buying; bearish crowd sentiment")
+        elif pc < PUT_CALL_RATIO_BULL_WARN:
+            s = "warn"
+            r = (f"Put/call ratio {pc:.2f} < {PUT_CALL_RATIO_BULL_WARN} — "
+                 "aggressive call buying; complacency signal")
+        else:
+            s = "pass"
+            r = f"Put/call ratio {pc:.2f} — neutral sentiment"
+        return _gate("put_call_sentiment", "Put/Call Sentiment", s,
+                     f"P/C {pc:.2f}",
+                     f"<{PUT_CALL_RATIO_BULL_WARN} warn, {PUT_CALL_RATIO_BULL_WARN}–{PUT_CALL_RATIO_BEAR_WARN} pass, >{PUT_CALL_RATIO_BEAR_WARN} warn",
+                     r, False)
+
     def _run_etf_buy_call(self, p: dict) -> list[dict]:
         """
         ETF buy_call gate track.
@@ -1136,6 +1166,9 @@ class GateEngine:
 
         # Gate 7: McMillan Historical Stress Check
         out.append(self._historical_stress_gate(p, "sell_put"))
+
+        # Gate 7b: Put/Call sentiment (non-blocking — advisory signal from scanner)
+        out.append(self._put_call_sentiment_gate(p))
 
         # Gate 8: Max loss check
         premium = float(p.get("premium", 0.0) or 0.0)
@@ -1280,5 +1313,8 @@ class GateEngine:
 
         # Gate 11: Key Holdings Earnings (ETF-specific)
         out.append(self._etf_holdings_earnings_gate(p))
+
+        # Gate 11b: Put/Call sentiment (non-blocking — advisory signal from scanner)
+        out.append(self._put_call_sentiment_gate(p))
 
         return out

@@ -96,6 +96,21 @@ def fetch_live_iv_hv_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
         return {}
 
 
+def fetch_scanner_subscription_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
+    """
+    Fetch IV/HV for Best Setups scan via IBKR reqHistoricalData.
+
+    reqScannerSubscription was tested live (Day 54) and found unsuitable: market-wide
+    scanners stream the top-50 of ~12,000 US stocks; sector ETFs with moderate IV never
+    rank in the top 50. reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY)
+    is request-response, reliable, and ~2s/ticker — the correct path for targeted ETF data.
+
+    Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
+    put_call_volume is not available via this path (always None in live_scanner).
+    """
+    return fetch_live_iv_hv_batch(tickers, ib_worker)
+
+
 def scanner_cache_age_hours() -> float | None:
     """Return age of scanner cache in hours, or None if not present."""
     try:

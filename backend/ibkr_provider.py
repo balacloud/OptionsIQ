@@ -426,6 +426,84 @@ class IBKRProvider:
 
         return results
 
+    # ─── Scanner subscription batch (Day 54 P2) ─────────────────────────────
+
+    def get_scanner_batch(self, tickers: list[str]) -> dict[str, dict]:
+        """
+        Fetch IV/HV ratio and put/call volume ratio for ETFs via reqScannerSubscription.
+
+        Two scanner passes, each returning data for tickers that appear in results:
+          Pass 1: HIGH_OPT_IMP_VOLATILITY_OVER_HIST → iv_hv_pct (%), iv_hv_ratio
+          Pass 2: HIGH_OPT_VOLUME_PUT_CALL_RATIO    → put_call_volume ratio
+
+        distance field semantics:
+          - IV/HV scan: percentage string, e.g. "118.3" = IV/HV 118.3% → ratio 1.183
+          - Put/call scan: direct ratio string, e.g. "1.42"
+
+        Returns dict[ticker → {iv_hv_pct, iv_hv_ratio, put_call_volume}].
+        Only includes tickers from `tickers` that appeared in scanner results.
+        Missing tickers should be handled by caller via reqHistoricalData fallback.
+        """
+        from ib_insync import ScannerSubscription
+
+        self._ensure_connected()
+        ticker_set = {t.upper() for t in tickers}
+        results: dict[str, dict] = {}
+
+        def _run_scan(scan_code: str, wait_secs: float = 5.0, max_rows: int = 500) -> list:
+            sub = ScannerSubscription(
+                numberOfRows=max_rows,
+                instrument="STK",
+                locationCode="STK.US.MAJOR",
+                scanCode=scan_code,
+            )
+            scan_list = self.ib.reqScannerSubscription(sub)
+            self.ib.sleep(wait_secs)
+            self.ib.cancelScannerSubscription(scan_list)
+            return list(scan_list)
+
+        # Pass 1: IV/HV ratio
+        # Confirmed available: HIGH_OPT_IMP_VOLAT_OVER_HIST (HIGH_OPT_IMP_VOLATILITY_OVER_HIST is disabled)
+        try:
+            items = _run_scan("HIGH_OPT_IMP_VOLAT_OVER_HIST")
+            for item in items:
+                sym = item.contractDetails.contract.symbol.upper()
+                if sym not in ticker_set:
+                    continue
+                try:
+                    pct = float(item.distance)
+                except (TypeError, ValueError):
+                    continue
+                results.setdefault(sym, {})
+                results[sym]["iv_hv_pct"] = round(pct, 1)
+                results[sym]["iv_hv_ratio"] = round(pct / 100.0, 3)
+            found_iv = sum(1 for v in results.values() if "iv_hv_pct" in v)
+            logger.info("Scanner IV/HV: %d/%d ETFs in results (scanned %d rows)",
+                        found_iv, len(ticker_set), len(items))
+        except Exception as exc:
+            logger.warning("Scanner IV/HV pass failed: %s", exc)
+
+        # Pass 2: put/call volume ratio
+        # Scan code HIGH_OPT_VOLUME_PUT_CALL_RATIO — verify with reqScannerParameters() if this fails
+        try:
+            items = _run_scan("HIGH_OPT_VOLUME_PUT_CALL_RATIO")
+            for item in items:
+                sym = item.contractDetails.contract.symbol.upper()
+                if sym not in ticker_set:
+                    continue
+                try:
+                    pc = float(item.distance)
+                except (TypeError, ValueError):
+                    continue
+                results.setdefault(sym, {})
+                results[sym]["put_call_volume"] = round(pc, 3)
+            found_pc = sum(1 for v in results.values() if "put_call_volume" in v)
+            logger.info("Scanner put/call: %d/%d ETFs in results", found_pc, len(ticker_set))
+        except Exception as exc:
+            logger.warning("Scanner put/call pass failed: %s", exc)
+
+        return results
+
     # ─── Options chain (main) ────────────────────────────────────────────────
 
     def get_options_chain(

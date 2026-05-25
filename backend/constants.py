@@ -440,6 +440,11 @@ BROAD_SELLOFF_SECTOR_PCT        = 0.50    # >50% sectors Weakening+Lagging = bro
 # IVR soft warning threshold for bear spreads (L2 only — advisory, not a gate)
 IVR_BEAR_SPREAD_WARN            = 40      # IVR below 40% = premium may be thin for credit spreads
 # Display hint → core direction mapping for chain fetches
+# Put/call volume ratio sentiment thresholds (Day 54 — reqScannerSubscription P2)
+# Non-blocking WARN only: sentiment is advisory, not a gate blocker.
+PUT_CALL_RATIO_BEAR_WARN = 1.3   # >1.3 = heavy put buying → crowded bearish sentiment (WARN for sellers buying dip)
+PUT_CALL_RATIO_BULL_WARN = 0.6   # <0.6 = aggressive call buying → complacency/euphoria (WARN for buyers)
+
 DIRECTION_TO_CHAIN_DIR = {
     "buy_call": "buy_call",
     "sell_call": "sell_call",
