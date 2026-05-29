@@ -66,6 +66,7 @@ from constants import (
     FOMC_WARN_DAYS_NEAR,
     PUT_CALL_RATIO_BEAR_WARN,
     PUT_CALL_RATIO_BULL_WARN,
+    TQQQ_MAX_DELTA,
 )
 
 
@@ -747,21 +748,34 @@ class GateEngine:
         """Volatility Risk Premium gate for sellers (Sinclair).
         Sellers need IV > HV — only then are they collecting overpriced premium.
         hv_iv_ratio = IV/HV (current_iv / hv_20). >= 1.05 = IV well above HV → sellers have edge.
+        GLD special rule (KI-108): requires IV/HV >= 1.10 (gold vol has unique dynamics —
+        Research 1 Day 56: GLD IV/HV < 1.10 means premium is insufficient for the correlation risk).
         """
         current_iv = float(p.get("current_iv", 0.0))
         hv_20 = float(p.get("hv_20", 0.0) or 0.0)
         ratio = float(p.get("hv_iv_ratio", 0.0) or 0.0)  # IV/HV
+        ticker = p.get("ticker", "").upper()
+        is_gld = ticker == "GLD"
+
         if ratio == 0.0 or current_iv == 0.0:
             s, r = "warn", "Vol data unavailable — VRP unverified"
+        elif is_gld:
+            # GLD requires stronger VRP (IV/HV >= 1.10) — gold options have unique skew dynamics
+            if ratio >= 1.10:
+                s, r = "pass", "GLD: IV/HV ≥ 1.10 — sufficient VRP for gold options selling"
+            else:
+                s, r = "fail", f"GLD: IV/HV {ratio:.2f} < 1.10 — insufficient premium edge. Wait for IV expansion."
         elif ratio >= HV_IV_SELL_PASS_RATIO:  # IV/HV >= 1.05: IV well above HV → sellers have edge
             s, r = "pass", "IV > HV — positive vol risk premium, good to sell"
         elif ratio >= 1.0:  # IV/HV 1.0–1.05: IV just above HV → thin edge
             s, r = "warn", "IV barely above HV — thin premium edge, size down"
         else:  # IV/HV < 1.0: HV exceeds IV → no seller edge
             s, r = "fail", "HV exceeds IV — realized vol > implied, no edge selling"
+
+        threshold_str = "GLD: IV/HV >=1.10 required; Others: >=1.05 pass, 1.0-1.05 warn, <1.0 fail" if is_gld else f"IV/HV >={HV_IV_SELL_PASS_RATIO} pass, 1.0–{HV_IV_SELL_PASS_RATIO} warn, <1.0 fail"
         return _gate("hv_iv_vrp", "Vol Risk Premium", s,
                      f"IV/HV {ratio:.2f} (IV {current_iv:.1f}%, HV {hv_20:.1f}%)",
-                     f"IV/HV >={HV_IV_SELL_PASS_RATIO} pass, 1.0–{HV_IV_SELL_PASS_RATIO} warn, <1.0 fail",
+                     threshold_str,
                      r, s == "fail")
 
     def _vix_regime_gate(self, p: dict) -> dict:
@@ -1114,6 +1128,30 @@ class GateEngine:
             self._etf_position_size_gate(p),
         ]
 
+    def _tqqq_satellite_gate(self, p: dict) -> dict:
+        """TQQQ satellite rules gate (KI-107). Informs user that strategies were filtered
+        to TQQQ_MAX_DELTA. Also checks: VIX < 18 required for TQQQ (3x leverage + crisis = catastrophic).
+        Never a hard block — user must verify QQQ regime and VIX themselves via /ibkr-scan.
+        """
+        ticker = p.get("ticker", "").upper()
+        if ticker != "TQQQ":
+            return _gate("tqqq_satellite", "TQQQ Rules", "pass", "N/A",
+                         "TQQQ only", "Not TQQQ — no satellite constraints", False)
+        vix = p.get("vix")
+        vix_ok = vix is None or float(vix) < 18
+        vix_str = f"VIX {float(vix):.1f}" if vix is not None else "VIX unknown"
+        if vix is not None and float(vix) >= 18:
+            return _gate("tqqq_satellite", "TQQQ Rules", "warn",
+                         f"delta ≤ {TQQQ_MAX_DELTA} · {vix_str}",
+                         f"delta ≤ {TQQQ_MAX_DELTA}, VIX < 18, QQQ above 200+50 EMA",
+                         f"TQQQ: {vix_str} ≥ 18 — 3x leverage amplifies vol-crash risk. Consider skipping. Strategies capped at delta {TQQQ_MAX_DELTA}.",
+                         False)
+        return _gate("tqqq_satellite", "TQQQ Rules", "warn",
+                     f"delta ≤ {TQQQ_MAX_DELTA} · {vix_str}",
+                     f"delta ≤ {TQQQ_MAX_DELTA}, VIX < 18, QQQ above 200+50 EMA",
+                     f"TQQQ satellite mode. All strategies capped at delta {TQQQ_MAX_DELTA}. Verify via /ibkr-scan: QQQ above 200+50 EMA, VIX < 18, 1-2% account risk only.",
+                     False)
+
     def _run_etf_sell_put(self, p: dict) -> list[dict]:
         """
         ETF sell_put gate track.
@@ -1227,6 +1265,10 @@ class GateEngine:
         out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}",
                          f"<={MAX_LOSS_WARN_PCT:.0%} pass, >{MAX_LOSS_FAIL_PCT:.0%} fail", r, s == "fail"))
 
+        # Gate 9: TQQQ satellite rules (KI-107) — only visible for TQQQ
+        if p.get("ticker", "").upper() == "TQQQ":
+            out.append(self._tqqq_satellite_gate(p))
+
         return out
 
     def _run_etf_sell_call(self, p: dict) -> list[dict]:
@@ -1291,28 +1333,9 @@ class GateEngine:
         out.append(_gate("dte_seller", "DTE (Seller)", s, f"DTE {dte}",
                          f"{ETF_DTE_SELLER_PASS_MIN}–{ETF_DTE_SELLER_PASS_MAX} pass; <{ETF_DTE_SELLER_PASS_MIN} warn; >60 or <7 fail", r, s == "fail"))
 
-        # Gate 6: Events — earnings + FOMC + macro (CPI/NFP/PCE)
-        earn_days = int(p.get("earnings_days_away", 999) or 999)
-        fomc_days = int(p.get("fomc_days_away", 999) or 999)
-        macro_days = int(p.get("macro_days_away", 999) or 999)
-        macro_name = p.get("macro_event_name") or "Macro"
-        nearest_event_days = min(fomc_days, macro_days)
-        nearest_event_name = "FOMC" if fomc_days <= macro_days else macro_name
-        if earn_days <= dte:
-            s, r = "fail", "Earnings inside expiry window"
-            block = True
-        elif nearest_event_days < 5:
-            s, r = "warn", f"{nearest_event_name} imminent ({nearest_event_days}d) — vol event inside holding window"
-            block = False
-        elif nearest_event_days <= 10:
-            s, r = "warn", f"{nearest_event_name} event near expiry"
-            block = False
-        else:
-            s, r = "pass", "No major event conflict"
-            block = False
-        out.append(_gate("events", "Event Calendar", s,
-                         f"earn {earn_days}d · FOMC {fomc_days}d · {macro_name} {macro_days}d",
-                         "earnings > DTE and events >10d", r, block))
+        # Gate 6: FOMC + macro event (tiered by ticker sensitivity — same as sell_put, KI-109)
+        # XLF/XLRE/TQQQ: hard block within 14d. QQQ/IWM/GLD: warn within 7d, never block.
+        out.append(self._etf_fomc_gate(p, dte, "sell_call"))
 
         # Gate 6b: Event density (KI-097) — all events in DTE window, not just nearest
         out.append(self._etf_event_density_gate(p, dte))
@@ -1358,5 +1381,9 @@ class GateEngine:
 
         # Gate 11b: Put/Call sentiment (non-blocking — advisory signal from scanner)
         out.append(self._put_call_sentiment_gate(p))
+
+        # Gate 12: TQQQ satellite rules (KI-107) — only visible for TQQQ
+        if p.get("ticker", "").upper() == "TQQQ":
+            out.append(self._tqqq_satellite_gate(p))
 
         return out

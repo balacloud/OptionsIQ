@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 57 (May 29, 2026)
-> **Current Version:** v0.35.0
+> **Last Updated:** Day 59 (May 29, 2026)
+> **Current Version:** v0.35.2
 
 ---
 
@@ -228,10 +228,12 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] **Deprecated scan endpoints** — `/api/best-setups`, `/api/sectors/scan`, `/api/sectors/analyze` → 410 gone ✅ Day 57
 
 ## Phase 11 — Workflow Hardening + Frontend (Day 58+)
-- [ ] TopThreeCards.jsx — display `expected_move_1sd`, `strike_vs_em_label`, `exit_plan` from analyze response
-- [ ] KI-107: TQQQ delta guard in gate_engine — add `_tqqq_special_gate()` or extend `_etf_liquidity_gate()`, enforce TQQQ_MAX_DELTA=0.10 (~10 lines)
-- [ ] KI-108: GLD IV-cheap gate in gate_engine — ticker=="GLD" AND hv_iv_ratio < 1.0 → hard block in `_etf_hv_iv_seller_gate()` (3 lines)
+- [x] TopThreeCards.jsx — display `expected_move_1sd`, `strike_vs_em_label`, `exit_plan` from analyze response ✅ Day 58
+- [x] KI-107: TQQQ delta guard — strategy_ranker uses 0.10/0.08/0.06; `_tqqq_satellite_gate()` wired into sell_put + sell_call ✅ Day 59
+- [x] KI-108: GLD IV-cheap gate — `_etf_hv_iv_seller_gate()` hard-blocks GLD when IV/HV < 1.10 ✅ Day 59
+- [x] KI-109: sell_call FOMC consistency — Gate 6 replaced with `_etf_fomc_gate(p, dte, "sell_call")` ✅ Day 59
 - [ ] End-to-end workflow test: /ibkr-scan → /api/options/analyze → paper trade log
+- [ ] KI-110: Fix _rank_buy_call stale type names (itm_call/atm_call/otm_call → buy_call) — LOW, ~8 lines
 - [ ] `/chartreview` skill — `.claude/commands/chartreview.md` (TradingView screenshot → chart GO/WAIT + S/R levels)
 - [ ] `/catalyst-check` skill — `.claude/commands/catalyst-check.md` (ticker + DTE → events in window + hidden risks)
 
@@ -279,6 +281,8 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.35.2 | Day 59 | **KI-107/108/109 resolved.** strategy_ranker: TQQQ sell_put uses delta 0.10/0.08/0.06. gate_engine: _tqqq_satellite_gate() wired into sell_put + sell_call. GLD IV/HV < 1.10 now hard-blocks at backend gate level. sell_call FOMC gate replaced with _etf_fomc_gate tier logic (22 lines → 1). 37 tests. 0 HIGH/MEDIUM open. |
+| v0.35.1 | Day 58 | **Audit + 4 HIGH fixes + Today's Trade + TopThreeCards.** MASTER_AUDIT_FRAMEWORK v1.5. pnl_calculator otm_call/otm_put P&L fix. TradeExplainer otm_put fixes (isBearish/getMoneyness/headline). DirectionGuide sell_call "Uncapped naked call". FOMC gate direction-aware (buy directions warn, not block). TopThreeCards expected_move banner + strike_vs_em_label + ExitPlanBlock. BestSetups → Today's Trade. |
 | v0.35.0 | Day 57 | **Architecture pivot complete.** /ibkr-scan skill (4-layer scoring, TQQQ/GLD special rules). FOMC 3-tier gate (BLOCK/WARN/pass). expected_move + exit_plan in analyze response. strategy_ranker.py rewrite (700→280 lines, single-leg only). Tradier delta-centered chain sort (|delta-0.22|). ETF_TICKERS 15→6. /api/best-setups + /api/sectors/scan + /api/sectors/analyze deprecated (410). test_spread_math.py deleted. 37 tests. |
 | v0.34.0 | Day 55 | **Architectural research — no code changes.** reqScannerSubscription confirmed unsuitable (IBKR hard-limited to top-50 of ~12,000 stocks; sector ETFs never surface). STA priceHistory gap identified: 260 daily bars available for all ETFs from same API call already made → SMA20/50/200 + RSI(14) + momentum computable at zero extra HTTP cost. compute_skew() computed but gate_engine has 0 references. Gate calibration requires paper trade data (0/30). Research doc: Data_Gaps_STA_SMA_Day55.md. |
 | v0.34.0 | Day 54 | **P2 reqScannerSubscription — implemented + live tested + scanner ruled out.** 7 files: constants.py (PUT_CALL_RATIO thresholds), ibkr_provider.py (get_scanner_batch()), scanner_service.py (simplified — delegates to reqHistoricalData), app.py, gate_engine.py (_put_call_sentiment_gate() — Gates 7b/11b non-blocking WARN), analyze_service.py (put_call_volume in gate_payload), best_setups_service.py (scanner data injected). Scanner confirmed unsuitable: 0/15 ETFs in all 3 codes. fetch_scanner_subscription_batch() now direct path to get_iv_hv_batch(). |

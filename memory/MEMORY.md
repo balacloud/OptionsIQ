@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 58 — v0.35.1)
-Architecture pivot COMPLETE + audit pass done. Single-leg only (sell_put/sell_call/buy_call/buy_put), 5+1 ETF universe (QQQ/IWM/XLF/GLD/TQQQ + SPY regime anchor). /ibkr-scan skill live. FOMC 3-tier gate with direction-awareness (buy directions now warn, not block, for XLF/TQQQ). TopThreeCards shows expected_move_1sd banner, strike_vs_em_label, ExitPlanBlock. Today's Trade tab (replaced Best Setups — zero API calls). 4 HIGH audit bugs fixed. 37 tests. Open: KI-107/108/109 (MEDIUM), KI-110/059 (LOW). Next: KI-107/108/109 fixes, end-to-end workflow test, chartreview/catalyst-check skills.
+## Current Phase (Day 59 — v0.35.2)
+Architecture pivot COMPLETE. All MEDIUM KIs resolved. Single-leg only (sell_put/sell_call/buy_call/buy_put), 5+1 ETF universe (QQQ/IWM/XLF/GLD/TQQQ + SPY regime anchor). /ibkr-scan skill live. FOMC 3-tier gate direction-aware. TQQQ delta 0.10 enforced in strategy_ranker + _tqqq_satellite_gate. GLD IV/HV < 1.10 now hard-blocks at gate level. sell_call FOMC gate uses same tier logic as sell_put. TopThreeCards shows expected_move_1sd banner, strike_vs_em_label, ExitPlanBlock. 37 tests. 0 HIGH/MEDIUM open. Open: KI-110/059/099 (LOW only). Next: KI-110 fix, end-to-end workflow test, chartreview/catalyst-check skills.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY58_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY58.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY59_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY59.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -51,11 +51,12 @@ backend/
                       during ib.sleep() — insufficient for streaming. reqHistoricalData is request-response.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      UPDATED (Day 57+58) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
+  gate_engine.py      UPDATED (Day 57+58+59) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
                       Day 58: _etf_fomc_gate direction-aware: buy_call/buy_put get WARN (not BLOCK) for Tier 1 tickers.
-                      KI-107: TQQQ delta guard (TQQQ_MAX_DELTA=0.10) NOT YET in gate. KI-108: GLD IV/HV not enforced.
-                      KI-109: sell_call uses legacy events check (not _etf_fomc_gate tier logic).
-  strategy_ranker.py  UPDATED (Day 57) — single-leg only. _rank_sell_put_etf/sell_call/buy_call/buy_put.
+                      Day 59: _tqqq_satellite_gate() added — wired into sell_put (Gate 9) + sell_call (Gate 12).
+                      Day 59: _etf_hv_iv_seller_gate: GLD branches to IV/HV >= 1.10 threshold (hard block if < 1.10).
+                      Day 59: sell_call Gate 6 replaced with _etf_fomc_gate(p, dte, "sell_call") — KI-109 resolved.
+  strategy_ranker.py  UPDATED (Day 57+59) — single-leg only. Day 59: _rank_sell_put_etf TQQQ branch (delta 0.10/0.08/0.06).
                       NOTE: buy_call returns "itm_call"/"atm_call"/"otm_call" (not "buy_call") — KI-110 LOW.
   pnl_calculator.py   UPDATED (Day 58) — otm_call/otm_put now compute correct P&L (was 0.0). All types covered.
   tests/              37 tests (pytest). 6 files. (44→37 Day 57: test_spread_math removed).
@@ -89,12 +90,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 59 Priorities
-1. **P1:** KI-107 — TQQQ delta guard in gate_engine (~10 lines). TQQQ_MAX_DELTA=0.10 constant exists, add gate check.
-2. **P2:** KI-108 — GLD IV/HV ≥ 1.10 gate in gate_engine (~3 lines).
-3. **P3:** KI-109 — sell_call FOMC tier consistency: replace legacy events block with `_etf_fomc_gate(p, dte, "sell_call")`.
-4. **P4:** End-to-end workflow test: ibkr-scan → analyze → paper trade (visual check).
-5. **P5:** /chartreview skill — `.claude/commands/chartreview.md`.
+## Day 60 Priorities
+1. **P1:** KI-110 (LOW) — Fix _rank_buy_call/_rank_buy_put stale type names (itm_call/atm_call/otm_call → buy_call). ~8 lines + update pnl_calculator/TopThreeCards handlers.
+2. **P2:** End-to-end workflow test: ibkr-scan → analyze → paper trade (visual check).
+3. **P3:** /chartreview skill — `.claude/commands/chartreview.md`.
+4. **P4:** /catalyst-check skill — `.claude/commands/catalyst-check.md`.
+5. **P5:** Audit trigger (MASTER_AUDIT_FRAMEWORK v1.5 — last run Day 58, next Day 65).
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from constants import TQQQ_MAX_DELTA
+
 
 def _f(v, default: float = 0.0) -> float:
     try:
@@ -60,7 +62,8 @@ class StrategyRanker:
     # ─── sell_put (single-leg, ETF mode) ──────────────────────────────────────
 
     def _rank_sell_put_etf(self, chain: dict, _swing_data: dict, recommended_dte: int | None) -> list[dict]:
-        """Single-leg sell_put for ETFs. R1: delta 0.20, R2: delta 0.15, R3: delta 0.28."""
+        """Single-leg sell_put for ETFs. R1: delta 0.20, R2: delta 0.15, R3: delta 0.28.
+        TQQQ: all three ranks capped at TQQQ_MAX_DELTA (0.10) — 3x leverage requires lower delta."""
         pref = recommended_dte if recommended_dte else 30
         puts = self._best_expiry_contracts(chain, "P", pref)
         if not puts:
@@ -73,19 +76,36 @@ class StrategyRanker:
         if not otm_puts:
             otm_puts = sorted(puts, key=lambda c: _f(c.get("strike"), 0.0), reverse=True)
 
-        d20 = self._closest_delta(otm_puts, 0.20)
-        d15 = self._closest_delta(otm_puts, 0.15)
-        d28 = self._closest_delta(otm_puts, 0.28)
+        is_tqqq = chain.get("ticker", "").upper() == "TQQQ"
+
+        if is_tqqq:
+            d1 = self._closest_delta(otm_puts, TQQQ_MAX_DELTA)        # 0.10 — recommended max
+            d2 = self._closest_delta(otm_puts, TQQQ_MAX_DELTA * 0.8)  # 0.08 — conservative
+            d3 = self._closest_delta(otm_puts, TQQQ_MAX_DELTA * 0.6)  # 0.06 — very conservative
+            configs = [
+                (d1, TQQQ_MAX_DELTA,
+                 f"TQQQ delta {TQQQ_MAX_DELTA} — 3x leveraged. PoP ~88%. Max allowed per satellite rules.",
+                 None),
+                (d2, TQQQ_MAX_DELTA * 0.8,
+                 f"TQQQ conservative — delta {TQQQ_MAX_DELTA * 0.8:.2f}. PoP ~92%. Use when regime is less clear.",
+                 None),
+                (d3, TQQQ_MAX_DELTA * 0.6,
+                 f"TQQQ ultra-conservative — delta {TQQQ_MAX_DELTA * 0.6:.2f}. PoP ~94%. Use only in very strong bull regime.",
+                 "Lowest premium but maximum PoP for high-leverage ETF."),
+            ]
+        else:
+            d20 = self._closest_delta(otm_puts, 0.20)
+            d15 = self._closest_delta(otm_puts, 0.15)
+            d28 = self._closest_delta(otm_puts, 0.28)
+            configs = [
+                (d20, 0.20, "Standard — best premium/risk balance. PoP ~80%.", None),
+                (d15, 0.15, "Conservative — lower premium, PoP ~85%. Use when IV cooling or regime uncertain.", None),
+                (d28, 0.28, "Aggressive — higher credit, PoP ~72%. Use only when IVR ≥75% and trend strong.",
+                 "Higher delta — confirm strike is outside expected move before entry."),
+            ]
 
         results = []
         seen = set()
-
-        configs = [
-            (d20, 0.20, "Standard — best premium/risk balance. PoP ~80%.", None),
-            (d15, 0.15, "Conservative — lower premium, PoP ~85%. Use when IV cooling or regime uncertain.", None),
-            (d28, 0.28, "Aggressive — higher credit, PoP ~72%. Use only when IVR ≥75% and trend strong.",
-             "Higher delta — confirm strike is outside expected move before entry."),
-        ]
         for c, target_delta, why, warning in configs:
             strike = _f(c.get("strike"), 0.0)
             if strike in seen:
