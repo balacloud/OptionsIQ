@@ -88,7 +88,7 @@ class PnLCalculator:
 
     def _scenario_pnl(self, scenario_price: float, strategy: dict) -> float:
         st = strategy.get("strategy_type")
-        if st in {"itm_call", "atm_call"}:
+        if st in {"itm_call", "atm_call", "otm_call"}:
             strike = float(strategy["strike"])
             premium = float(strategy["premium"])
             return (max(0.0, scenario_price - strike) - premium) * 100
@@ -106,7 +106,7 @@ class PnLCalculator:
                 intrinsic = min(max(0.0, scenario_price - long_strike), width)
             return (intrinsic - net_premium) * 100
 
-        if st in {"itm_put", "atm_put"}:
+        if st in {"itm_put", "atm_put", "otm_put"}:
             strike = float(strategy["strike"])
             premium = float(strategy["premium"])
             return (max(0.0, strike - scenario_price) - premium) * 100

@@ -33,9 +33,11 @@ function getTradeHeadline(strategy, ticker) {
       return `You profit if ${ticker} stays above $${be} for the next ${days} days`;
     case 'itm_call':
     case 'atm_call':
+    case 'otm_call':
       return `You profit if ${ticker} rises above $${be} within ${days} days`;
     case 'itm_put':
     case 'atm_put':
+    case 'otm_put':
       return `You profit if ${ticker} drops below $${be} within ${days} days`;
     case 'sell_call':
       return `You profit if ${ticker} stays below $${st} for ${days} days — note: unlimited risk without spread`;
@@ -53,12 +55,12 @@ function isCreditStrategy(strategy_type) {
 
 // Whether this is a bearish strategy (zones flip)
 function isBearish(strategy_type) {
-  return ['bear_call_spread', 'sell_call', 'buy_put', 'itm_put', 'atm_put'].includes(strategy_type);
+  return ['bear_call_spread', 'sell_call', 'buy_put', 'itm_put', 'atm_put', 'otm_put'].includes(strategy_type);
 }
 
 // Which side is ITM for calls vs puts
 function getMoneyness(underlyingPrice, strikes, strategy_type) {
-  const isPut = ['buy_put', 'itm_put', 'atm_put', 'bull_put_spread'].includes(strategy_type);
+  const isPut = ['buy_put', 'itm_put', 'atm_put', 'otm_put', 'bull_put_spread'].includes(strategy_type);
   return { isPut };
 }
 

@@ -1,238 +1,137 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-const DIR_LABELS = {
-  buy_call:  'Buy Call',
-  sell_call: 'Sell Call',
-  buy_put:   'Buy Put',
-  sell_put:  'Sell Put',
-};
+const ETF_UNIVERSE = [
+  { ticker: 'QQQ',  desc: 'Nasdaq-100',    defaultDir: 'sell_put' },
+  { ticker: 'IWM',  desc: 'Small Cap',     defaultDir: 'sell_put' },
+  { ticker: 'XLF',  desc: 'Financials',    defaultDir: 'sell_put' },
+  { ticker: 'GLD',  desc: 'Gold',          defaultDir: 'sell_put' },
+  { ticker: 'TQQQ', desc: '3× Nasdaq',     defaultDir: 'sell_put', satellite: true },
+  { ticker: 'SPY',  desc: 'Regime Anchor', regimeOnly: true },
+];
 
-const VERDICT_STYLE = {
-  green:  { bg: 'rgba(0,200,150,0.12)',  border: 'rgba(0,200,150,0.35)',  badge: '#00c896', label: 'GO' },
-  yellow: { bg: 'rgba(250,180,50,0.10)', border: 'rgba(250,180,50,0.35)', badge: '#f5a623', label: 'CAUTION' },
-  red:    { bg: 'rgba(220,60,60,0.10)',  border: 'rgba(220,60,60,0.35)',  badge: '#e05252', label: 'BLOCKED' },
-};
-
-function SetupCard({ s, onSelect }) {
-  const vs = VERDICT_STYLE[s.verdict_color] || VERDICT_STYLE.yellow;
-  const cwOk = s.credit_to_width_ratio != null && s.credit_to_width_ratio >= 0.33;
-  const clickable = !!onSelect;
-
-  return (
-    <div
-      className={`bs-card ${clickable ? 'bs-card-clickable' : ''}`}
-      style={{ background: vs.bg, borderColor: vs.border }}
-      onClick={clickable ? () => onSelect(s.ticker, s.direction) : undefined}
-      title={clickable ? `Analyze ${s.ticker} ${DIR_LABELS[s.direction]}` : undefined}
-    >
-      <div className="bs-card-top">
-        <div className="bs-ticker">{s.ticker}</div>
-        <div className="bs-dir">{DIR_LABELS[s.direction] || s.direction}</div>
-        <div className="bs-badge" style={{ background: vs.badge }}>{vs.label}</div>
-      </div>
-
-      <div className="bs-meta">
-        {s.quadrant && <span className="bs-quad">{s.quadrant}</span>}
-        {s.strike_display && <span>Strike: <strong>{s.strike_display}</strong></span>}
-        {s.expiry_display && <span>Exp: {s.expiry_display?.slice(0, 10)}</span>}
-        {s.premium_per_lot != null && <span>Premium: <strong>${s.premium_per_lot}/lot</strong></span>}
-      </div>
-
-      <div className="bs-stats">
-        <div className="bs-stat">
-          <span className="bs-stat-label">Gates</span>
-          <span className="bs-stat-val">{s.gates_passed}/{s.gates_total}</span>
-        </div>
-        <div className="bs-stat">
-          <span className="bs-stat-label">IVR</span>
-          <span className="bs-stat-val">{s.ivr != null ? `${Number(s.ivr).toFixed(0)}%` : '—'}</span>
-        </div>
-        {s.credit_to_width_ratio != null && (
-          <div className="bs-stat">
-            <span className="bs-stat-label">Cr/Width</span>
-            <span className="bs-stat-val" style={{ color: cwOk ? '#00c896' : '#e05252' }}>
-              {(s.credit_to_width_ratio * 100).toFixed(0)}%
-            </span>
-          </div>
-        )}
-        <div className="bs-stat">
-          <span className="bs-stat-label">Pass</span>
-          <span className="bs-stat-val">{s.pass_rate}%</span>
-        </div>
-      </div>
-
-      {clickable && (
-        <div className="bs-card-cta">Analyze → Paper Trade</div>
-      )}
-    </div>
-  );
-}
+const DIRECTIONS = [
+  { value: 'sell_put',  label: 'Sell Put',  note: 'Neutral-bullish · collect premium' },
+  { value: 'sell_call', label: 'Sell Call', note: 'Neutral-bearish · collect premium' },
+  { value: 'buy_call',  label: 'Buy Call',  note: 'Directional bullish' },
+  { value: 'buy_put',   label: 'Buy Put',   note: 'Directional bearish' },
+];
 
 export default function BestSetups({ onSelect }) {
-  const [data, setData]       = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState(null);
-  const [ts, setTs]           = useState(null);
+  const [selectedETF, setSelectedETF] = useState(null);
+  const [direction, setDirection]     = useState('sell_put');
 
-  const load = () => {
-    setLoading(true);
-    setError(null);
-    fetch('http://localhost:5051/api/best-setups')
-      .then(r => r.json())
-      .then(d => {
-        setData(d);
-        setTs(new Date().toLocaleTimeString());
-        setLoading(false);
-      })
-      .catch(() => {
-        setError('Could not load setups — is the backend running?');
-        setLoading(false);
-      });
+  const handleETFClick = (etf) => {
+    if (etf.regimeOnly) return;
+    setSelectedETF(etf.ticker);
+    setDirection(etf.defaultDir || 'sell_put');
   };
 
-  // Auto-scan on first mount — this is the home screen
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const handleAnalyze = () => {
+    if (selectedETF && onSelect) onSelect(selectedETF, direction);
+  };
 
-  if (loading) return (
-    <div className="bs-loading">
-      <div className="bs-spinner" />
-      <div>Scanning ETFs across suggested directions…<br />
-        <span style={{ fontSize: 12, opacity: 0.6 }}>Usually 20–40 seconds with IBKR live</span>
-      </div>
-    </div>
-  );
-
-  const setups = data?.setups || [];
-  const allResults = (data?.all_results || []).filter(r => !r.error);
-  const go = setups.filter(s => s.verdict_color === 'green');
-  const caution = setups.filter(s => s.verdict_color === 'yellow');
-  const tier1 = data?.tier1_summary;
-  const blocked = allResults
-    .filter(r => r.verdict_color === 'red' || (!r.verdict_color && r.gates_total > 0))
-    .sort((a, b) => (b.pass_rate ?? 0) - (a.pass_rate ?? 0));
-
-  // Pre-scan idle state
-  if (!data && !error) return (
-    <div className="bs-wrap">
-      <div className="bs-idle">
-        <div className="bs-idle-title">Best Setups Scanner</div>
-        <div className="bs-idle-sub">
-          Scans all ETFs using their sector-suggested direction and runs full gate analysis.
-          Hits IBKR live — takes 20–40 seconds.
-        </div>
-        <button className="bs-run-btn" onClick={load}>Run Scan</button>
-        <div className="bs-idle-note">Only run when markets are open and IB Gateway is connected.</div>
-      </div>
-    </div>
-  );
-
-  if (error) return (
-    <div className="bs-wrap">
-      <div className="bs-error">{error}</div>
-      <div style={{ textAlign: 'center', marginTop: 12 }}>
-        <button className="bs-run-btn" onClick={load}>Retry</button>
-      </div>
-    </div>
-  );
+  const selectedMeta = ETF_UNIVERSE.find(e => e.ticker === selectedETF);
+  const dirLabel = DIRECTIONS.find(d => d.value === direction)?.label;
 
   return (
-    <div className="bs-wrap">
-      <div className="bs-header">
-        <div>
-          <div className="bs-title">Best Setups</div>
-          <div className="bs-sub">
-            {data?.candidates_scanned ?? 0} ETFs scanned · {ts && `as of ${ts}`}
-          </div>
+    <div className="tt-wrap">
+      {/* Header */}
+      <div className="tt-header">
+        <div className="tt-title">Today's Trade</div>
+        <div className="tt-sub">
+          Use <code className="tt-code">/ibkr-scan</code> to identify which ETF to trade, then select it below.
         </div>
-        <button className="bs-refresh" onClick={load}>↻ Refresh</button>
       </div>
 
-      {tier1 && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, opacity: 0.5, textTransform: 'uppercase', letterSpacing: 1 }}>
-            Tier 1 ({tier1.tickers.join(' · ')}):
-          </span>
-          <span style={{ fontSize: 12, background: 'rgba(0,200,150,0.15)', color: '#00c896', borderRadius: 4, padding: '2px 8px' }}>
-            {tier1.go} GO
-          </span>
-          <span style={{ fontSize: 12, background: 'rgba(250,180,50,0.12)', color: '#f5a623', borderRadius: 4, padding: '2px 8px' }}>
-            {tier1.caution} CAUTION
-          </span>
-          <span style={{ fontSize: 12, background: 'rgba(220,60,60,0.10)', color: '#e05252', borderRadius: 4, padding: '2px 8px' }}>
-            {tier1.blocked} BLOCKED
-          </span>
-          <span style={{ fontSize: 11, opacity: 0.4 }}>
-            (Tier 2 ETFs are structurally blocked by liquidity — use Tier 1 GO rate for calibration)
-          </span>
+      {/* Workflow steps */}
+      <div className="tt-steps">
+        <div className="tt-step">
+          <span className="tt-step-n">1</span>
+          Screenshot IBKR watchlist → paste to <code className="tt-code">/ibkr-scan</code>
         </div>
-      )}
-
-      {setups.length === 0 && (
-        <div className="bs-empty">
-          <div className="bs-empty-icon">⏸</div>
-          <div className="bs-empty-title">No GO or CAUTION setups right now</div>
-          <div className="bs-empty-sub">
-            All {data?.candidates_scanned ?? 0} scanned ETFs are currently blocked.
-            This is normal before FOMC or earnings clusters.
-          </div>
+        <div className="tt-step">
+          <span className="tt-step-n">2</span>
+          /ibkr-scan names the ETF + direction (e.g. "XLF sell_put")
         </div>
-      )}
-
-      {go.length > 0 && (
-        <div className="bs-section">
-          <div className="bs-section-title" style={{ color: '#00c896' }}>GO — Ready to Trade</div>
-          <div className="bs-grid">
-            {go.map(s => <SetupCard key={`${s.ticker}-${s.direction}`} s={s} onSelect={onSelect} />)}
-          </div>
+        <div className="tt-step">
+          <span className="tt-step-n">3</span>
+          Select below → Analyze → review gates → log paper trade
         </div>
-      )}
+      </div>
 
-      {caution.length > 0 && (
-        <div className="bs-section">
-          <div className="bs-section-title" style={{ color: '#f5a623' }}>CAUTION — Review Before Trading</div>
-          <div className="bs-grid">
-            {caution.map(s => <SetupCard key={`${s.ticker}-${s.direction}`} s={s} onSelect={onSelect} />)}
-          </div>
-        </div>
-      )}
+      {/* ETF selector grid */}
+      <div className="tt-section-label">Select ETF</div>
+      <div className="tt-etf-grid">
+        {ETF_UNIVERSE.map(etf => (
+          <button
+            key={etf.ticker}
+            className={[
+              'tt-etf-btn',
+              selectedETF === etf.ticker ? 'tt-etf-selected' : '',
+              etf.regimeOnly  ? 'tt-etf-regime'    : '',
+              etf.satellite   ? 'tt-etf-satellite'  : '',
+            ].filter(Boolean).join(' ')}
+            onClick={() => handleETFClick(etf)}
+            disabled={etf.regimeOnly}
+            title={etf.regimeOnly ? 'SPY is regime anchor only — no trades' : etf.desc}
+          >
+            <div className="tt-etf-ticker">{etf.ticker}</div>
+            <div className="tt-etf-desc">{etf.desc}</div>
+            {etf.satellite  && <div className="tt-etf-tag">satellite</div>}
+            {etf.regimeOnly && <div className="tt-etf-tag tt-etf-tag-dim">regime only</div>}
+          </button>
+        ))}
+      </div>
 
-      {/* Watchlist — nearest to GO even when blocked */}
-      {blocked.length > 0 && (
-        <div className="bs-section">
-          <div className="bs-section-title" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            Watchlist — Closest to GO When Event Clears
+      {/* Direction picker + Analyze — shown after ETF selected */}
+      {selectedETF && !selectedMeta?.regimeOnly && (
+        <>
+          <div className="tt-section-label" style={{ marginTop: 20 }}>Direction</div>
+          <div className="tt-dir-grid">
+            {DIRECTIONS.map(d => (
+              <button
+                key={d.value}
+                className={`tt-dir-btn ${direction === d.value ? 'tt-dir-selected' : ''}`}
+                onClick={() => setDirection(d.value)}
+              >
+                <div className="tt-dir-label">{d.label}</div>
+                <div className="tt-dir-note">{d.note}</div>
+              </button>
+            ))}
           </div>
-          <div className="bs-watch-table">
-            <div className="bs-watch-header">
-              <span>ETF</span><span>Direction</span><span>Gates</span><span>IVR</span><span>IV/HV</span><span>Quadrant</span><span>Why Blocked</span>
+
+          {/* TQQQ satellite rules */}
+          {selectedETF === 'TQQQ' && (
+            <div className="tt-rules tt-rules-blue">
+              <span className="tt-rules-icon">⚡</span>
+              <span>
+                <strong>TQQQ satellite:</strong> delta ≤ 0.10 · VIX &lt; 18 · QQQ above 200+50 EMA ·
+                exit 25% profit or 14 DTE · 1–2% account risk only
+              </span>
             </div>
-            {blocked.slice(0, 8).map(s => {
-              const ratio = s.iv_hv_ratio;
-              const ratioOk = ratio != null && ratio >= 1.05;
-              const ratioThin = ratio != null && ratio >= 1.0 && ratio < 1.05;
-              const ratioColor = ratioOk ? '#00c896' : ratioThin ? '#f5a623' : '#e05252';
-              return (
-                <div key={`${s.ticker}-${s.direction}`} className="bs-watch-row">
-                  <span className="bs-watch-ticker">{s.ticker}</span>
-                  <span className="bs-watch-dir">{DIR_LABELS[s.direction] || s.direction}</span>
-                  <span className="bs-watch-gates">
-                    <span style={{ color: s.pass_rate >= 70 ? '#f5a623' : '#e05252' }}>
-                      {s.gates_passed}/{s.gates_total}
-                    </span>
-                  </span>
-                  <span className="bs-watch-ivr">{s.ivr != null ? `${Number(s.ivr).toFixed(0)}%` : '—'}</span>
-                  <span style={{ color: ratio != null ? ratioColor : 'rgba(255,255,255,0.3)', fontSize: 11 }}>
-                    {ratio != null ? ratio.toFixed(2) : '—'}
-                  </span>
-                  <span className="bs-watch-quad">{s.quadrant || '—'}</span>
-                  <span className="bs-watch-reason">
-                    {(s.failed_gates || []).length > 0 ? (s.failed_gates || []).join(', ') : (s.verdict_label || 'BLOCKED')}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+          )}
+
+          {/* GLD rules */}
+          {selectedETF === 'GLD' && (direction === 'sell_put' || direction === 'sell_call') && (
+            <div className="tt-rules tt-rules-amber">
+              <span className="tt-rules-icon">◈</span>
+              <span>
+                <strong>GLD rules:</strong> IVR ≥ 35 + IV/HV ≥ 1.10 required ·
+                delta 0.15–0.20 · hard stop 2–3× premium · no rolling down
+              </span>
+            </div>
+          )}
+
+          {/* Analyze CTA */}
+          <button className="tt-analyze-btn" onClick={handleAnalyze}>
+            Analyze {selectedETF} · {dirLabel} →
+          </button>
+        </>
+      )}
+
+      {/* Hint when nothing selected */}
+      {!selectedETF && (
+        <div className="tt-hint">↑ Select an ETF from your /ibkr-scan result</div>
       )}
     </div>
   );

@@ -868,11 +868,12 @@ class GateEngine:
                      f"<{warn_count} events pass, ≥{warn_count} warn, ≥{block_count} block",
                      r, block)
 
-    def _etf_fomc_gate(self, p: dict, dte: int) -> dict:
+    def _etf_fomc_gate(self, p: dict, dte: int, direction: str = "sell_put") -> dict:
         """FOMC + macro event proximity check with ETF sensitivity tiering (Day 57).
 
         Tier 1 — FOMC_BLOCK_TICKERS (XLF, XLRE, TQQQ):
-          Hard block within FOMC_BLOCK_DAYS (14d). Rate/leverage risk is too high.
+          Hard block within FOMC_BLOCK_DAYS (14d) for SELLERS only. Buyers: warn only.
+          Rate/leverage risk is too high for premium sellers near FOMC.
         Tier 2 — FOMC_WARN_TICKERS (QQQ, IWM, GLD):
           Never block on FOMC. Warn + delta cap within FOMC_WARN_DAYS_NEAR (7d).
           FOMC meets 8x/year; blocking QQQ on FOMC presence prevents trading 70-95% of time.
@@ -884,13 +885,20 @@ class GateEngine:
         macro_name = p.get("macro_event_name") or "Macro"
         val = f"FOMC {fomc_days}d · {macro_name} {macro_days}d · DTE {dte}"
         threshold_str = "warn if major event < DTE; clear otherwise"
+        is_seller = direction in ("sell_put", "sell_call")
 
         if ticker in FOMC_BLOCK_TICKERS:
             if fomc_days <= FOMC_BLOCK_DAYS:
-                return _gate("events", "Event Calendar", "fail", val,
-                             f"{ticker}: FOMC must be >{FOMC_BLOCK_DAYS}d away",
-                             f"FOMC in {fomc_days}d — {ticker} is rate/leverage sensitive. Hard block within {FOMC_BLOCK_DAYS} days.",
-                             True)
+                if is_seller:
+                    return _gate("events", "Event Calendar", "fail", val,
+                                 f"{ticker}: FOMC must be >{FOMC_BLOCK_DAYS}d away",
+                                 f"FOMC in {fomc_days}d — {ticker} is rate/leverage sensitive. Hard block within {FOMC_BLOCK_DAYS} days.",
+                                 True)
+                else:
+                    return _gate("events", "Event Calendar", "warn", val,
+                                 f"FOMC within {FOMC_BLOCK_DAYS}d — buyers: consider sizing down",
+                                 f"FOMC in {fomc_days}d. Buyers have defined risk but vol event may spike IV unfavorably. Reduce size.",
+                                 False)
             elif fomc_days < dte:
                 return _gate("events", "Event Calendar", "warn", val, threshold_str,
                              f"FOMC in {fomc_days}d inside holding window — {ticker} rate-sensitive. Consider reducing size.",
@@ -1079,7 +1087,7 @@ class GateEngine:
             self._etf_hv_iv_gate(p),
             self._etf_theta_gate(p),
             self._etf_dte_buyer_gate(p),
-            self._etf_fomc_gate(p, dte),
+            self._etf_fomc_gate(p, dte, "buy_call"),
             self._etf_holdings_earnings_gate(p),
             self._liquidity_gate(p),
             self._etf_spy_regime_bull_gate(p),
@@ -1099,7 +1107,7 @@ class GateEngine:
             self._etf_hv_iv_gate(p),
             self._etf_theta_gate(p),
             self._etf_dte_buyer_gate(p),
-            self._etf_fomc_gate(p, dte),
+            self._etf_fomc_gate(p, dte, "buy_put"),
             self._etf_holdings_earnings_gate(p),
             self._liquidity_gate(p),
             self._etf_spy_regime_bear_gate(p),

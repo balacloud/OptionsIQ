@@ -28,7 +28,7 @@ const DIRECTIONS = [
     group: 'bearish',
     view: 'I think price will STAY or drop slowly',
     howItWorks: 'You COLLECT a credit upfront. Profit if the ETF stays flat or drops.',
-    risk: 'Risk: Spread width (capped with spread)',
+    risk: 'Risk: Uncapped (naked call — unlimited upside exposure)',
     reward: 'Reward: Keep the credit collected',
     color: 'red',
   },

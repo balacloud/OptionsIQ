@@ -604,6 +604,72 @@ body {
 .strategy-alt-title { font-size: 13px; font-weight: 600; margin-top: 2px; }
 .strategy-alt-meta  { font-size: 12px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
 
+/* ─── Expected move context banner ──────────────────────────────────────── */
+.em-context {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 7px 12px;
+  background: var(--bg2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
+  border-left: 3px solid var(--purple);
+  margin-bottom: 2px;
+}
+.em-context strong {
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ─── Exit plan block ────────────────────────────────────────────────────── */
+.exit-plan-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
+  border-left: 3px solid var(--blue);
+}
+.exit-plan-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.exit-plan-rule {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.exit-plan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.exit-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.exit-chip-target {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid color-mix(in oklab, var(--green) 30%, transparent);
+}
+.exit-chip-stop {
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid color-mix(in oklab, var(--red) 30%, transparent);
+}
+.exit-chip-date {
+  background: var(--bg3);
+  color: var(--text-dim);
+  border: 1px solid var(--border-dim);
+}
+
 /* ─── P&L Table ──────────────────────────────────────────────────────────── */
 .pnl-table-wrap { padding-top: 12px; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
@@ -2997,6 +3063,73 @@ tr:last-child td { border-bottom: none; }
 .bs-card-clickable:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
 .bs-card-cta { margin-top: 10px; font-size: 11px; color: rgba(255,255,255,0.4); text-align: right; letter-spacing: 0.04em; }
 .bs-card-clickable:hover .bs-card-cta { color: rgba(255,255,255,0.7); }
+
+/* ─── Today's Trade (tt-) ────────────────────────────────────────────────── */
+.tt-wrap { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; }
+
+.tt-header { margin-bottom: 20px; }
+.tt-title  { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.tt-sub    { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+.tt-code   { font-family: 'IBM Plex Mono', monospace; background: var(--bg3); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--blue); border: 1px solid var(--border-dim); }
+
+.tt-steps { display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; padding: 14px 16px; background: var(--bg2); border-radius: var(--radius); border: 1px solid var(--border-dim); }
+.tt-step  { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--text-dim); }
+.tt-step-n { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--blue-dim); color: var(--blue); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+.tt-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 10px; }
+
+.tt-etf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tt-etf-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 14px 10px; border-radius: var(--radius); cursor: pointer;
+  background: var(--bg3); border: 2px solid var(--border);
+  transition: border-color 0.15s, background 0.15s;
+  gap: 4px;
+}
+.tt-etf-btn:hover:not(:disabled)    { border-color: var(--blue); background: var(--blue-dim); }
+.tt-etf-selected                    { border-color: var(--blue) !important; background: var(--blue-dim) !important; }
+.tt-etf-regime                      { opacity: 0.4; cursor: default; }
+.tt-etf-satellite .tt-etf-ticker    { color: var(--amber); }
+.tt-etf-satellite.tt-etf-selected   { border-color: var(--amber) !important; background: var(--amber-dim) !important; }
+.tt-etf-ticker { font-size: 18px; font-weight: 800; color: var(--text); }
+.tt-etf-desc   { font-size: 11px; color: var(--text-muted); }
+.tt-etf-tag     { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px; background: var(--amber-dim); color: var(--amber); margin-top: 2px; }
+.tt-etf-tag-dim { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+
+.tt-dir-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.tt-dir-btn {
+  padding: 12px 14px; border-radius: var(--radius); cursor: pointer;
+  background: var(--bg3); border: 2px solid var(--border); text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.tt-dir-btn:hover    { border-color: var(--blue); background: var(--blue-dim); }
+.tt-dir-selected     { border-color: var(--blue) !important; background: var(--blue-dim) !important; }
+.tt-dir-label { font-size: 14px; font-weight: 700; color: var(--text); }
+.tt-dir-note  { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+.tt-rules {
+  display: flex; align-items: flex-start; gap: 10px; margin-top: 12px;
+  padding: 10px 14px; border-radius: var(--radius-sm); font-size: 12px; color: var(--text-dim); line-height: 1.6;
+}
+.tt-rules strong { color: var(--text); }
+.tt-rules-blue  { background: var(--blue-dim);  border: 1px solid color-mix(in oklab, var(--blue)  30%, transparent); }
+.tt-rules-amber { background: var(--amber-dim); border: 1px solid color-mix(in oklab, var(--amber) 30%, transparent); }
+.tt-rules-icon  { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+.tt-analyze-btn {
+  display: block; width: 100%; margin-top: 16px; padding: 14px;
+  background: var(--blue); color: #fff; border: none; border-radius: var(--radius);
+  font-size: 16px; font-weight: 700; cursor: pointer; letter-spacing: 0.02em;
+  transition: background 0.15s, box-shadow 0.15s;
+  box-shadow: 0 0 20px rgba(59,130,246,0.3);
+}
+.tt-analyze-btn:hover { background: #5b97f8; box-shadow: 0 0 28px rgba(59,130,246,0.5); }
+
+.tt-hint { text-align: center; padding: 32px 20px; font-size: 13px; color: var(--text-muted); }
+
+@media (max-width: 480px) {
+  .tt-etf-grid { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* ─── Learn Tab (lt-) — Perplexity-style trade education panel ─────────── */
 .lt-wrap {

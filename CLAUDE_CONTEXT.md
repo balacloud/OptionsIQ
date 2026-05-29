@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 57 (May 29, 2026)
-> **Current Version:** v0.35.0
-> **Project Phase:** Architecture pivot COMPLETE. Single-leg only, 5+1 ETF universe, ibkr-scan skill built, FOMC 3-tier gate, expected_move + exit_plan in analyze response. 37 tests.
+> **Last Updated:** Day 58 (May 29, 2026)
+> **Current Version:** v0.35.1
+> **Project Phase:** Architecture pivot COMPLETE. Audit pass done. Single-leg only, 5+1 ETF universe, ibkr-scan skill, FOMC 3-tier gate (direction-aware), expected_move + exit_plan, Today's Trade tab. 37 tests.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY55_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY55.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY58_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY58.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -235,37 +235,19 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY55.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY58.md`
 
-Open (HIGH):
-1. **KI-059: single-stock bear untested** — DEFERRED. Stocks return 400. ETF all 4 directions ✅ Day 21.
+Open (MEDIUM):
+1. **KI-107:** TQQQ delta guard not in gate_engine — TQQQ_MAX_DELTA=0.10 constant exists but gate doesn't enforce it
+2. **KI-108:** GLD IV/HV ≥ 1.10 gate not enforced in gate_engine — only enforced at /ibkr-scan skill layer
+3. **KI-109:** sell_call FOMC gate uses legacy events check — inconsistent with sell_put's tier-blocked _etf_fomc_gate
 
 Open (LOW):
-2. **KI-099:** bull_call_spread missing as direction for Leading/Improving + IVR 30–50% (deferred, high complexity)
+4. **KI-059:** single-stock bear untested — DEFERRED. Stocks return 400. ETF-only going forward.
+5. **KI-110:** _rank_buy_call returns "itm_call"/"atm_call"/"otm_call" instead of "buy_call" — inconsistent naming (functional, not broken)
 
-Architecture note: reqMktData streaming fails in IBWorker threading model (IBWorker only runs event loop during ib.sleep() — insufficient for streaming). reqHistoricalData (Historical Data Farm) works correctly — request-response, no persistent event loop needed.
-
-Resolved (Day 52): KI-106 ✅ (IBKR batch all-nan — reqMktData streaming → reqHistoricalData, 7/7 ETFs working).
-Resolved (Day 51): KI-102 ✅ (XLI/XLB OHLCV corruption Apr 25-26 deleted), KI-103 ✅ (is_connected false-negative), KI-104 ✅ (snapshot=True invalid with genericTickList), KI-105 ✅ (tick 104 invalid for STK).
-Resolved (Day 50): KI-101 ✅ (IV/HV null in watchlist — live IBKR batch + screenshot cache fallback).
-Resolved (Day 49): KI-096 ✅ (IVR null→unknown confidence), KI-097 ✅ (event density gate), KI-098 ✅ (weekChange tape-fight gate), KI-100 ✅ (Tier 1 GO rate reporting). 8 new tests (36→44).
-Resolved (Day 48): No code resolutions — research session only. 5 new design gaps logged.
-Resolved (Day 47): No new KI resolutions. All code issues closed.
-Resolved (Day 46): KI-086 ✅ CLOSED (sta_service.py extracted — sta_fetch 74 lines → 2 lines). ETF sell_call DTE bug fixed (pre-existing: was using stock DTE constants, now uses _run_etf_sell_call with ETF_DTE_SELLER_PASS_MIN=30). ETF_DTE_SELLER_PASS_MIN 21→30.
-Resolved (Day 44): KI-076 (TradeExplainer isBearish() — no bug, all 4 directions verified correct via live API). Tradier all 4 directions confirmed (Category 7).
-Resolved (Day 43): KI-064 (IVR mismatch ATM IV fix), KI-075 (GATE_KB drift + DTE constants), KI-077 (sell_put label), KI-081 (macro events CPI/NFP/PCE). Bonus: fomc_days_away silent 999 bug.
-Resolved (Day 42): KI-094 (QualityBanner ibkr_cache key), KI-095 (BatchStatusPanel UTC timestamp). Plus 4 audit MEDIUM fixes same session.
-Resolved (Day 40): KI-090/091/092/093 — Tradier delta coercion, direction-aware strike window, bod_cache rename, iv_provider tradier mapping.
-Resolved (Day 39): KI-086 (best_setups_service.py extracted), KI-067 (QQQ sell_put ITM fix).
-Resolved (Day 34): KI-088 (L3 stale banner).
-Resolved (Day 32): KI-VRP-INVERT, LearnTab zones overlap.
-Resolved (Day 31): KI-084/087, KI-085.
-Resolved (Day 30): KI-083, KI-IWM-OHLCV.
-Resolved (Day 29): KI-082, IVR key mismatch, signal board fix.
-Resolved (Day 28): KI-079, KI-080, FOMC window gate.
-Resolved (Day 27): KI-078, bull_put_spread P&L.
-Resolved (Day 26): KI-008, IVR cold-start.
-Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
+Resolved (Day 58): AUDIT-001 ✅ (pnl_calculator otm_call/otm_put P&L zero), AUDIT-002 ✅ (TradeExplainer isBearish/getMoneyness/headline missing otm_put), AUDIT-003 ✅ (DirectionGuide sell_call "Spread width" → "Uncapped naked"), AUDIT-004 ✅ (FOMC gate hard-blocked buy directions — now direction-aware).
+Resolved (Day 57): FOMC over-blocking ✅, spread strategies returning for ETFs ✅, Tradier ATM-centered sort ✅.
 
 ---
 
@@ -302,6 +284,7 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 58 | May 29, 2026 | **Audit + 4 HIGH fixes + Today's Trade + TopThreeCards display (v0.35.1).** MASTER_AUDIT_FRAMEWORK v1.5 update. pnl_calculator otm_call/otm_put → P&L now correct for R3 buy directions. TradeExplainer isBearish/getMoneyness/headline: otm_put added (profit zone was wrong for buy_put R3). DirectionGuide sell_call risk label: "Spread width" → "Uncapped naked call". FOMC gate: direction-aware — buy_call/buy_put now get WARN not BLOCK for XLF/TQQQ. TopThreeCards.jsx: expected_move ± banner, strike_vs_em_label, ExitPlanBlock. BestSetups.jsx → Today's Trade (6-ETF quick-launcher, zero API calls). 37 tests pass. |
 | Day 57 | May 29, 2026 | **Architecture pivot Phase 1-4 complete (v0.35.0).** ibkr-scan skill built (.claude/commands/ibkr-scan.md). FOMC 3-tier gate (BLOCK: XLF/XLRE/TQQQ <14d; WARN: QQQ/IWM/GLD, never block). expected_move + strike_vs_expected_move + exit_plan added to analyze response. Single-leg simplification: strategy_ranker.py rewritten — spreads removed, sell_put: delta 0.20/0.15/0.28 single-leg. Tradier delta-centered chain sort for sell dirs (was ATM-centered, now OTM-targeted). ETF_UNIVERSE 15→6. /api/best-setups + /api/sectors/* deprecated (410). 44→37 tests (test_spread_math.py removed). IBKR_DATA_SOURCES.md + IBKR_WATCHLIST_SETUP.md created. |
 | Day 55 | May 25, 2026 | **Architectural research (v0.34.0 — no code change).** reqScannerSubscription approach confirmed unsuitable (live test reviewed). STA priceHistory gap identified: 260 bars available for all ETFs → SMA20/50/200 + RSI(14) + momentum computable at zero extra HTTP cost. compute_skew() in tradier_provider.py computed but gate_engine has 0 references. Complete data gap inventory documented. Gate calibration requires paper trade data (0/30 — structural blocker). Research doc: Data_Gaps_STA_SMA_Day55.md. |
 | Day 54 | May 23, 2026 | **P2 reqScannerSubscription — implemented, live tested, scanner ruled out (v0.34.0).** 7 files updated. Scanner approach confirmed unsuitable: IBKR scanner hard-limited to top-50 of ~12,000 stocks; sector ETFs never rank. fetch_scanner_subscription_batch() simplified to direct reqHistoricalData delegation (removes 25s wasted latency). Put/call sentiment gate added: _put_call_sentiment_gate() in gate_engine (Gates 7b/11b, non-blocking WARN, handles None as advisory pass). 44 tests. |
@@ -331,26 +314,30 @@ Resolved (Day 24): KI-071/KI-070/KI-001/KI-023.
 
 ---
 
-## Next Session Priorities (Day 58)
+## Next Session Priorities (Day 59)
 
-### P1 — Frontend: display expected_move + exit_plan in TopThreeCards.jsx
-`expected_move_1sd` and per-strategy `exit_plan` are now in the analyze response but not displayed.
-TopThreeCards.jsx: add expected move ± range, sigma label (✅/⚠️/❌), exit rule, target credit, exit date.
+### P1 — KI-107: TQQQ delta guard in gate_engine (~10 lines)
+TQQQ_MAX_DELTA=0.10 exists in constants.py but gate_engine never checks it.
+Add TQQQ delta enforcement in `_run_etf_sell_put`/`_run_etf_sell_call` gate tracks.
+Block if any strategy delta > TQQQ_MAX_DELTA for TQQQ. Estimated 10 lines.
 
-### P2 — Test the full morning workflow end-to-end
-Use /ibkr-scan skill with a live IBKR screenshot → pick ETF → run /api/options/analyze → verify all new fields display correctly. Log a paper trade.
+### P2 — KI-108: GLD IV/HV gate in gate_engine (~3 lines)
+GLD rule: IV/HV ≥ 1.10 required for sellers. Currently only enforced at /ibkr-scan layer.
+Check ticker == "GLD" AND hv_iv_ratio < 1.10 → hard block in `_etf_hv_iv_seller_gate`.
 
-### P3 — TQQQ gate enforcement in gate_engine
-Add TQQQ_MAX_DELTA = 0.10 check. If direction is sell_put on TQQQ and any strategy has delta > 0.10, warn.
-Wire TQQQ_MIN_DTE=21, TQQQ_MAX_DTE=35 into the ETF DTE gate for TQQQ specifically.
+### P3 — KI-109: sell_call FOMC gate consistency
+Replace legacy manual events block in `_run_etf_sell_call` with `self._etf_fomc_gate(p, dte, "sell_call")`.
+XLF/TQQQ sell_call should also be hard-blocked within 14d FOMC, same as sell_put.
 
-### P4 — GLD gate enforcement
-GLD requires IV/HV ≥ 1.10 AND IVR ≥ 35 to sell. Currently no special GLD handling in gate_engine.
-If IV/HV < 1.0 for GLD: hard block with "IV CHEAP — realized vol exceeds implied."
+### P4 — End-to-end morning workflow test
+/ibkr-scan → /api/options/analyze → verify TopThreeCards display → log paper trade.
+Full visual check of expected_move banner, exit plan chips, strike_vs_em_label.
 
-### P5 (optional) — /catalyst-check skill
-`.claude/commands/catalyst-check.md` — reads constants.py FOMC_DATES + ETF_KEY_HOLDINGS, web search for sector news.
-Design spec in plan doc.
+### P5 — /chartreview skill
+`.claude/commands/chartreview.md` — reads TradingView screenshot, outputs chart GO/WAIT + S/R levels.
+
+### P6 — /catalyst-check skill
+`.claude/commands/catalyst-check.md` — FOMC_DATES + ETF_KEY_HOLDINGS + web search for sector news.
 
 ### Reference
 - `docs/versioned/KNOWN_ISSUES_DAY57.md` — current issue list

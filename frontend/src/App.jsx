@@ -134,6 +134,7 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
         strategies={data?.top_strategies || []}
         gates={data?.gates || []}
         pnlTable={data?.pnl_table}
+        expectedMove1sd={data?.expected_move_1sd}
       />
       <ExecutionCard
         ticker={ticker}
@@ -303,7 +304,7 @@ export default function App() {
           className={`app-tab-btn ${activeTab === 'setups' ? 'app-tab-active' : ''}`}
           onClick={() => setActiveTab('setups')}
         >
-          Best Setups
+          Today's Trade
         </button>
         <button
           className={`app-tab-btn ${activeTab === 'data' ? 'app-tab-active' : ''}`}

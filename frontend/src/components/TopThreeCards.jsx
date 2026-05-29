@@ -20,6 +20,12 @@ function plainEnglishSummary(strategy) {
   if (strategy_type === 'bull_put_spread' && ss != null && ls != null && credit) {
     return `SELL the $${fmt(ss)} put + BUY the $${fmt(ls)} put for $${credit}/share credit. You keep the credit if ETF stays above $${fmt(ss)}${expiry_display ? ' by ' + expiry_display : ''}.`;
   }
+  if (strategy_type === 'buy_call' && be) {
+    return `Buy this call. You profit if ETF rises above $${be}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
+  if (strategy_type === 'buy_put' && be) {
+    return `Buy this put. You profit if ETF drops below $${be}${expiry_display ? ' by ' + expiry_display : ''}.`;
+  }
   if ((strategy_type === 'itm_call' || strategy_type === 'atm_call') && be) {
     return `Buy this call. You profit if ETF rises above $${be}${expiry_display ? ' by ' + expiry_display : ''}.`;
   }
@@ -68,7 +74,35 @@ function PnlChip({ label, value, type }) {
   );
 }
 
-export default function TopThreeCards({ strategies, gates, pnlTable }) {
+function ExitPlanBlock({ exitPlan, strategyType }) {
+  if (!exitPlan?.rule) return null;
+  const isSeller = ['sell_put', 'sell_call', 'bull_put_spread', 'bear_call_spread'].includes(strategyType);
+  return (
+    <div className="exit-plan-block">
+      <div className="exit-plan-header">Exit Plan</div>
+      <div className="exit-plan-rule">{exitPlan.rule}</div>
+      <div className="exit-plan-chips">
+        {exitPlan.profit_target_credit != null && (
+          <span className="exit-chip exit-chip-target">
+            {isSeller ? 'Close below' : 'Sell at'} ${exitPlan.profit_target_credit.toFixed(2)}/sh
+          </span>
+        )}
+        {!isSeller && exitPlan.stop_loss_credit != null && (
+          <span className="exit-chip exit-chip-stop">
+            Stop ${exitPlan.stop_loss_credit.toFixed(2)}/sh
+          </span>
+        )}
+        {exitPlan.exit_date && (
+          <span className="exit-chip exit-chip-date">
+            Exit by {exitPlan.exit_date}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function TopThreeCards({ strategies, gates, pnlTable, expectedMove1sd }) {
   const [altsOpen, setAltsOpen] = useState(false);
 
   const pivotFail       = gates.some((g) => g.id === 'pivot_confirm' && g.status === 'fail');
@@ -104,8 +138,16 @@ export default function TopThreeCards({ strategies, gates, pnlTable }) {
       </div>
 
       <div className="collapsible-body">
+        {/* Expected move context — top-level 1σ move */}
+        {expectedMove1sd != null && (
+          <div className="em-context">
+            <span>±<strong>${Number(expectedMove1sd).toFixed(2)}</strong> expected move (1σ, {rank1.dte ?? '?'}d)</span>
+            <span style={{ marginLeft: 10, color: 'var(--text-muted)' }}>— strikes outside this range have PoP ≥ 84%</span>
+          </div>
+        )}
+
         {/* Rank 1 — dominant */}
-        <div className="strategy-rank1" style={{ marginTop: 4 }}>
+        <div className="strategy-rank1" style={{ marginTop: expectedMove1sd != null ? 8 : 4 }}>
           {gatedOut && <div className="strategy-overlay">GATED OUT — Gate conditions not met</div>}
 
           <div className="strategy-rank1-badge"># 1 — Top Recommendation</div>
@@ -153,6 +195,12 @@ export default function TopThreeCards({ strategies, gates, pnlTable }) {
                 <div className="val">{rank1.dte}d</div>
               </div>
             )}
+            {rank1.strike_vs_em_label != null && (
+              <div className="strategy-detail-item">
+                <label>σ OTM</label>
+                <div className="val" style={{ fontSize: 13 }}>{rank1.strike_vs_em_label}</div>
+              </div>
+            )}
             {rank1.credit_to_width_ratio != null && (
               <div className="strategy-detail-item">
                 <label>Credit / Width</label>
@@ -164,6 +212,11 @@ export default function TopThreeCards({ strategies, gates, pnlTable }) {
               </div>
             )}
           </div>
+
+          {/* Exit plan */}
+          {!gatedOut && rank1.exit_plan && (
+            <ExitPlanBlock exitPlan={rank1.exit_plan} strategyType={rank1.strategy_type} />
+          )}
 
           {/* P&L at target / stop */}
           {(r1Pnl.target != null || r1Pnl.stop != null) && !gatedOut && (
@@ -206,6 +259,12 @@ export default function TopThreeCards({ strategies, gates, pnlTable }) {
                           {s.expiry_display && <div>Expiry: {s.expiry_display}</div>}
                           {s.premium_per_lot != null && <div>Premium: ${fmt(s.premium_per_lot)}/lot</div>}
                           {s.breakeven      != null && <div>Breakeven: ${fmt(s.breakeven)}</div>}
+                          {s.strike_vs_em_label != null && (
+                            <div style={{ marginTop: 4 }}>{s.strike_vs_em_label}</div>
+                          )}
+                          {s.exit_plan?.exit_date && (
+                            <div style={{ color: 'var(--text-muted)' }}>Exit by {s.exit_plan.exit_date}</div>
+                          )}
                         </div>
                         {!gatedOut && pnl.target != null && (
                           <div style={{ marginTop: 8, fontSize: 12 }}>

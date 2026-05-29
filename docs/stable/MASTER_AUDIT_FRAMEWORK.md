@@ -1,6 +1,6 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 45 (May 6, 2026)
-> **Version:** v1.4
+> **Last Updated:** Day 58 (May 29, 2026)
+> **Version:** v1.5
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
 > **Time estimate:** 30-45 mins for Categories 1-9. Category 10 (effectiveness) runs monthly or when setups are dry.
 
@@ -41,7 +41,7 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 | R21 | Think like a quant trader, not a developer | Would this cost money if wrong? |
 
 ### From LLM Research (external validation):
-- **Historical IV is uniquely IBKR** — no other affordable provider has it. IVR requires IBKR EOD batch (not live chain).
+- **Historical IV is uniquely IBKR** — no other affordable provider has it. During market hours, IBKR watchlist `52wk IV Rank` is authoritative and real-time. iv_history.db EOD batch is now redundant for daily decisions but kept for paper trade audit trail.
 - **IVR = percentile** (what % of past year was lower than today), not count-rank
 - **High IVR → sell premium, not buy** — IVR 100% on buy_call is a critical block, not a warning
 - **IVR seller threshold = 35%** (tastylive empirical, Day 29) — not 50%. Higher threshold sacrifices 60-70% of trade frequency.
@@ -83,37 +83,69 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 
 #### Claims Checklist (run each session):
 ```
-[ ] "Tradier is the primary live chain source — IB Gateway not needed for analysis"
+[ ] "Tradier is the primary live chain source — IB Gateway API is dead"
     → Read: data_service.py get_chain() — is tradier_provider called before ibkr_stale?
-    → Confirm: IBKR provider no longer in live path (only EOD batch)
+    → Confirm: IBKR provider no longer in live path at all (IB Gateway dead as of Day 56)
 
-[ ] "BOD batch uses Tradier (not IBKR) — runs successfully without IB Gateway"
-    → Read: batch_service.run_bod_batch() — does it call data_svc.get_chain() (Tradier cascade)?
-    → Confirm: no ib_worker calls inside run_bod_batch()
+[ ] "BOD batch is dead — batch_service.py exists but is not called"
+    → Read: app.py — is run_bod_batch() called anywhere? Should be zero.
+    → Confirm: no scheduled batch calls at startup
 
 [ ] "Direction-aware OTM filter prevents ITM puts on sell_put"
     → Read: tradier_provider.get_options_chain() — does `strike > underlying` skip for sell_put?
-    → Read: ibkr_provider.py — same filter present?
+    → Also: Tradier chain sorted by |abs(delta)-0.22| for sell_put/sell_call (delta-centered)
+    → Confirm: delta-centered sort is present, not ATM-proximity sort
 
 [ ] "Skew computation is non-blocking — analyze returns skew:null if Tradier unavailable"
     → Read: analyze_service.analyze_etf() — is compute_skew() in a try/except?
     → Confirm: tradier_provider=None path returns skew:null, not an exception
 
-[ ] "sell_call builds a bear_call_spread (ranks 1+2); rank 3 is a far-OTM naked call with UNLIMITED RISK warning"
-    → Read: strategy_ranker._rank_sell_call() — verify ranks 1+2 have two legs, rank 3 has warning field
+[ ] "sell_call returns single-leg sell_call — R1 delta 0.20, R2 delta 0.15, R3 delta 0.25 (no spreads)"
+    → Read: strategy_ranker._rank_sell_call() — verify all 3 are single-leg, no bear_call_spread
+    → Confirm: strategy_type field is 'sell_call' (not 'bear_call_spread') on all 3
 
-[ ] "buy_put builds ITM put + bear put spread"
-    → Read: strategy_ranker._rank_buy_put() — verify all 3 strategy types
+[ ] "buy_put returns single-leg buy_put — R1 delta 0.68 ITM, R2 delta 0.50 ATM, R3 delta 0.30 OTM (no spreads)"
+    → Read: strategy_ranker._rank_buy_put() — verify all 3 are single-leg
+    → Confirm: strategy_type field is 'buy_put' on all 3
 
-[ ] "SPY regime gates bullish calls correctly"
-    → Read: gate_engine._run_track_a() SPY gate. Does spy_5day_return=-3% → FAIL?
+[ ] "buy_call returns single-leg buy_call — R1 delta 0.68 ITM, R2 delta 0.50 ATM, R3 delta 0.30 OTM"
+    → Read: strategy_ranker._rank_buy_call() — verify all 3 are single-leg buy_call
+
+[ ] "sell_put returns single-leg sell_put — R1 delta 0.20, R2 delta 0.15, R3 delta 0.28"
+    → Read: strategy_ranker._rank_sell_put_etf() — verify R1/R2/R3 delta targets
+
+[ ] "expected_move_1sd in every analyze response"
+    → Read: analyze_service.analyze_etf() return dict — does 'expected_move_1sd' key exist?
+    → Formula: (iv/100) × sqrt(dte/365) × underlying_price
+
+[ ] "exit_plan in every strategy object"
+    → Read: analyze_service._enrich_strategies() or strategy_ranker — is exit_plan dict built?
+    → Verify fields: rule, profit_target_pct, profit_target_credit, dte_exit, exit_date
+    → TQQQ: 25%/14 DTE. Standard: 50%/21 DTE. Buys: 100% gain / -50% stop.
+
+[ ] "strike_vs_em_label correctly classifies OTM relative to 1σ expected move"
+    → Read: analyze_service — is (underlying-strike)/expected_move computed?
+    → ≥1.0σ = ✅ Outside 1σ, 0.8-1.0σ = ⚠️ Near 1σ, <0.8σ = ❌ INSIDE expected move
+
+[ ] "FOMC 3-tier gate: BLOCK XLF/XLRE/TQQQ within 14d, WARN QQQ/IWM/GLD within 7d — never block buys"
+    → Read: gate_engine — FOMC gate tiers. Do TQQQ + XLF block within 14d for sellers?
+    → Confirm: buy_call and buy_put are excluded from the FOMC block (WARN only)
+
+[ ] "ETF universe is exactly 6 tickers: QQQ, IWM, XLF, GLD, TQQQ, SPY"
+    → Read: constants.py ETF_TICKERS — verify exact set. SPY is regime anchor only (no trades).
+
+[ ] "/api/best-setups, /api/sectors/scan, /api/sectors/analyze return 410 Gone"
+    → Read: app.py — do these routes exist? Do they return 410, not 404?
+
+[ ] "SPY regime gates use STA (not IB Gateway or yfinance)"
+    → Read: sector_scan_service._spy_regime() — STA_BASE_URL still used?
 
 [ ] "IVR seller threshold is 35% (not 50%)"
     → Read: constants.py IVR_SELLER_PASS_PCT — should be 35, not 50
     → Read: gate_engine seller gate — does it use IVR_SELLER_PASS_PCT?
 
-[ ] "sell_put warns about naked risk"
-    → Read: strategy_ranker._rank_track_b() — warning field on all 3 strategies
+[ ] "TQQQ_MAX_DELTA = 0.10 in constants.py"
+    → Read: constants.py — TQQQ_MAX_DELTA value. Must be 0.10 (not 0.15).
 
 [ ] "ACCOUNT_SIZE raises at startup if missing"
     → Read: app.py startup block. Is there an explicit raise or just a default?
@@ -132,9 +164,10 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 **Principle:** All 21 rules — check each has not been violated since last audit
 
 ```
-[ ] R1: Tradier in DataService live chain path (before ibkr_stale). IBKR NOT in live path.
+[ ] R1: Tradier in DataService live chain path (before ibkr_stale). IB Gateway is dead — no ibkr_provider in live path.
     → grep data_service.py for tradier_provider call in get_chain()
-[ ] R2: grep app.py for direct ib. calls → should be zero outside ib_worker.py
+[ ] R2: IB Gateway dead. No IBWorker, no IB() instance. Verify no ib_insync imports remain active in any service file.
+    → grep -r "ib_insync\|IBWorker\|ib_worker" backend/*.py (ib_worker.py + ibkr_provider.py only — none from services)
 [ ] R3: grep gate_engine.py + strategy_ranker.py + tradier_provider.py for raw numbers
     → skew thresholds: SKEW_TARGET_DELTA, SKEW_DTE_MIN, SKEW_DTE_MAX must be in constants.py ✓
 [ ] R4: wc -l backend/app.py → should be ≤150 (currently ~475 — known violation, tracked KI-086 partial)
@@ -171,11 +204,36 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     buy_call / buy_put → 45-90 DTE sweet spot enforced?
     sell_call / sell_put → 21-45 DTE sweet spot enforced?
 
-[ ] Strike direction mapping:
-    buy_call → strikes 8-20% BELOW underlying (ITM calls, delta ~0.68)
-    buy_put  → strikes 8-20% ABOVE underlying (ITM puts, delta ~-0.68)
-    sell_call → ATM ±6% (slight OTM preferred)
-    sell_put  → ATM ±6% (slight OTM preferred, below support)
+[ ] Strike direction mapping (single-leg only — Day 57):
+    buy_call → ITM delta ~0.68 (R1), ATM delta ~0.50 (R2), OTM delta ~0.30 (R3)
+    buy_put  → ITM delta ~0.68 (R1), ATM delta ~0.50 (R2), OTM delta ~0.30 (R3)
+    sell_call → delta ~0.20 OTM (R1), delta ~0.15 (R2), delta ~0.25 (R3) — all single-leg
+    sell_put  → delta ~0.20 OTM (R1), delta ~0.15 (R2), delta ~0.28 (R3) — all single-leg
+    TQQQ sell_put: delta capped at 0.10 by TQQQ_MAX_DELTA (NOT 0.15 or 0.20)
+
+[ ] Expected move formula (new Day 57):
+    expected_move = (iv_pct / 100) × sqrt(dte / 365) × underlying_price
+    strike_vs_em = (underlying - strike) / expected_move  [for puts]
+    strike_vs_em = (strike - underlying) / expected_move  [for calls]
+    ≥1.0σ = ✅ Outside 1σ, 0.8-1.0σ = ⚠️ Near 1σ, <0.8σ = ❌ INSIDE
+
+[ ] Exit plan correctness (new Day 57):
+    sell_put / sell_call (non-TQQQ): profit_target_pct=50%, dte_exit=21
+    TQQQ sell_put:                   profit_target_pct=25%, dte_exit=14
+    buy_call / buy_put:              profit_target_pct=100%, stop_loss_pct=50%
+
+[ ] FOMC gate tier correctness (new Day 57):
+    Tier 1 BLOCK: XLF, XLRE, TQQQ — seller directions blocked within 14 days of FOMC
+    Tier 2 WARN:  QQQ, IWM, GLD — WARN only (never block) within 7 days of FOMC
+    Buy directions (buy_call, buy_put): WARN only regardless of ticker, never block
+
+[ ] GLD gate: IV/HV ≥ 1.10 required for sellers (KI-108 — may not be implemented yet)
+    → Read: gate_engine — is there a GLD-specific IV/HV ≥ 1.10 hard block?
+    → If not present, this is KI-108 MEDIUM
+
+[ ] TQQQ gate: delta ≤ TQQQ_MAX_DELTA (0.10) enforced (KI-107 — may not be implemented yet)
+    → Read: gate_engine — is there a TQQQ delta enforcement gate?
+    → If not present, this is KI-107 MEDIUM
 
 [ ] Theta burn calculation:
     burn = abs(theta * hold_days) / premium * 100
@@ -187,22 +245,12 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     ratio > 1.3 = options overpriced → FAIL for buyers
     Direction: this gate is different for sellers (want high IV, not low)
 
-[ ] Bear call spread math:
-    premium = short_call_premium - long_call_premium (net credit)
-    max_loss = (long_strike - short_strike) * 100 - net_credit
-    Is this what pnl_calculator computes?
-
 [ ] SPY regime direction-awareness:
     buy_call: SPY 5d return < -3% → FAIL. < -1% → WARN
     sell_put: SPY 5d return < -3% → FAIL (neutral/bull bias broken)
     buy_put: SPY 5d return < -3% → PASS (bearish confirmed)
     sell_call: SPY down → PASS (neutral/bear bias confirmed)
     Are all 4 directions handled with different thresholds?
-
-[ ] IVR → direction adjustment:
-    IVR > 50% + buy_call → should suggest bull_call_spread instead
-    Is this adjustment in sector_scan_service._analyze_etf()?
-    Does it actually change the suggested_direction field?
 
 [ ] Skew computation (added Day 42):
     skew = put_iv_30d - call_iv_30d from nearest 20-50 DTE Tradier chain
@@ -298,18 +346,25 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     Count ## POST / ## GET / ## PATCH / ## DELETE headers in the doc
 
 [ ] For each key endpoint, verify response structure:
-    /api/options/analyze → verdict, gates, strategies, pnl_table, behavioral_checks, skew (Day 42)
+    /api/options/analyze → verdict, gates, strategies, pnl_table, behavioral_checks, skew, expected_move_1sd (Day 57)
     /api/health → status, ibkr_connected, mock_mode, tradier_ok, tradier_error (Day 41)
-    /api/sectors/scan → etfs[], spy_regime, scan_time
-    /api/admin/batch-status → recent_runs[], next_bod, next_eod (Day 35)
-    /api/admin/warm-cache (POST) → status, tickers_ok, tickers_failed, duration_sec (BOD)
-    /api/admin/seed-iv/all (POST) → status, tickers_ok, tickers_failed (EOD)
-    /api/best-setups → as_of, candidates_scanned, setups[], all_results[] (Day 29)
+    /api/admin/batch-status → recent_runs[], next_bod, next_eod (Day 35 — BOD batch dead but endpoint may exist)
+    DEPRECATED (410): /api/sectors/scan, /api/sectors/analyze/{ticker}, /api/best-setups
+
+[ ] Verify new Day 57 analyze fields in API_CONTRACTS.md:
+    "expected_move_1sd" at top level — is it documented?
+    Per-strategy: "expected_move", "strike_vs_expected_move", "strike_vs_em_label" — documented?
+    Per-strategy: "exit_plan" dict with rule/profit_target_pct/profit_target_credit/dte_exit/exit_date — documented?
 
 [ ] Verify field names match between code and docs:
-    "skew" field in analyze response — is it in API_CONTRACTS.md?
+    "skew" field in analyze response — is it in API_CONTRACTS.md? ✓
     "tradier_ok", "tradier_error" in health response — is it in API_CONTRACTS.md? ✓ (added Day 41)
-    "bod_cache" as data_source — is API_CONTRACTS.md updated from "ibkr_cache"?
+    "bod_cache" as data_source — is API_CONTRACTS.md updated from "ibkr_cache"? ✓
+
+[ ] Deprecated endpoints documented in API_CONTRACTS.md:
+    /api/best-setups → 410 Gone (replaced by /ibkr-scan skill)
+    /api/sectors/scan → 410 Gone
+    /api/sectors/analyze/{ticker} → 410 Gone
 
 [ ] Verify STA field mappings still match STA's actual response:
     Key ones that have burned us: days_until vs days_away, suggestedEntry vs levels.entry
@@ -321,32 +376,34 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 **Principle:** R13 (all 4 directions tested), R16 (explicit gate routing)
 
 ```
-[ ] gate_engine.py has 4 distinct branches:
-    _run_track_a (buy_call), _run_sell_call, _run_buy_put, _run_track_b (sell_put)
+[ ] gate_engine.py has 4 distinct branches (verify function names):
+    _run_track_a or similar (buy_call), _run_sell_call, _run_buy_put, _run_track_b or _run_sell_put
     Each uses direction-specific thresholds from constants.py
+    FOMC gate applied differently per direction (block sellers, warn buyers)
 
-[ ] strategy_ranker.py has 4 distinct builders:
-    _rank_track_a, _rank_sell_call, _rank_buy_put, _rank_track_b
-    Each returns 3 strategies with correct strategy_type
+[ ] strategy_ranker.py has 4 distinct builders (Day 57 — verify actual function names):
+    _rank_sell_put_etf (sell_put), _rank_sell_call (sell_call)
+    _rank_buy_call (buy_call), _rank_buy_put (buy_put)
+    Each returns 3 strategies with correct strategy_type (ALL SINGLE-LEG, no spreads)
+    Strategy types returned: ONLY 'sell_put', 'sell_call', 'buy_call', 'buy_put'
+    STALE types (must NOT appear): 'bear_call_spread', 'bull_put_spread', 'itm_call', 'atm_call', 'naked_put'
 
-[ ] pnl_calculator.py handles all strategy types:
-    itm_call, atm_call, bear_call_spread, sell_call (direction C)
-    itm_put, atm_put, bear_put_spread
-    naked_put
+[ ] pnl_calculator.py handles all current strategy types (Day 57 — single-leg only):
+    sell_put — is P&L table computed for this type? (formerly naked_put)
+    sell_call — is P&L table computed?
+    buy_call — is P&L table computed?
+    buy_put — is P&L table computed?
+    STALE types (itm_call, atm_call, bear_call_spread, itm_put, atm_put, bear_put_spread, naked_put)
+      → should be harmless dead code, but verify no KeyError if they appear
 
 [ ] Live test coverage (update this table each audit):
     | Direction  | Live Tested? | Last Test | Provider | Bugs Found |
     |------------|-------------|-----------|----------|------------|
-    | buy_call   | YES ✅      | Day 21 (XLU ETF) | IBKR | none active |
-    | sell_put   | YES ✅      | Day 40 BOD smoke (5 ETFs) | Tradier | KI-091 fixed (ITM put filter) |
-    | sell_call  | YES ✅      | Day 21 (XLU ETF) | IBKR | none active |
-    | buy_put    | YES ✅      | Day 21 (XLU ETF) | IBKR | none active |
-    Note: buy_call, sell_call, buy_put not yet live-tested with Tradier as primary source.
-
-[ ] IVR direction adjustment in sector_scan_service:
-    IVR > 50% + buy_call → bull_call_spread (verified Day 16 ✅)
-    IVR > 50% + buy_put → bear_put_spread (not verified)
-    IVR < 30% + sell_put → flag (not verified)
+    | buy_call   | YES ✅      | Day 21 (XLU ETF) | IBKR | IBKR dead — Tradier untested for this direction |
+    | sell_put   | YES ✅      | Day 57 (XLF/QQQ) | Tradier | delta-centered sort fix (Day 57) |
+    | sell_call  | NO ❌       | Day 21 (XLU ETF) | IBKR | Not tested with Tradier + single-leg |
+    | buy_put    | NO ❌       | Day 21 (XLU ETF) | IBKR | Not tested with Tradier + single-leg |
+    Note: sell_call and buy_put not verified with current Tradier+single-leg architecture.
 ```
 
 ---
@@ -435,6 +492,8 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
 | Day 27 Full Audit | Apr 21, 2026 | 1-9 | 5 findings | 0 | 1 found+fixed | bull_put_spread missing in pnl_calculator (P&L table all zeros for ETF sell_put) — FIXED. API_CONTRACTS updated (seed fields, OI source, ETF enforcement note). Direction table corrected (all 4 directions live tested Day 21+27). Post-fix: 0C/0H. |
 | Day 42 Full Audit | May 6, 2026 | 1-9 | 0 CRITICAL · 2 HIGH · 3 MEDIUM | 2 HIGH + 1 MEDIUM fixed same session | 2 MEDIUM fixed end of session | First audit with Tradier as primary. Framework updated to v1.3 before run. All findings resolved. |
 | Day 45 Framework Update | May 6, 2026 | 10 (new) | Category 10 added — Trading Effectiveness | 0 | 0 | Gate pass rate, "always one direction" claim, DTE calibration, adversarial LLM review, expected value sanity. v1.4. Not yet run against live data. |
+| Day 58 Framework Update | May 29, 2026 | All | v1.5 — reflect Day 57-58 architecture pivot | TBD | TBD | Single-leg only, 6-ETF universe, expected_move/exit_plan fields, FOMC 3-tier gate, Today's Trade tab. Full audit run follows update. |
+| Day 58 Full Audit | May 29, 2026 | 1-9 | 0 CRITICAL · 4 HIGH · 3 MEDIUM · 2 LOW | 0 | 4 HIGH fixed same session | HIGH: otm_call/otm_put in pnl_calculator (zero P&L for R3), TradeExplainer isBearish/getMoneyness missing otm_put, sell_call DirectionGuide risk label stale ("Spread width"), FOMC gate blocked buyers. All 4 HIGH fixed. MEDIUM open: KI-107 (TQQQ delta guard), KI-108 (GLD IV/HV gate), sell_call FOMC tier not using _etf_fomc_gate. |
 
 ---
 
@@ -449,60 +508,74 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
 **When to run:** Whenever gate_engine.py or strategy_ranker.py changes, OR monthly as part of weekly audit rotation.
 
 ```
-[ ] TradeExplainer isBearish() classification:
+[ ] TradeExplainer isBearish() classification (Day 57 — single-leg only):
     Open TradeExplainer.jsx — function isBearish(strategy_type)
-    Should return true ONLY for: bear_call_spread, sell_call, buy_put, itm_put, atm_put
-    For these, profit zone is LEFT of breakeven (price stays below)
-    For all others (bull_put_spread, buy_call, sell_put, itm_call, atm_call): profit zone RIGHT
-    Verify against gate_engine.py gate tracks — bearish gates = tracks where PRICE FALLING = profit
+    Should return true for: sell_call, buy_put (profit from price staying flat/falling)
+    Should return false for: buy_call, sell_put (profit from price rising/staying above)
+    STALE types no longer returned by backend: bear_call_spread, itm_put, atm_put, bull_put_spread
+    → If isBearish() still lists these, it's dead code (OK) but must NOT MISS sell_call or buy_put
 
-[ ] TradeExplainer getTradeHeadline() templates:
-    For each strategy_type, verify the headline is correct:
-    bear_call_spread → "profit if stays below ${breakeven}" ✓ (short call above)
-    bull_put_spread  → "profit if stays above ${breakeven}" ✓ (short put below)
-    itm_call/atm_call → "profit if rises above ${breakeven}" ✓
-    itm_put/atm_put  → "profit if drops below ${breakeven}" ✓
-    sell_call        → "profit if stays below ${strike}" — note: unlimited risk without spread
-    sell_put         → "profit if stays above ${strike}"
+[ ] TradeExplainer getTradeHeadline() templates (Day 57 — verify current types):
+    sell_put  → "profit if stays above ${strike}" ✓
+    sell_call → "profit if stays below ${strike}" ✓
+    buy_call  → "profit if rises above ${breakeven}" ✓
+    buy_put   → "profit if drops below ${breakeven}" ✓
+    Stale types (bear_call_spread, itm_call, etc.) may still exist — verify no crash if encountered
+
+[ ] TopThreeCards.jsx displays new Day 57-58 fields correctly:
+    expectedMove1sd prop wired from App.jsx: <TopThreeCards expectedMove1sd={data?.expected_move_1sd} ...>
+    em-context banner shows: "±$X.XX expected move (1σ, Nd)"
+    strike_vs_em_label appears in detail grid for rank1 and alt strategies
+    ExitPlanBlock renders: rule text + green target chip + date chip (stop chip for buys only)
+    When gatedOut: exit plan and P&L chips are hidden (GATED OUT overlay instead)
+
+[ ] BestSetups.jsx → Today's Trade (Day 58 — replaced):
+    No API calls on mount (zero STA/backend fetches — was causing "STA offline" error)
+    Shows 6-ETF grid: QQQ, IWM, XLF, GLD, TQQQ (satellite), SPY (regimeOnly/disabled)
+    After ETF selection: shows 4-direction picker + TQQQ rules (blue) or GLD rules (amber)
+    Analyze button calls onSelect(ticker, direction) → App.jsx handleSelectFromSetups
 
 [ ] GateExplainer GATE_KB accuracy:
     Open GateExplainer.jsx — GATE_KB object
-    For each gate ID, verify the question and pass/fail answers match gate_engine.py logic:
-    ivr_seller → PASS answer should say "IV is expensive" (IVR > 50% for sellers)
+    ivr_seller → PASS answer should say "IV is expensive" (IVR > 35% for sellers — NOT 50%)
     ivr        → PASS answer should say "IV is cheap" (IVR < 30% for buyers)
     market_regime_seller → different from market_regime (seller bias = up OR flat = pass)
-    strike_otm → PASS = strike is X% above/below current price (check SELL_CALL_OTM_PASS_PCT)
-    risk_defined → PASS only when spread is present (bear_call_spread, bull_put_spread) — NOT sell_call naked
+    fomc_gate (new Day 57) → is this gate ID in GATE_KB? Or does it render as raw gate.id?
+    risk_defined → if present, may be stale (spreads removed Day 57) — verify no misleading text
 
 [ ] GateExplainer category assignment:
     All gate IDs are assigned to one of: market, pricing, risk
-    No gate shows in wrong category (e.g., market_regime_seller must be in 'market', not 'risk')
+    fomc_gate should be in 'market' (not 'risk')
     Gates without GATE_KB entry → fallback renders gate.id + raw reason (no crash)
 
-[ ] DirectionGuide descriptions match actual system behavior:
-    buy_call card: "I think price will RISE significantly" — matches Track A, ITM calls ✓
-    sell_put card: "I think price will STAY or rise slowly" — matches Track B, sell premium ✓
-    sell_call card: "I think price will STAY or drop slowly" — matches Track A, sell premium ✓
-    buy_put card: "I think price will DROP significantly" — matches Track B, ITM puts ✓
-    Risk labels: sell_call and sell_put show "Risk: Spread width (capped)" — correct only when spread built
-    (sell_put can still be naked per strategy_ranker — DirectionGuide says spread, may be misleading for sell_put)
+[ ] DirectionGuide descriptions match actual system behavior (Day 57 — single-leg):
+    buy_call card: "I think price will RISE significantly" ✓
+    sell_put card: "I think price will STAY or rise slowly" ✓
+    sell_call card: "I think price will STAY or drop slowly" ✓
+    buy_put card: "I think price will DROP significantly" ✓
+    Risk labels: sell_call and sell_put must NOT say "Spread width (capped)" — they are naked now
+    SHOULD SAY: "Risk: Uncapped (naked premium)" or similar — verify this was updated
 
 [ ] LearnTab educational content accuracy:
-    LessonStrikes: ITM/ATM/OTM zones flip correctly for puts vs calls (call slider = OTM right, put = OTM left)
-    LessonDirections: 4 P&L SVG lines show correct shapes (call = up-sloping right, put = up-sloping left)
-    LessonSpreads: bear call spread example numbers match typical XLF scenario (credit < spread width)
-    LessonGates: gate descriptions consistent with GATE_KB in GateExplainer (no contradictions)
+    LessonStrikes: ITM/ATM/OTM zones flip correctly for puts vs calls ✓
+    LessonDirections: 4 P&L SVG lines show correct shapes ✓
+    LessonSpreads: bear call spread content is now educational-only (no longer a live strategy)
+    LessonGates: gate descriptions consistent with GATE_KB (fomc_gate may be missing)
 
-[ ] Strategy type coverage:
-    GateExplainer and TradeExplainer handle all strategy_types returned by strategy_ranker:
-    bear_call_spread ✓, bull_put_spread ✓, itm_call ✓, atm_call ✓, itm_put ✓, atm_put ✓
-    sell_call ✓, sell_put ✓, naked_put (if returned — does TradeExplainer handle this?)
+[ ] Strategy type coverage (Day 57 — current types only):
+    GateExplainer and TradeExplainer handle all strategy_types NOW returned by strategy_ranker:
+    sell_put ✓, sell_call ✓, buy_call ✓, buy_put ✓
+    Stale types (bear_call_spread, bull_put_spread, itm_call, atm_call, itm_put, atm_put, naked_put):
+    → These are NO LONGER returned by backend. Frontend handlers for them are dead code.
+    → Verify: no crash if one appears (defensive fallback), but they should not appear.
     If strategy_type is unknown → TradeExplainer renders gracefully (fallback template, not crash)
 ```
 
 **Severity mapping:**
-- `isBearish()` wrong for any type → **CRITICAL** (green shown where loss zone is)
+- `isBearish()` wrong for any active type (sell_call or buy_put) → **CRITICAL** (green shown where loss zone is)
 - `GATE_KB` text contradicts gate_engine logic → **HIGH** (wrong advice for beginner)
+- DirectionGuide "Spread width" risk label for naked strategies → **HIGH** (misleads on risk)
+- fomc_gate not in GATE_KB → **MEDIUM** (shows raw ID, not helpful)
 - Category misassignment in GATE_KB → **MEDIUM** (confusing but not dangerous)
 - LearnTab text inconsistency → **LOW** (educational, not trading decision)
 
@@ -522,27 +595,28 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
 
 #### Check 10.1 — Gate Pass Rate (measurable, run today)
 ```
-[ ] Trigger Best Setups scan (or run 15 ETFs × 4 directions manually).
+[ ] Run /api/options/analyze for the 5 tradeable ETFs × 4 directions = 20 combinations.
+    (SPY is regime anchor only — skip. Use: QQQ, IWM, XLF, GLD, TQQQ)
     Count: how many ETF/direction combinations return non-BLOCKED verdict?
 
     Target calibration:
-      < 2 setups surfaced   → gates are OVER-TUNED. Find the single biggest blocker.
-      3-6 setups surfaced   → HEALTHY. Market has some opportunity.
-      > 10 setups surfaced  → gates are UNDER-TUNED. Standards are too loose.
+      < 1 setup surfaced    → gates are OVER-TUNED or FOMC blocks all sellers. Diagnose.
+      2-5 setups surfaced   → HEALTHY. Market has some opportunity.
+      > 8 setups surfaced   → gates are UNDER-TUNED. Standards are too loose.
 
     If blocked: identify the gate blocking the most ETFs.
-    Is it: events (CPI/FOMC window)? liquidity (bid-ask too wide)? IVR? DTE?
+    Is it: FOMC (XLF/TQQQ sell blocked?)? IVR (< 35% for sellers)? DTE? IV/HV?
     One gate causing >50% of blocks = recalibration candidate.
 ```
 
 #### Check 10.2 — "Always One Direction" Claim (verifiable)
 ```
 [ ] Claim: given a clear VIX regime (VIX 12-20 = normal, VIX 20-30 = elevated, VIX>30 = stress),
-    at least one of the 15 ETFs should surface a CAUTION or GO verdict in at least one direction.
+    at least one of the 5 tradeable ETFs should surface a CAUTION or GO verdict in at least one direction.
 
     Verify today: is the claim true?
       YES → system is functioning. Blocked setups are legitimately blocked.
-      NO (all 15 ETFs blocked in all 4 directions) → gate miscalibration.
+      NO (all 5 ETFs blocked in all 4 directions) → gate miscalibration.
         Diagnosis: which gate is unanimously failing?
         Action: check if that gate's threshold is empirically justified or was set conservatively
                 and never recalibrated.

@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 53)
-v0.33.2. Research session — no code changes. IBKR Market Screener 2.0 factor scales confirmed from live screener (143 ETF universe): Opt.IV% is in DECIMAL format (0.01=1%, multiply by 100 for %); Last price cap at $100 excludes XLK/QQQ/IWM/MDY (must use $1-$9999); IVR range 0-45.6% in universe (set to 0-99.99 to capture all ETFs). 8-column MultiSort config finalized for reqScannerSubscription P2. 44 tests. Open: KI-059 (HIGH deferred), KI-099 (LOW deferred). Next: paper trade logging (0/30), audit sweep, scanner API implementation.
+## Current Phase (Day 58 — v0.35.1)
+Architecture pivot COMPLETE + audit pass done. Single-leg only (sell_put/sell_call/buy_call/buy_put), 5+1 ETF universe (QQQ/IWM/XLF/GLD/TQQQ + SPY regime anchor). /ibkr-scan skill live. FOMC 3-tier gate with direction-awareness (buy directions now warn, not block, for XLF/TQQQ). TopThreeCards shows expected_move_1sd banner, strike_vs_em_label, ExitPlanBlock. Today's Trade tab (replaced Best Setups — zero API calls). 4 HIGH audit bugs fixed. 37 tests. Open: KI-107/108/109 (MEDIUM), KI-110/059 (LOW). Next: KI-107/108/109 fixes, end-to-end workflow test, chartreview/catalyst-check skills.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY53_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY53.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY58_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY58.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -51,27 +51,22 @@ backend/
                       during ib.sleep() — insufficient for streaming. reqHistoricalData is request-response.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      DONE (Day 21+27+28+29+32+43+49) — all 4 tracks with VRP + VIX gates for sellers.
-                      Day 43: _etf_fomc_gate() extended to check macro events (CPI/NFP/PCE).
-                      Day 49: KI-096: seller IVR gates check ivr_confidence first — unknown → warn (non-blocking).
-                      Day 49: KI-097: _etf_event_density_gate() new method (Rule 5). Weighted event count in DTE window.
-                      Rate-sensitive ETFs: {XLF,XLRE,XLU,XLE,IWM,QQQ} — escalate one tier earlier.
-  strategy_ranker.py  DONE (Day 23+29) — credit_to_width_ratio on bear_call/bull_put R1/R2.
-  pnl_calculator.py   DONE (Day 27) — bull_put_spread handler. All 6 strategy types covered.
-  iv_store.py         DONE (Day 29+35) — get_iv_stats(), get_ohlcv_stats(), compute_max_21d_move(). batch_run_log table + log_batch_run() + get_batch_runs() added Day 35.
-  data_health_service.py  DONE (Day 29+34) — 8 fields now (underlying_price added Day 34).
-  sector_scan_service.py  DONE (Day 19+49) — STA consumer + L1 scan + L2 analyze + Phase 7b bear logic.
-                      Day 49: KI-098: quadrant_to_direction() takes week_change param. Lagging→bear_call_spread
-                      blocked when week_change > 0 (tape-fighting). Size rotation ETFs bypass (no weekChange from STA).
-  tests/              DONE (Day 24+28+30+34+49) — 44 tests (pytest). 6 files.
-                      +4 test_direction_routing.py (KI-098), +2 test_gate_engine_etf.py (KI-096+097 each).
+  gate_engine.py      UPDATED (Day 57+58) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
+                      Day 58: _etf_fomc_gate direction-aware: buy_call/buy_put get WARN (not BLOCK) for Tier 1 tickers.
+                      KI-107: TQQQ delta guard (TQQQ_MAX_DELTA=0.10) NOT YET in gate. KI-108: GLD IV/HV not enforced.
+                      KI-109: sell_call uses legacy events check (not _etf_fomc_gate tier logic).
+  strategy_ranker.py  UPDATED (Day 57) — single-leg only. _rank_sell_put_etf/sell_call/buy_call/buy_put.
+                      NOTE: buy_call returns "itm_call"/"atm_call"/"otm_call" (not "buy_call") — KI-110 LOW.
+  pnl_calculator.py   UPDATED (Day 58) — otm_call/otm_put now compute correct P&L (was 0.0). All types covered.
+  tests/              37 tests (pytest). 6 files. (44→37 Day 57: test_spread_math removed).
 
 frontend/
-  components/DataProvenance.jsx  DONE (Day 29+34+35+38+39+41+42) — ManualBatchTriggers added Day 39. DataFlowDiagram SVG updated Day 41. fmtTime() UTC fix Day 42.
-  components/GateExplainer.jsx   DONE (Day 25+43) — hv_iv_vrp + vix_regime GATE_KB entries added Day 43. events entry updated for CPI/NFP/PCE.
-  components/DirectionGuide.jsx  DONE (Day 25+43) — sell_put risk label fix Day 43 (KI-077).
-  App.jsx                        DONE (Day 21+25+29+31+42) — QualityBanner ibkr_cache→bod_cache (Day 42), tradier added to no-banner early-return.
-  components/BestSetups.jsx      DONE (Day 31+32+49) — IV/HV ratio column, 7-col grid. Day 49: KI-100 Tier 1 pills bar (GO/CAUTION/BLOCKED for IWM/QQQ/XLF/XLK/XLY separate from full aggregate).
+  components/GateExplainer.jsx   DONE — events gate in GATE_KB ✅. fomc_gate (gate ID "events"). risk_defined present (stale for single-leg but not harmful).
+  components/DirectionGuide.jsx  UPDATED (Day 58) — sell_call risk: "Uncapped naked call" (was "Spread width (capped)").
+  components/TradeExplainer.jsx  UPDATED (Day 58) — otm_call/otm_put in headline/isBearish/getMoneyness.
+  App.jsx                        UPDATED (Day 58) — expectedMove1sd prop to TopThreeCards, tab label "Today's Trade".
+  components/TopThreeCards.jsx   UPDATED (Day 58) — em-context banner, strike_vs_em_label, ExitPlanBlock.
+  components/BestSetups.jsx      REPLACED (Day 58) — Today's Trade (6-ETF quick-launcher, zero API calls).
 ```
 
 ## STA Architectural Role (updated Day 34)
@@ -94,12 +89,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 54 Priorities
-1. **P0:** Paper trade logging — log next XLF/QQQ CAUTION setup (user action, 0/30 logged).
-2. **P1:** MASTER_AUDIT_FRAMEWORK sweep — overdue since Day 42 (11 sessions). All 10 categories.
-3. **P2:** IBKR `reqScannerSubscription` implementation — screener config fully researched Day 53. Key: Opt.IV% is DECIMAL (×100), Last must be $1-$9999, IVR 0-99.99. One call replaces 14 reqHistoricalData + adds put/call ratio gate.
-4. **P3:** KI-099 — bull_call_spread for Leading/Improving + IVR 30–50%. Plan before touching.
-5. **P4:** deferred.
+## Day 59 Priorities
+1. **P1:** KI-107 — TQQQ delta guard in gate_engine (~10 lines). TQQQ_MAX_DELTA=0.10 constant exists, add gate check.
+2. **P2:** KI-108 — GLD IV/HV ≥ 1.10 gate in gate_engine (~3 lines).
+3. **P3:** KI-109 — sell_call FOMC tier consistency: replace legacy events block with `_etf_fomc_gate(p, dte, "sell_call")`.
+4. **P4:** End-to-end workflow test: ibkr-scan → analyze → paper trade (visual check).
+5. **P5:** /chartreview skill — `.claude/commands/chartreview.md`.
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)
