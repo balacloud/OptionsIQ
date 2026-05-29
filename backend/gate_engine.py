@@ -60,6 +60,10 @@ from constants import (
     EVENT_DENSITY_SCORE_WARN,
     EVENT_DENSITY_SCORE_BLOCK,
     EVENT_DENSITY_RATE_SENSITIVE,
+    FOMC_BLOCK_TICKERS,
+    FOMC_WARN_TICKERS,
+    FOMC_BLOCK_DAYS,
+    FOMC_WARN_DAYS_NEAR,
     PUT_CALL_RATIO_BEAR_WARN,
     PUT_CALL_RATIO_BULL_WARN,
 )
@@ -865,27 +869,57 @@ class GateEngine:
                      r, block)
 
     def _etf_fomc_gate(self, p: dict, dte: int) -> dict:
-        """FOMC + macro event proximity check (CPI, NFP, PCE).
-        Warns whenever any major scheduled event falls inside the holding window.
+        """FOMC + macro event proximity check with ETF sensitivity tiering (Day 57).
+
+        Tier 1 — FOMC_BLOCK_TICKERS (XLF, XLRE, TQQQ):
+          Hard block within FOMC_BLOCK_DAYS (14d). Rate/leverage risk is too high.
+        Tier 2 — FOMC_WARN_TICKERS (QQQ, IWM, GLD):
+          Never block on FOMC. Warn + delta cap within FOMC_WARN_DAYS_NEAR (7d).
+          FOMC meets 8x/year; blocking QQQ on FOMC presence prevents trading 70-95% of time.
+        All others: warn if event falls inside holding window.
         """
+        ticker    = p.get("ticker", "")
         fomc_days = int(p.get("fomc_days_away", 999) or 999)
         macro_days = int(p.get("macro_days_away", 999) or 999)
         macro_name = p.get("macro_event_name") or "Macro"
-
-        # Pick the nearest upcoming event
-        nearest_days = min(fomc_days, macro_days)
-        nearest_name = "FOMC" if fomc_days <= macro_days else macro_name
-
-        if nearest_days < 5:
-            s, r, block = "warn", f"{nearest_name} imminent — consider reducing size or avoid entry", False
-        elif nearest_days < dte:
-            s, r, block = "warn", f"{nearest_name} in {nearest_days}d falls inside holding window ({dte} DTE) — ETF may gap on release", False
-        else:
-            s, r, block = "pass", "No major events inside holding window", False
-
         val = f"FOMC {fomc_days}d · {macro_name} {macro_days}d · DTE {dte}"
-        return _gate("events", "Event Calendar", s, val,
-                     "warn if any major event < DTE; clear otherwise", r, block)
+        threshold_str = "warn if major event < DTE; clear otherwise"
+
+        if ticker in FOMC_BLOCK_TICKERS:
+            if fomc_days <= FOMC_BLOCK_DAYS:
+                return _gate("events", "Event Calendar", "fail", val,
+                             f"{ticker}: FOMC must be >{FOMC_BLOCK_DAYS}d away",
+                             f"FOMC in {fomc_days}d — {ticker} is rate/leverage sensitive. Hard block within {FOMC_BLOCK_DAYS} days.",
+                             True)
+            elif fomc_days < dte:
+                return _gate("events", "Event Calendar", "warn", val, threshold_str,
+                             f"FOMC in {fomc_days}d inside holding window — {ticker} rate-sensitive. Consider reducing size.",
+                             False)
+
+        elif ticker in FOMC_WARN_TICKERS:
+            if fomc_days <= FOMC_WARN_DAYS_NEAR:
+                return _gate("events", "Event Calendar", "warn", val,
+                             f"FOMC within {FOMC_WARN_DAYS_NEAR}d → use delta 0.15 max",
+                             f"FOMC imminent ({fomc_days}d). Reduce delta to 0.15 max. Not a block.",
+                             False)
+            elif fomc_days < dte:
+                return _gate("events", "Event Calendar", "warn", val,
+                             "FOMC in window → use delta 0.15",
+                             f"FOMC in {fomc_days}d inside holding window. Use delta 0.15 instead of 0.20.",
+                             False)
+
+        else:
+            nearest_days = min(fomc_days, macro_days)
+            nearest_name = "FOMC" if fomc_days <= macro_days else macro_name
+            if nearest_days < 5:
+                return _gate("events", "Event Calendar", "warn", val, threshold_str,
+                             f"{nearest_name} imminent — consider reducing size or avoid entry", False)
+            elif nearest_days < dte:
+                return _gate("events", "Event Calendar", "warn", val, threshold_str,
+                             f"{nearest_name} in {nearest_days}d falls inside holding window ({dte} DTE)", False)
+
+        return _gate("events", "Event Calendar", "pass", val,
+                     threshold_str, "No major events inside holding window", False)
 
     def _etf_spy_regime_bull_gate(self, p: dict) -> dict:
         """SPY regime gate for bullish ETF buyers (buy_call)."""

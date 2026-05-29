@@ -365,10 +365,12 @@ TRACK_B_DIRECTIONS  = {DIRECTION_BUY_PUT, DIRECTION_SELL_PUT}
 # Source: docs/Research/Sector_ETF_Options_Research_Prompt_Day13.md
 # ---------------------------------------------------------------------------
 ETF_TICKERS = {
-    "XLK", "XLF", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB",
-    "XLU", "XLRE", "XLC",   # 11 SPDR sector ETFs
-    "QQQ", "IWM", "MDY",    # Cap-size ETFs
-    "TQQQ",                  # 3x leveraged (special rules)
+    "QQQ",   # Tech/growth primary
+    "IWM",   # Small-cap divergence
+    "XLF",   # Financials, rate-sensitive
+    "GLD",   # Non-equity vol diversifier (Research 1: 3/4 LLMs)
+    "TQQQ",  # 3x leveraged satellite (strict rules)
+    "SPY",   # Regime anchor — API supported but no active trades
 }
 
 # ETF-specific gate overrides (research: ETFs 10-100x more liquid than stocks)
@@ -376,11 +378,12 @@ ETF_MIN_PREMIUM_DOLLAR  = 0.50   # (stock = 2.00). XLU/XLP ATM < $2 at 45 DTE.
 ETF_SPREAD_BLOCK_PCT    = 0.10   # (stock = 15%). ETF ATM spreads $0.01-0.05.
 ETF_MIN_OPEN_INTEREST   = 500    # (stock = 1000). ETFs always exceed this.
 
-# TQQQ special rules (VERIFIED: Seeking Alpha, Market Chameleon)
-TQQQ_MAX_DTE            = 45     # Volatility decay accelerates beyond 45 days
-# TQQQ decay formula: 3 × σ² per day (VERIFIED)
-# No covered calls (VERIFIED: caps gains during 50%+ rallies)
-# Bear call spreads at 7-14 DTE OK (VERIFIED: Market Chameleon)
+# TQQQ special rules (Multi-LLM Research 1 — 4/4 LLMs, Day 57)
+TQQQ_MAX_DELTA          = 0.10   # 4/4 LLMs: never exceed 0.10 delta (3x leverage = 3x the move)
+TQQQ_MAX_DTE            = 35     # 21-35 DTE only — longer = too much theta exposure on leveraged ETF
+TQQQ_MIN_DTE            = 21     # Tighter exit window to avoid volatility decay
+TQQQ_EXIT_PROFIT_PCT    = 25     # Close at 25% profit (vs 50% for standard ETFs)
+TQQQ_EXIT_DTE           = 14     # Close at 14 DTE regardless of profit
 
 # DTE by IVR (VERIFIED: tastylive "How IV Impacts the Selection of DTE", Aug 2024)
 ETF_DTE_LOW_IVR         = 60     # IVR < 30 → 60 DTE
@@ -392,20 +395,29 @@ ETF_DTE_SELLER_PASS_MAX = 45     # ETF seller sweet spot ceiling (vs stock 21)
 # FOMC sensitivity (VERIFIED: QuantSeeker "Which Sectors Move on Fed Days")
 FOMC_HIGH_SENSITIVITY   = {"XLF", "XLRE"}    # Biggest movers on Fed days
 FOMC_LOW_SENSITIVITY    = {"XLU", "XLP"}      # Barely move on Fed days
-FOMC_WARN_DAYS          = 3                    # WARN (not BLOCK) within 3 days
+FOMC_WARN_DAYS          = 3                    # legacy — superseded by tiered constants below
+
+# FOMC tiering for naked premium selling (Day 57 — 5-ETF universe)
+# FOMC meets 8x/year (~every 42 days). A 30-45 DTE option almost always has FOMC in window.
+# Hard blocking QQQ/IWM on FOMC prevents trading 70-95% of the time — defeats the strategy.
+# Correct approach: hard block rate-sensitive ETFs, delta-adjust equity ETFs.
+FOMC_BLOCK_TICKERS  = {"XLF", "XLRE", "TQQQ"}  # Hard block within 14 days — rate/leverage risk
+FOMC_WARN_TICKERS   = {"QQQ", "IWM", "GLD"}     # Warn + delta cap within 7 days — not a block
+FOMC_BLOCK_DAYS     = 14   # Hard block window for FOMC_BLOCK_TICKERS
+FOMC_WARN_DAYS_NEAR =  7   # Near-FOMC warn window for FOMC_WARN_TICKERS
 
 # Event density gate (KI-097) — macro events within DTE window
 # 3/3 external audit consensus: single-next-event logic underpowered for credit spreads.
 # Count all FOMC + CPI/NFP/PCE events in DTE window. Weighted score for escalation.
 EVENT_WEIGHTS           = {"FOMC": 3, "CPI": 3, "NFP": 2, "PCE": 2}  # severity weights
 EVENT_DENSITY_WARN_COUNT   = 3   # any ETF: ≥3 events in window → WARN
-EVENT_DENSITY_BLOCK_COUNT  = 4   # any ETF: ≥4 events in window → BLOCK
+EVENT_DENSITY_BLOCK_COUNT  = 5   # any ETF: ≥5 events → BLOCK (raised from 4 — 30-45 DTE always has 4)
 EVENT_DENSITY_WARN_COUNT_SENSITIVE  = 2  # rate-sensitive ETFs escalate one tier earlier
 EVENT_DENSITY_BLOCK_COUNT_SENSITIVE = 3
-EVENT_DENSITY_SCORE_WARN   = 5   # weighted score ≥5 → WARN (e.g., CPI+NFP)
-EVENT_DENSITY_SCORE_BLOCK  = 7   # weighted score ≥7 → BLOCK (e.g., FOMC+CPI+any)
-# ETFs with amplified rate/macro sensitivity (3/3 audit consensus + FOMC_HIGH_SENSITIVITY)
-EVENT_DENSITY_RATE_SENSITIVE = {"XLF", "XLRE", "XLU", "XLE", "IWM", "QQQ"}
+EVENT_DENSITY_SCORE_WARN   = 7   # weighted score ≥7 → WARN (raised from 5)
+EVENT_DENSITY_SCORE_BLOCK  = 12  # weighted score ≥12 → BLOCK (2× FOMC + anything; 1 FOMC + full macro = 10 → WARN only)
+# Only hard rate/leverage-sensitive ETFs escalate early in event density
+EVENT_DENSITY_RATE_SENSITIVE = {"XLF", "XLRE", "XLU", "XLE", "TQQQ"}  # removed IWM, QQQ
 
 # Dividend risk (VERIFIED: Webull, Schwab, Fidelity, CBOE)
 HIGH_DIVIDEND_ETFS      = {"XLU", "XLRE", "XLF"}  # Yield > 1.4%
@@ -420,7 +432,7 @@ DEFENSIVE_SECTORS       = {"XLU", "XLV", "XLP"}           # Risk-Off favored
 #         QQQ (top-5 most-traded ETF options globally), IWM/XLF/XLK/XLY all >500k contracts/day.
 # Non-Tier1 (Tier 2): OTM spreads commonly 10-40% on sector ETFs — wide due to lower volume.
 #         Verify bid-ask pre-trade; same-direction QQQ/XLF preferred when Tier2 is blocked.
-ETF_OPTIONS_LIQUID_TIER1 = frozenset({"QQQ", "IWM", "XLF", "XLK", "XLY"})
+ETF_OPTIONS_LIQUID_TIER1 = frozenset({"QQQ", "IWM", "XLF", "GLD", "TQQQ"})
 
 # Quadrant → action mapping (research-corrected Day 13)
 # Leading/Improving = ANALYZE, Weakening = WATCH, Lagging = SKIP

@@ -8,9 +8,11 @@ instances, and thin route handlers.
 from __future__ import annotations
 
 import logging
+import math as _math
 import os
 import threading
 import time
+from datetime import date as _date
 from datetime import datetime, timedelta
 
 import requests as _requests
@@ -706,6 +708,78 @@ def apply_etf_gate_adjustments(gates: list[dict], direction: str,
                                "ETF has confirmed market liquidity; bid-ask spread acceptable.")
 
 
+# ─── Expected move + exit plan enrichment ────────────────────────────────────
+
+
+def _exit_plan(strategy: dict, ticker: str) -> dict:
+    stype = strategy.get("strategy_type", "")
+    dte   = int(strategy.get("dte", 30))
+    prem  = float(strategy.get("premium") or strategy.get("net_premium") or 0.0)
+    is_tqqq = ticker.upper() == "TQQQ"
+
+    if stype in ("sell_put", "sell_call", "bull_put_spread", "bear_call_spread"):
+        target_pct  = 25 if is_tqqq else 50
+        dte_exit    = 14 if is_tqqq else 21
+        target_credit = round(prem * (1 - target_pct / 100), 2)
+        exit_dte    = max(0, dte - dte_exit)
+        exit_date   = (_date.today() + timedelta(days=exit_dte)).isoformat()
+        return {
+            "rule": f"close at {target_pct}% profit OR {dte_exit} DTE, whichever first",
+            "profit_target_pct": target_pct,
+            "profit_target_credit": target_credit,
+            "dte_exit": dte_exit,
+            "exit_date": exit_date,
+        }
+    if stype in ("buy_call", "buy_put"):
+        cost = prem
+        return {
+            "rule": "close at 100% gain OR -50% stop, whichever first",
+            "profit_target_pct": 100,
+            "profit_target_credit": round(cost * 2, 2),
+            "stop_loss_credit": round(cost * 0.5, 2),
+            "dte_exit": 14,
+            "exit_date": (_date.today() + timedelta(days=max(0, dte - 14))).isoformat(),
+        }
+    return {}
+
+
+def _enrich_strategies(strategies: list[dict], underlying: float,
+                       current_iv_pct: float | None, ticker: str, direction: str) -> tuple[list[dict], float | None]:
+    """Add expected_move, strike_vs_expected_move, and exit_plan to each strategy dict."""
+    if not strategies or not underlying:
+        return strategies, None
+
+    is_put_side = direction in ("sell_put", "buy_put")
+    em_top: float | None = None
+
+    for s in strategies:
+        dte    = int(s.get("dte", 30))
+        strike = float(s.get("strike") or underlying)
+        iv_pct = current_iv_pct or s.get("implied_vol")  # implied_vol already in % form
+
+        if iv_pct and dte > 0:
+            em = (iv_pct / 100.0) * _math.sqrt(dte / 365.0) * underlying
+            em = round(em, 2)
+            if em_top is None:
+                em_top = em  # use rank-1 strategy's EM as top-level value
+            sigma = round((underlying - strike) / em, 2) if is_put_side else round((strike - underlying) / em, 2)
+            s["expected_move"] = em
+            s["strike_vs_expected_move"] = sigma
+            s["strike_vs_em_label"] = (
+                f"{sigma:.2f}σ OTM ✅" if sigma >= 1.0 else
+                f"{sigma:.2f}σ OTM ⚠️ near 1σ" if sigma >= 0.8 else
+                f"{sigma:.2f}σ — INSIDE expected move ❌"
+            )
+        else:
+            s["expected_move"] = None
+            s["strike_vs_expected_move"] = None
+            s["strike_vs_em_label"] = None
+
+        s["exit_plan"] = _exit_plan(s, ticker)
+
+    return strategies, em_top
+
+
 # ─── Main orchestrator ────────────────────────────────────────────────────────
 
 
@@ -901,6 +975,11 @@ def analyze_etf(payload: dict, ticker: str, *,
     recommended_dte = gate_payload.get("recommended_dte")
 
     strategies = strategy_ranker.rank(direction, chain, swing_data, recommended_dte=recommended_dte)
+    strategies, _em_1sd = _enrich_strategies(
+        strategies, underlying,
+        ivr_data.get("current_iv"),
+        ticker, direction,
+    )
     gate8 = next((g for g in gates if g["id"] == "pivot_confirm"), {"status": "pass"})
     pnl_table = pnl_calculator.calculate(
         current_price=underlying,
@@ -929,6 +1008,7 @@ def analyze_etf(payload: dict, ticker: str, *,
         "gates": gates,
         "behavioral_checks": _behavioral_checks(gates, swing_data, is_etf=is_etf),
         "top_strategies": strategies,
+        "expected_move_1sd": _em_1sd,
         "pnl_table": pnl_table,
         "ivr_data": ivr_data,
         "put_call_ratio": _put_call_ratio(chain),

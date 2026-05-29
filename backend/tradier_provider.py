@@ -206,11 +206,20 @@ class TradierProvider:
                     "volume": int(opt.get("volume") or 0),
                 })
 
-        # Cap to max_strikes per expiry (proximity sort)
+        # Cap to max_strikes per expiry.
+        # For premium-selling directions, sort by proximity to the target delta (0.22 center of
+        # the 0.15–0.28 sell range) so the chain is centered on actionable OTM strikes.
+        # For buying/neutral directions, sort by proximity to underlying (ATM-centered).
+        _SELL_TARGET_DELTA = 0.22
         contracts: list[dict] = []
         for exp_str, _ in selected:
             exp_contracts = per_expiry.get(exp_str, [])
-            exp_contracts.sort(key=lambda c: abs(c["strike"] - underlying))
+            if direction in ("sell_put", "sell_call"):
+                exp_contracts.sort(
+                    key=lambda c: abs(abs(_f(c.get("delta", 0))) - _SELL_TARGET_DELTA)
+                )
+            else:
+                exp_contracts.sort(key=lambda c: abs(c["strike"] - underlying))
             contracts.extend(exp_contracts[:max_strikes])
 
         if not contracts:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import logging
 import time
-import concurrent.futures
 from pathlib import Path
 
 # load_dotenv MUST run before any project module imports — those modules read
@@ -16,7 +15,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from constants import STA_BASE_URL, ETF_TICKERS, ETF_OPTIONS_LIQUID_TIER1
-from sector_scan_service import scan_sectors, analyze_sector_etf, _spy_regime
+from sector_scan_service import _spy_regime
 from data_service import DataService
 from gate_engine import GateEngine
 from ib_worker import IBWorker
@@ -32,8 +31,6 @@ from analyze_service import analyze_etf, get_live_price, _extract_iv_data, get_v
 from sta_service import fetch_sta_swing_data
 from data_health_service import build_data_health
 from batch_service import seed_iv_for_ticker, run_eod_batch, run_bod_batch, run_startup_catchup
-from best_setups_service import run_one_setup
-from scanner_service import fetch_scanner_subscription_batch
 
 VERSION = "2.0"
 
@@ -319,84 +316,35 @@ def integrate_schema():
 
 
 # ---------------------------------------------------------------------------
-# Sector Rotation ETF endpoints (Day 13)
+# Sector Rotation ETF endpoints — deprecated Day 57, replaced by /ibkr-scan skill
 # ---------------------------------------------------------------------------
 @app.get("/api/sectors/scan")
 def sectors_scan():
-    """Level 1: All sector ETFs with quadrant, direction, action. < 2 sec (STA cached)."""
-    result = scan_sectors(iv_store=iv_store)
-    if result.get("error"):
-        return jsonify(result), 503
-    _fetch_vix()  # warm cache if cold; 5-min TTL means this is cheap on repeat calls
-    result["vix"] = get_vix_status()
-    return jsonify(result)
+    """Deprecated (Day 57) — replaced by /ibkr-scan Claude skill."""
+    return jsonify({
+        "deprecated": True,
+        "message": "Sector scan replaced by /ibkr-scan skill. Screenshot your IBKR watchlist.",
+        "etf_universe": sorted(ETF_TICKERS),
+    }), 410
+
+
+@app.get("/api/sectors/analyze/<ticker>")
+def sectors_analyze(ticker: str):
+    """Deprecated (Day 57) — replaced by /api/options/analyze + /ibkr-scan skill."""
+    return jsonify({
+        "deprecated": True,
+        "message": "Use POST /api/options/analyze with ticker and direction instead.",
+    }), 410
 
 
 @app.get("/api/best-setups")
 def best_setups():
-    """
-    Scan all ETFs using their sector-suggested direction, run gate analysis sequentially,
-    return top GO/CAUTION results ranked by gate pass rate.
-    Sequential (max_workers=1): IBWorker is single-threaded; parallel workers race against
-    the 40s expiry timeout. Sequential gives every ETF full IBWorker without contention.
-    """
-    scan = scan_sectors(iv_store=iv_store)
-    if scan.get("error"):
-        return jsonify({"error": scan["error"]}), 503
-
-    candidates = [
-        s for s in scan.get("sectors", [])
-        if s.get("suggested_direction") and s.get("action") == "ANALYZE"
-    ]
-
-    account_size = float(os.getenv("ACCOUNT_SIZE"))  # validated at startup (Rule 7)
-    risk_pct = float(os.getenv("RISK_PCT", 0.01))
-
-    # Fetch IV/HV for all ETFs via reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY).
-    # reqScannerSubscription tested Day 54 — unsuitable: sector ETFs don't rank in market-wide top-50.
-    # Returns {} gracefully when IB Gateway offline — falls back to scanner_cache.json.
-    all_tickers = [s["etf"] for s in candidates if s.get("etf")]
-    live_scanner = fetch_scanner_subscription_batch(all_tickers, _ib_worker)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        results = list(pool.map(
-            lambda s: run_one_setup(
-                s,
-                data_svc=data_svc, ib_worker=_ib_worker,
-                yf_provider=_yf_provider, mock_provider=mock_provider,
-                strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
-                iv_store=iv_store, spy_regime_fn=_spy_regime,
-                md_provider=_md_provider,
-                account_size=account_size, risk_pct=risk_pct,
-                live_scanner=live_scanner,
-            ),
-            candidates,
-        ))
-
-    order = {"green": 0, "yellow": 1, "red": 2, None: 3}
-    good = [r for r in results if not r.get("error") and r.get("verdict_color") in ("green", "yellow")]
-    good.sort(key=lambda r: (order.get(r["verdict_color"], 3), -r.get("pass_rate", 0)))
-
-    # KI-100: Tier 1 GO rate — track separately from 15-ETF aggregate.
-    # Tier 2 ETFs are structurally blocked by liquidity; aggregate masks true system calibration.
-    tier1_results = [r for r in results if not r.get("error") and r.get("ticker") in ETF_OPTIONS_LIQUID_TIER1]
-    tier1_go     = sum(1 for r in tier1_results if r.get("verdict_color") == "green")
-    tier1_caution = sum(1 for r in tier1_results if r.get("verdict_color") == "yellow")
-    tier1_blocked = sum(1 for r in tier1_results if r.get("verdict_color") == "red")
-
+    """Deprecated (Day 57) — replaced by /ibkr-scan Claude skill."""
     return jsonify({
-        "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "candidates_scanned": len(candidates),
-        "setups": good[:8],
-        "all_results": results,
-        "tier1_summary": {
-            "tickers": sorted(ETF_OPTIONS_LIQUID_TIER1),
-            "go": tier1_go,
-            "caution": tier1_caution,
-            "blocked": tier1_blocked,
-            "total": len(tier1_results),
-        },
-    })
+        "deprecated": True,
+        "message": "Best Setups scan replaced by /ibkr-scan skill. Screenshot your IBKR watchlist and paste to Claude.",
+        "etf_universe": sorted(ETF_TICKERS),
+    }), 410
 
 
 @app.get("/api/data-health")
@@ -406,18 +354,6 @@ def data_health():
         iv_store=iv_store, data_svc=data_svc,
         ib_worker=_ib_worker, md_provider=_md_provider, alpaca_provider=_alpaca_provider,
     ))
-
-
-@app.get("/api/sectors/analyze/<ticker>")
-def sectors_analyze(ticker: str):
-    """Level 2: Single ETF + IV/OI/spread overlay. 10-15 sec (IBKR)."""
-    ticker = ticker.upper().strip()
-    if ticker not in ETF_TICKERS:
-        return jsonify({"error": f"{ticker} is not in the sector ETF universe"}), 400
-    result = analyze_sector_etf(ticker, data_service=data_svc, ib_worker=_ib_worker, iv_store=iv_store)
-    if result.get("error"):
-        return jsonify(result), 503
-    return jsonify(result)
 
 
 if __name__ == "__main__":
