@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 55 (May 25, 2026)
-> **Current Version:** v0.34.0
+> **Last Updated:** Day 57 (May 29, 2026)
+> **Current Version:** v0.35.0
 
 ---
 
@@ -219,6 +219,21 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-104: reqMktData snapshot=True invalid with genericTickList — switched to snapshot=False ✅ Day 51
 - [x] KI-105: tick 104 invalid for STK contracts — corrected to 106,411,100,105 ✅ Day 51
 - [ ] IBKR market data subscription — required for ETF generic ticks via reqMktData (~$6/month, optional — Tradier covers same data free)
+- [x] **Architecture pivot — /ibkr-scan skill** — `.claude/commands/ibkr-scan.md` built; 4-layer scoring (Regime→IV→Trend→Sentiment); TQQQ delta 0.10 max; GLD IV/HV ≥ 1.10 required ✅ Day 57
+- [x] **FOMC 3-tier gate** — BLOCK: XLF/XLRE/TQQQ within 14d; WARN: QQQ/IWM/GLD within 7d; event density threshold 7→12 ✅ Day 57
+- [x] **expected_move + exit_plan in analyze response** — `expected_move_1sd`, per-strategy `expected_move`/`strike_vs_expected_move`/`strike_vs_em_label`/`exit_plan` ✅ Day 57
+- [x] **strategy_ranker.py single-leg rewrite** — 700→280 lines; removed all spread builders; sell_put/call/buy_call/put single-leg only ✅ Day 57
+- [x] **Tradier delta-centered chain sort** — sell directions sorted by `|abs(delta) - 0.22|` instead of proximity to underlying; returns delta 0.15-0.28 range ✅ Day 57
+- [x] **ETF universe 15→6** — `ETF_TICKERS = {QQQ, IWM, XLF, GLD, TQQQ, SPY}`; TQQQ_MAX_DELTA=0.10, exit rules in constants ✅ Day 57
+- [x] **Deprecated scan endpoints** — `/api/best-setups`, `/api/sectors/scan`, `/api/sectors/analyze` → 410 gone ✅ Day 57
+
+## Phase 11 — Workflow Hardening + Frontend (Day 58+)
+- [ ] TopThreeCards.jsx — display `expected_move_1sd`, `strike_vs_em_label`, `exit_plan` from analyze response
+- [ ] KI-107: TQQQ delta guard in gate_engine — add `_tqqq_special_gate()` or extend `_etf_liquidity_gate()`, enforce TQQQ_MAX_DELTA=0.10 (~10 lines)
+- [ ] KI-108: GLD IV-cheap gate in gate_engine — ticker=="GLD" AND hv_iv_ratio < 1.0 → hard block in `_etf_hv_iv_seller_gate()` (3 lines)
+- [ ] End-to-end workflow test: /ibkr-scan → /api/options/analyze → paper trade log
+- [ ] `/chartreview` skill — `.claude/commands/chartreview.md` (TradingView screenshot → chart GO/WAIT + S/R levels)
+- [ ] `/catalyst-check` skill — `.claude/commands/catalyst-check.md` (ticker + DTE → events in window + hidden risks)
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -264,6 +279,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.35.0 | Day 57 | **Architecture pivot complete.** /ibkr-scan skill (4-layer scoring, TQQQ/GLD special rules). FOMC 3-tier gate (BLOCK/WARN/pass). expected_move + exit_plan in analyze response. strategy_ranker.py rewrite (700→280 lines, single-leg only). Tradier delta-centered chain sort (|delta-0.22|). ETF_TICKERS 15→6. /api/best-setups + /api/sectors/scan + /api/sectors/analyze deprecated (410). test_spread_math.py deleted. 37 tests. |
 | v0.34.0 | Day 55 | **Architectural research — no code changes.** reqScannerSubscription confirmed unsuitable (IBKR hard-limited to top-50 of ~12,000 stocks; sector ETFs never surface). STA priceHistory gap identified: 260 daily bars available for all ETFs from same API call already made → SMA20/50/200 + RSI(14) + momentum computable at zero extra HTTP cost. compute_skew() computed but gate_engine has 0 references. Gate calibration requires paper trade data (0/30). Research doc: Data_Gaps_STA_SMA_Day55.md. |
 | v0.34.0 | Day 54 | **P2 reqScannerSubscription — implemented + live tested + scanner ruled out.** 7 files: constants.py (PUT_CALL_RATIO thresholds), ibkr_provider.py (get_scanner_batch()), scanner_service.py (simplified — delegates to reqHistoricalData), app.py, gate_engine.py (_put_call_sentiment_gate() — Gates 7b/11b non-blocking WARN), analyze_service.py (put_call_volume in gate_payload), best_setups_service.py (scanner data injected). Scanner confirmed unsuitable: 0/15 ETFs in all 3 codes. fetch_scanner_subscription_batch() now direct path to get_iv_hv_batch(). |
 | v0.33.2 | Day 52–53 | **IBKR batch fix + screener config research.** Day 52: reqMktData streaming → reqHistoricalData (7/7 ETFs). Day 53: IBKR Screener 2.0 factor scales confirmed — Opt.IV% decimal format, Last price $100 cap, IVR range issue. reqScannerSubscription P2 fully spec'd. |

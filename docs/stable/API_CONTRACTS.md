@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 41 (May 6, 2026)
+> **Last Updated:** Day 57 (May 29, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -116,19 +116,31 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
       "message": "..."
     }
   ],
+  "expected_move_1sd": 4.82,
   "top_strategies": [
     {
       "rank": 1,
       "label": "ITM Call — delta 0.68",
-      "strategy_type": "itm_call",
+      "strategy_type": "buy_call" | "sell_put" | "sell_call" | "buy_put",
       "strike": 180.0,
       "expiry": "2026-04-24",
       "dte": 49,
       "premium": 14.20,
+      "net_premium": 14.20,
       "delta": 0.731,
       "theta": -0.12,
       "vega": 0.18,
-      "iv": 0.38
+      "iv": 0.38,
+      "expected_move": 4.82,
+      "strike_vs_expected_move": 1.53,
+      "strike_vs_em_label": "1.53σ OTM ✅",
+      "exit_plan": {
+        "rule": "close at 50% profit OR 21 DTE, whichever first",
+        "profit_target_pct": 50,
+        "profit_target_credit": 7.10,
+        "dte_exit": 21,
+        "exit_date": "2026-04-03"
+      }
     }
   ],
   "pnl_table": { ... },
@@ -168,7 +180,17 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
 }
 ```
 
-**ETF-only enforcement:** Non-ETF tickers return HTTP 400 `{"error": "XYZ is not in the ETF universe", "etf_universe": [...]}`.
+**ETF-only enforcement:** Non-ETF tickers return HTTP 400 `{"error": "XYZ is not in the ETF universe", "etf_universe": [...]}`. ETF universe as of Day 57: `{QQQ, IWM, XLF, GLD, TQQQ, SPY}`.
+
+**`expected_move_1sd`:** Top-level ±1σ dollar move. Formula: `(IV% / 100) × √(DTE/365) × underlying_price`. Null if IV unavailable.
+
+**Per-strategy enrichment fields (added Day 57):**
+- `expected_move`: same formula, uses strategy's own DTE
+- `strike_vs_expected_move`: σ OTM. For puts: `(underlying - strike) / expected_move`. For calls: `(strike - underlying) / expected_move`. Positive = OTM; > 1.0 = outside 1σ.
+- `strike_vs_em_label`: human-readable label. ✅ if > 1.0σ OTM, ⚠️ if 0.7–1.0σ, ❌ if < 0.7σ. Null if IV unavailable.
+- `exit_plan`: `{ rule, profit_target_pct, profit_target_credit, dte_exit, exit_date }`. TQQQ: 25%/14 DTE. Standard ETF sells: 50%/21 DTE. Buys: 100% gain / -50% stop.
+
+**Strategy types as of Day 57 (single-leg only):** `sell_put`, `sell_call`, `buy_call`, `buy_put`. Spread types (`bull_put_spread`, `bear_call_spread`, `itm_call`) are no longer returned.
 
 **OI/Volume source:** `open_interest` and `volume` in strategies are supplemented from MarketData.app REST API when available. Falls back to 0 if MarketData.app times out or is unreachable. IBKR `reqMktData` does not return per-contract OI (platform limitation KI-035).
 
@@ -246,6 +268,30 @@ Health check for STA integration.
 ## POST /api/integrate/status
 
 **Response:** `{"status": "ready", "accepts_swing_data": true, "version": "2.0"}`
+
+---
+
+## Deprecated Endpoints (410 Gone — Day 57)
+
+These endpoints return HTTP 410 with a deprecation message. Do not use.
+
+### GET /api/sectors/scan
+Replaced by `/ibkr-scan` Claude skill (screenshot-based).
+```json
+{"deprecated": true, "message": "Sector scan replaced by /ibkr-scan skill. Screenshot your IBKR watchlist.", "etf_universe": [...]}
+```
+
+### GET /api/sectors/analyze/{ticker}
+Replaced by `POST /api/options/analyze` with `ticker` and `direction`.
+```json
+{"deprecated": true, "message": "Use POST /api/options/analyze with ticker and direction instead."}
+```
+
+### GET /api/best-setups
+Replaced by `/ibkr-scan` Claude skill.
+```json
+{"deprecated": true, "message": "Best Setups scan replaced by /ibkr-scan skill. Screenshot your IBKR watchlist and paste to Claude.", "etf_universe": [...]}
+```
 
 ---
 
