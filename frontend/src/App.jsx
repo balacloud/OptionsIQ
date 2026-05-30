@@ -68,7 +68,7 @@ function QualityBanner({ data }) {
   );
 }
 
-function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged }) {
+function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged, scanContext, onScanContextChange }) {
   return (
     <div className="analysis-panel">
       <div className="analysis-panel-header">
@@ -101,6 +101,29 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
           locked={[]}
         />
         <PreAnalysisPrompts ticker={ticker} direction={direction} />
+
+        {/* Scan Context — paste /ibkr-scan SCAN CONTEXT block here */}
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            placeholder="Optional: paste SCAN CONTEXT from /ibkr-scan to activate live IVR, P/C ratio, and trend gate&#10;Example: TICKER=XLF  IVR=47  IV_HV=1.21  PEMA200=+3.1  PEMA50=+1.2  PC=0.85  DIRECTION=sell_put"
+            value={scanContext}
+            onChange={e => onScanContextChange(e.target.value)}
+            style={{
+              width: '100%', boxSizing: 'border-box', minHeight: 52,
+              padding: '6px 8px', borderRadius: 6, border: '1px solid #334',
+              background: scanContext.trim() ? '#0d2a1a' : '#151520',
+              color: scanContext.trim() ? '#7fe0a0' : '#6b7280',
+              fontSize: 11, fontFamily: 'monospace', resize: 'vertical',
+              outline: 'none',
+            }}
+          />
+          {scanContext.trim() && (
+            <div style={{ fontSize: 10, color: '#7fe0a0', marginTop: 2 }}>
+              Scan context active — IVR, P/C, and trend gates will use live IBKR data
+            </div>
+          )}
+        </div>
+
         <button
           className="analyze-btn"
           style={{ marginTop: 10, width: '100%' }}
@@ -175,6 +198,7 @@ export default function App() {
   const [activeTab, setActiveTab]         = useState('setups'); // 'setups' is the home screen
   const [seedIVState, setSeedIVState]     = useState({ loading: false, result: null, error: null });
   const [dashRefreshTick, setDashRefreshTick] = useState(0);
+  const [scanContext, setScanContext]     = useState('');
 
   const handleTradeLogged = () => {
     setDashRefreshTick(t => t + 1);
@@ -233,8 +257,9 @@ export default function App() {
     : sectors.filter(s => s.action === filter.toUpperCase());
 
   const runAnalysis = useCallback((etfTicker, dir) => {
-    analyze({ ticker: etfTicker, direction: dir }).catch(() => {});
-  }, [analyze]);
+    const ctx = scanContext.trim();
+    analyze({ ticker: etfTicker, direction: dir, ...(ctx ? { scan_context: ctx } : {}) }).catch(() => {});
+  }, [analyze, scanContext]);
 
   // Click ETF card: set active ETF, auto-direction from regime, trigger L3 analysis
   const handleSelectETF = useCallback((etf) => {
@@ -434,6 +459,8 @@ export default function App() {
             onAnalyze={handleReanalyze}
             onClose={() => setSelectedETF(null)}
             onTradeLogged={handleTradeLogged}
+            scanContext={scanContext}
+            onScanContextChange={setScanContext}
           />
         )}
 

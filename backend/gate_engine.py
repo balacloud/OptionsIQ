@@ -1105,6 +1105,7 @@ class GateEngine:
             self._etf_holdings_earnings_gate(p),
             self._liquidity_gate(p),
             self._etf_spy_regime_bull_gate(p),
+            self._trend_ema_gate(p, "buy_call"),
             self._etf_position_size_gate(p),
         ]
 
@@ -1125,8 +1126,79 @@ class GateEngine:
             self._etf_holdings_earnings_gate(p),
             self._liquidity_gate(p),
             self._etf_spy_regime_bear_gate(p),
+            self._trend_ema_gate(p, "buy_put"),
             self._etf_position_size_gate(p),
         ]
+
+    def _trend_ema_gate(self, p: dict, direction: str) -> dict:
+        """Trend gate from /ibkr-scan P/EMA values (pema200, pema50 as % above/below EMA).
+        Only active when scan_context provides pema200. Otherwise pass-through (no data).
+
+        sell_put:  pema200 < 0 → BLOCK; pullback (pema200 > 0 but pema50 < 0) → WARN; both > 0 → PASS.
+        sell_call: pema200 > 0 → WARN (uptrend cuts into call-selling safety margin); pema200 < 0 → PASS.
+        buy_call:  pema200 < 0 → BLOCK; pema50 < 0 → WARN; both > 0 → PASS.
+        buy_put:   pema200 > 0 → BLOCK (uptrend, avoid buying puts); pema200 < 0 → PASS.
+        """
+        pema200 = p.get("trend_pema200")
+        pema50  = p.get("trend_pema50")
+
+        if pema200 is None:
+            return _gate("trend_ema", "Trend (EMA)", "pass",
+                         "no scan data", "pema200/pema50 from /ibkr-scan",
+                         "No scan context — paste /ibkr-scan output to enable trend gate", False)
+
+        pema200 = float(pema200)
+        val_str = f"P/EMA200={pema200:+.1f}%"
+        if pema50 is not None:
+            val_str += f"  P/EMA50={float(pema50):+.1f}%"
+
+        if direction == "sell_put":
+            if pema200 < 0:
+                return _gate("trend_ema", "Trend (EMA)", "fail", val_str,
+                             "pema200 > 0 required for sell_put",
+                             f"Price {pema200:+.1f}% below 200 EMA — confirmed downtrend. "
+                             "Structural block: do not sell puts into a downtrend.", True)
+            if pema50 is not None and float(pema50) < 0:
+                return _gate("trend_ema", "Trend (EMA)", "warn", val_str,
+                             "pema200 > 0 required; pema50 > 0 preferred",
+                             f"Pullback: above 200 EMA but {float(pema50):+.1f}% below 50 EMA. "
+                             "Proceed with caution — use lower delta (0.15).", False)
+            return _gate("trend_ema", "Trend (EMA)", "pass", val_str,
+                         "price above 200+50 EMA", "Uptrend confirmed — trend supports sell_put.", False)
+
+        if direction == "sell_call":
+            if pema200 > 0:
+                return _gate("trend_ema", "Trend (EMA)", "warn", val_str,
+                             "pema200 < 0 preferred for sell_call",
+                             f"Price {pema200:+.1f}% above 200 EMA — uptrend. "
+                             "Call selling is higher risk in uptrend; verify IV/HV edge is strong.", False)
+            return _gate("trend_ema", "Trend (EMA)", "pass", val_str,
+                         "price below 200 EMA — favorable for call selling",
+                         "Downtrend or at-EMA — trend supports sell_call.", False)
+
+        if direction == "buy_call":
+            if pema200 < 0:
+                return _gate("trend_ema", "Trend (EMA)", "fail", val_str,
+                             "pema200 > 0 required for buy_call",
+                             f"Price {pema200:+.1f}% below 200 EMA — structural block for call buying.", True)
+            if pema50 is not None and float(pema50) < 0:
+                return _gate("trend_ema", "Trend (EMA)", "warn", val_str,
+                             "pema200 > 0 required; pema50 > 0 preferred",
+                             f"Pullback: {float(pema50):+.1f}% below 50 EMA. Wait for recovery before buying calls.", False)
+            return _gate("trend_ema", "Trend (EMA)", "pass", val_str,
+                         "price above 200+50 EMA", "Uptrend confirmed — trend supports buy_call.", False)
+
+        if direction == "buy_put":
+            if pema200 > 0:
+                return _gate("trend_ema", "Trend (EMA)", "fail", val_str,
+                             "pema200 < 0 required for buy_put",
+                             f"Price {pema200:+.1f}% above 200 EMA — uptrend. "
+                             "Structural block: do not buy puts in an uptrend.", True)
+            return _gate("trend_ema", "Trend (EMA)", "pass", val_str,
+                         "price below 200 EMA — downtrend supports put buying",
+                         "Downtrend confirmed — trend supports buy_put.", False)
+
+        return _gate("trend_ema", "Trend (EMA)", "pass", val_str, "—", "Trend check OK.", False)
 
     def _tqqq_satellite_gate(self, p: dict) -> dict:
         """TQQQ satellite rules gate (KI-107). Informs user that strategies were filtered
@@ -1265,7 +1337,10 @@ class GateEngine:
         out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}",
                          f"<={MAX_LOSS_WARN_PCT:.0%} pass, >{MAX_LOSS_FAIL_PCT:.0%} fail", r, s == "fail"))
 
-        # Gate 9: TQQQ satellite rules (KI-107) — only visible for TQQQ
+        # Gate 9: Trend gate (from /ibkr-scan P/EMA200 + P/EMA50 — pass-through if no scan data)
+        out.append(self._trend_ema_gate(p, "sell_put"))
+
+        # Gate 10: TQQQ satellite rules (KI-107) — only visible for TQQQ
         if p.get("ticker", "").upper() == "TQQQ":
             out.append(self._tqqq_satellite_gate(p))
 
@@ -1382,7 +1457,10 @@ class GateEngine:
         # Gate 11b: Put/Call sentiment (non-blocking — advisory signal from scanner)
         out.append(self._put_call_sentiment_gate(p))
 
-        # Gate 12: TQQQ satellite rules (KI-107) — only visible for TQQQ
+        # Gate 12: Trend gate (from /ibkr-scan P/EMA200 + P/EMA50 — pass-through if no scan data)
+        out.append(self._trend_ema_gate(p, "sell_call"))
+
+        # Gate 13: TQQQ satellite rules (KI-107) — only visible for TQQQ
         if p.get("ticker", "").upper() == "TQQQ":
             out.append(self._tqqq_satellite_gate(p))
 

@@ -39,6 +39,7 @@ from constants import (
     SPREAD_FAIL_PCT,
 )
 from gate_engine import GateEngine
+from scan_context_parser import apply_scan_context_to_gate_payload
 
 logger = logging.getLogger(__name__)
 
@@ -956,7 +957,14 @@ def analyze_etf(payload: dict, ticker: str, *,
         "stress_bars_available": _stress.get("bars_available", 0),
         "ticker": ticker,
         "put_call_volume": payload.get("put_call_volume"),
+        "trend_pema200": None,
+        "trend_pema50": None,
     }
+
+    # Merge /ibkr-scan context: overrides stale IVR, fills P/C ratio, enables trend gate.
+    gate_payload, ivr_for_gates, ivr_confidence = apply_scan_context_to_gate_payload(
+        gate_payload, ivr_for_gates, ivr_confidence, payload
+    )
 
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)
 

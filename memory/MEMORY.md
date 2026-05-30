@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 59 — v0.35.2)
-Architecture pivot COMPLETE. All MEDIUM KIs resolved. Single-leg only (sell_put/sell_call/buy_call/buy_put), 5+1 ETF universe (QQQ/IWM/XLF/GLD/TQQQ + SPY regime anchor). /ibkr-scan skill live. FOMC 3-tier gate direction-aware. TQQQ delta 0.10 enforced in strategy_ranker + _tqqq_satellite_gate. GLD IV/HV < 1.10 now hard-blocks at gate level. sell_call FOMC gate uses same tier logic as sell_put. TopThreeCards shows expected_move_1sd banner, strike_vs_em_label, ExitPlanBlock. 37 tests. 0 HIGH/MEDIUM open. Open: KI-110/059/099 (LOW only). Next: KI-110 fix, end-to-end workflow test, chartreview/catalyst-check skills.
+## Current Phase (Day 60 — v0.35.3)
+Scan context integration SHIPPED. /ibkr-scan skill now emits SCAN CONTEXT block (KEY=VALUE). User pastes it into App.jsx textarea → backend parses → live IBKR IVR overrides stale DB value → P/C ratio fills always-passing gate → _trend_ema_gate fires with real P/EMA200/50 data. HARD BLOCK sell_put when P/EMA200 < 0 (confirmed downtrend). 52 tests. 0 HIGH/MEDIUM open. Open: KI-110/059/099 (LOW only). Next: P0 live integration test (paste real scan context, verify gates update), P1 KI-110 fix, P2 end-to-end workflow.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY59_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY59.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY60_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY60.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -51,15 +51,17 @@ backend/
                       during ib.sleep() — insufficient for streaming. reqHistoricalData is request-response.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      UPDATED (Day 57+58+59) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
-                      Day 58: _etf_fomc_gate direction-aware: buy_call/buy_put get WARN (not BLOCK) for Tier 1 tickers.
-                      Day 59: _tqqq_satellite_gate() added — wired into sell_put (Gate 9) + sell_call (Gate 12).
-                      Day 59: _etf_hv_iv_seller_gate: GLD branches to IV/HV >= 1.10 threshold (hard block if < 1.10).
-                      Day 59: sell_call Gate 6 replaced with _etf_fomc_gate(p, dte, "sell_call") — KI-109 resolved.
+  gate_engine.py      UPDATED (Day 57+58+59+60) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
+                      Day 59: _tqqq_satellite_gate() + GLD IV/HV >= 1.10 gate + sell_call FOMC tier logic.
+                      Day 60: _trend_ema_gate() added — wired into all 4 ETF tracks (sell_put/sell_call/buy_call/buy_put).
+                      HARD BLOCK sell_put when P/EMA200 < 0. Reads trend_pema200/trend_pema50 from gate_payload.
+  scan_context_parser.py  NEW (Day 60) — parse_scan_context(text) KEY=VALUE regex.
+                      apply_scan_context_to_gate_payload() merges live IVR, P/C ratio, trend EMA into gate_payload.
+                      Bridges /ibkr-scan skill output to analyze backend via copy-paste.
   strategy_ranker.py  UPDATED (Day 57+59) — single-leg only. Day 59: _rank_sell_put_etf TQQQ branch (delta 0.10/0.08/0.06).
                       NOTE: buy_call returns "itm_call"/"atm_call"/"otm_call" (not "buy_call") — KI-110 LOW.
   pnl_calculator.py   UPDATED (Day 58) — otm_call/otm_put now compute correct P&L (was 0.0). All types covered.
-  tests/              37 tests (pytest). 6 files. (44→37 Day 57: test_spread_math removed).
+  tests/              52 tests (pytest). 7 files. (37→52 Day 60: test_scan_context.py added — 15 new tests).
 
 frontend/
   components/GateExplainer.jsx   DONE — events gate in GATE_KB ✅. fomc_gate (gate ID "events"). risk_defined present (stale for single-leg but not harmful).
@@ -90,12 +92,19 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 60 Priorities
-1. **P1:** KI-110 (LOW) — Fix _rank_buy_call/_rank_buy_put stale type names (itm_call/atm_call/otm_call → buy_call). ~8 lines + update pnl_calculator/TopThreeCards handlers.
-2. **P2:** End-to-end workflow test: ibkr-scan → analyze → paper trade (visual check).
-3. **P3:** /chartreview skill — `.claude/commands/chartreview.md`.
-4. **P4:** /catalyst-check skill — `.claude/commands/catalyst-check.md`.
-5. **P5:** Audit trigger (MASTER_AUDIT_FRAMEWORK v1.5 — last run Day 58, next Day 65).
+## Day 61 Priorities
+1. **P0:** Live integration test — paste real /ibkr-scan SCAN CONTEXT block into App.jsx textarea; verify: IVR updates in gate output, P/C gate activates, trend gate shows correct BLOCK/WARN/PASS.
+2. **P1:** KI-110 (LOW) — Fix _rank_buy_call/_rank_buy_put stale type names (itm_call → buy_call). ~8 lines.
+3. **P2:** End-to-end morning workflow test: ibkr-scan → SCAN CONTEXT paste → analyze → paper trade.
+4. **P3:** Audit trigger (MASTER_AUDIT_FRAMEWORK v1.5 — last run Day 58, next Day 65).
+
+## TradingView Pine Script
+- File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)
+- Apply to 1D chart on any of QQQ/IWM/XLF/GLD/TQQQ
+- Adds: EMA 20/50/200 lines, pivot markers, dashed S1/S2/R1/R2 lines, dashboard table (top-right)
+- Dashboard table shows: Price, Trend verdict, EMA values + % + slope, ATR(14), RSI(14), R1/R2/S1/S2/S3
+- Usage: screenshot chart → paste to `opus /chartreview [ETF] [direction]`
+- User has not yet tested this on TradingView — to try when market is open
 
 ## Git Status
 - Remote: balacloud/OptionsIQ on GitHub (added Day 26)

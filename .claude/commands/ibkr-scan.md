@@ -143,6 +143,17 @@ NEXT STEP: /api/options/analyze?ticker=[ETF]&direction=[direction]
 
 [Any system warnings]
 [Pre-market notes if applicable]
+
+━━━ SCAN CONTEXT — copy and paste into OptionsIQ analyze tool ━━━
+TICKER=[ETF]  IVR=[52wk IV Rank number]  IV_HV=[IV/HV as decimal e.g. 1.21]  PEMA200=[P/EMA200 as decimal e.g. +3.1]  PEMA50=[P/EMA50 as decimal e.g. +1.2]  PC=[Put/Call ratio e.g. 0.85]  DIRECTION=[direction]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Notes on SCAN CONTEXT format:
+- IVR: raw number from watchlist (e.g. 40, not 40%)
+- IV_HV: convert from % to decimal (e.g. 124.7% → 1.247)
+- PEMA200/PEMA50: use the % value directly with sign (e.g. +19.64% → +19.64, -0.58% → -0.58)
+- PC: Put/Call Volume ratio (e.g. 1.21). Omit if pre-market (shows 0.00).
+- DIRECTION: one of sell_put / sell_call / buy_call / buy_put
 ```
 
 ---
@@ -201,4 +212,8 @@ NOTES:
 - TQQQ: satellite candidate if you want 2 positions. Delta 0.10 max, 1–2% account risk only.
 - XLF: below 200 EMA — rate regime concern. Hard block until it reclaims +0%.
 - GLD: IV/HV 94% means realized vol exceeds implied. Never sell cheap vol.
+
+━━━ SCAN CONTEXT — copy and paste into OptionsIQ analyze tool ━━━
+TICKER=QQQ  IVR=40  IV_HV=1.25  PEMA200=+19.64  PEMA50=+9.73  DIRECTION=sell_put
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

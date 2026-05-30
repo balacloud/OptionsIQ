@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 59 (May 29, 2026)
-> **Current Version:** v0.35.2
+> **Last Updated:** Day 60 (May 30, 2026)
+> **Current Version:** v0.35.3
 
 ---
 
@@ -232,10 +232,15 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-107: TQQQ delta guard — strategy_ranker uses 0.10/0.08/0.06; `_tqqq_satellite_gate()` wired into sell_put + sell_call ✅ Day 59
 - [x] KI-108: GLD IV-cheap gate — `_etf_hv_iv_seller_gate()` hard-blocks GLD when IV/HV < 1.10 ✅ Day 59
 - [x] KI-109: sell_call FOMC consistency — Gate 6 replaced with `_etf_fomc_gate(p, dte, "sell_call")` ✅ Day 59
-- [ ] End-to-end workflow test: /ibkr-scan → /api/options/analyze → paper trade log
+- [x] `/chartreview` skill — `.claude/commands/chartreview.md` built; Opus-powered; reads OptionsIQ dashboard table from TradingView if present ✅ Day 59
+- [x] `/catalyst-check` skill — `.claude/commands/catalyst-check.md` built; reads constants.py FOMC/MACRO/EARNINGS + web search ✅ Day 59
+- [x] TradingView Pine Script — `tradingview/OptionsIQ_ChartReview.pine` (Indicator type; EMA 20/50/200; pivot S/R; dashboard table top-right) ✅ Day 59
+- [x] Scan context parser — `backend/scan_context_parser.py` KEY=VALUE regex; `apply_scan_context_to_gate_payload()` merges live IVR + P/C + trend ✅ Day 60
+- [x] `_trend_ema_gate()` — wired into all 4 ETF gate tracks; HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback ✅ Day 60
+- [x] App.jsx scan context textarea — paste SCAN CONTEXT from /ibkr-scan; auto-includes in analyze payload ✅ Day 60
+- [x] /ibkr-scan.md SCAN CONTEXT output block — format spec + decimal conversion notes ✅ Day 60
+- [ ] End-to-end workflow test: /ibkr-scan → SCAN CONTEXT paste → analyze gate verification → paper trade
 - [ ] KI-110: Fix _rank_buy_call stale type names (itm_call/atm_call/otm_call → buy_call) — LOW, ~8 lines
-- [ ] `/chartreview` skill — `.claude/commands/chartreview.md` (TradingView screenshot → chart GO/WAIT + S/R levels)
-- [ ] `/catalyst-check` skill — `.claude/commands/catalyst-check.md` (ticker + DTE → events in window + hidden risks)
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -281,6 +286,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.35.3 | Day 60 | **Scan context integration — /ibkr-scan → analyze backend data pass.** scan_context_parser.py: parse_scan_context() KEY=VALUE regex + apply_scan_context_to_gate_payload(). gate_engine: _trend_ema_gate() wired into all 4 ETF tracks (HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback; direction-aware for all 4 strategies). App.jsx: scanContext state + textarea in AnalysisPanel; scan_context included in analyze payload. ibkr-scan.md: SCAN CONTEXT output block + decimal conversion notes. test_scan_context.py: 15 new tests. 52 tests total. |
 | v0.35.2 | Day 59 | **KI-107/108/109 resolved.** strategy_ranker: TQQQ sell_put uses delta 0.10/0.08/0.06. gate_engine: _tqqq_satellite_gate() wired into sell_put + sell_call. GLD IV/HV < 1.10 now hard-blocks at backend gate level. sell_call FOMC gate replaced with _etf_fomc_gate tier logic (22 lines → 1). 37 tests. 0 HIGH/MEDIUM open. |
 | v0.35.1 | Day 58 | **Audit + 4 HIGH fixes + Today's Trade + TopThreeCards.** MASTER_AUDIT_FRAMEWORK v1.5. pnl_calculator otm_call/otm_put P&L fix. TradeExplainer otm_put fixes (isBearish/getMoneyness/headline). DirectionGuide sell_call "Uncapped naked call". FOMC gate direction-aware (buy directions warn, not block). TopThreeCards expected_move banner + strike_vs_em_label + ExitPlanBlock. BestSetups → Today's Trade. |
 | v0.35.0 | Day 57 | **Architecture pivot complete.** /ibkr-scan skill (4-layer scoring, TQQQ/GLD special rules). FOMC 3-tier gate (BLOCK/WARN/pass). expected_move + exit_plan in analyze response. strategy_ranker.py rewrite (700→280 lines, single-leg only). Tradier delta-centered chain sort (|delta-0.22|). ETF_TICKERS 15→6. /api/best-setups + /api/sectors/scan + /api/sectors/analyze deprecated (410). test_spread_math.py deleted. 37 tests. |
