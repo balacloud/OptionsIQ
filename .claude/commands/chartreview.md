@@ -7,6 +7,14 @@ You are a professional technical analyst reviewing a TradingView chart before an
 
 ---
 
+## FIRST — Check for OptionsIQ Dashboard Table
+
+If the screenshot contains a table in the **top-right corner** labelled **"OptionsIQ  CHART REVIEW"**, read all values from it directly — Price, Trend, EMA levels with % and slope arrows, ATR, RSI, and R1/R2/S1/S2/S3 key levels. This table is authoritative. Skip Steps 2a through 2d (you already have the numbers) and go straight to Step 3 using the table values.
+
+If the table is NOT present, analyze visually using the steps below.
+
+---
+
 ## Step 1 — Parse Context
 
 From the user's message, identify:
