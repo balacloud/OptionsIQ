@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 60 — v0.35.3)
-Scan context integration SHIPPED. /ibkr-scan skill now emits SCAN CONTEXT block (KEY=VALUE). User pastes it into App.jsx textarea → backend parses → live IBKR IVR overrides stale DB value → P/C ratio fills always-passing gate → _trend_ema_gate fires with real P/EMA200/50 data. HARD BLOCK sell_put when P/EMA200 < 0 (confirmed downtrend). 52 tests. 0 HIGH/MEDIUM open. Open: KI-110/059/099 (LOW only). Next: P0 live integration test (paste real scan context, verify gates update), P1 KI-110 fix, P2 end-to-end workflow.
+## Current Phase (Day 61 — v0.35.3)
+Analysis-only session (Sunday, market closed). ibkr-scan live test run on IBKR Options_IQ_Claude watchlist. QQQ top pick 4/7 (IVR=36, IV/HV=1.214, P/C=0.94). GLD HARD BLOCK (IV/HV=0.927 < 1.00). XLF WARNING (P/C=2.64 extreme institutional put buying). All P/EMA columns "—" (stale watchlist + closed market). Trend gate integration test deferred to Monday market hours. 52 tests. 0 HIGH/MEDIUM open. Next: P0 live integration test (Monday, market hours — refresh watchlist, get EMA data, build full SCAN CONTEXT, verify _trend_ema_gate fires), P1 KI-110, P2 end-to-end workflow.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY60_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY60.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY61_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY61.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -92,8 +92,8 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 61 Priorities
-1. **P0:** Live integration test — paste real /ibkr-scan SCAN CONTEXT block into App.jsx textarea; verify: IVR updates in gate output, P/C gate activates, trend gate shows correct BLOCK/WARN/PASS.
+## Day 62 Priorities
+1. **P0:** Live integration test (MONDAY — market hours required) — refresh IBKR watchlist → get live P/EMA200/PEMA50 → build full SCAN CONTEXT with PEMA fields → paste into App.jsx → verify: IVR updates, P/C gate activates, trend_ema_gate fires with BLOCK/WARN/PASS.
 2. **P1:** KI-110 (LOW) — Fix _rank_buy_call/_rank_buy_put stale type names (itm_call → buy_call). ~8 lines.
 3. **P2:** End-to-end morning workflow test: ibkr-scan → SCAN CONTEXT paste → analyze → paper trade.
 4. **P3:** Audit trigger (MASTER_AUDIT_FRAMEWORK v1.5 — last run Day 58, next Day 65).

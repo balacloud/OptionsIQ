@@ -1,5 +1,5 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 60 (May 30, 2026)
+> **Last Updated:** Day 61 (May 31, 2026)
 > **Current Version:** v0.35.3
 
 ---
