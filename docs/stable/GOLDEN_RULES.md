@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 42 (May 6, 2026)
+> **Last Updated:** Day 62 (Jun 1, 2026)
 
 ---
 
@@ -195,6 +195,29 @@ Every code review and audit must pass the **quant filter**: "Would this cost me 
 - Liquidity (bid-ask spread, OI) must be surfaced before any "Analyze" recommendation. Directing a trader toward an illiquid chain without warning is a system failure.
 - Market regime (SPY trend, VIX level) must gate bullish recommendations. RS momentum is a lagging indicator — it takes weeks to rotate. The market can crash 10% before quadrants catch up.
 - **Audit priority order**: P&L impact first, data integrity second, UX third, code style last.
+
+### Rule 23: Pre-Filter Tools Own Their Checks — Don't Double-Gate.
+
+If a pre-filter tool (e.g. `/ibkr-scan`) has already validated a condition before the user reaches the analysis tool, the analysis tool must NOT hard-block on that same condition. It may warn, but never block.
+
+**Why:** The user ran `/ibkr-scan`, it confirmed IVR is elevated and direction is `sell_put`. The backend then hard-blocking on IVR or market regime is contradicting the pre-filter's decision — after the user has already committed to the trade direction. This creates a broken experience: the tool says "don't trade" on the exact condition its own skill just said "trade."
+
+**Which tool owns which check:**
+
+| Check | Owner | Backend gate |
+|-------|-------|-------------|
+| IVR environment | `/ibkr-scan` | Advisory warn only |
+| IV/HV ratio | `/ibkr-scan` | Advisory warn only |
+| Put/Call sentiment | `/ibkr-scan` | Advisory warn only |
+| Trend (P/EMA200, P/EMA50) | `/ibkr-scan` + `/chartreview` | Hard block only for confirmed downtrend (pema200 < 0 for sellers) |
+| Market regime (SPY 200SMA) | `/ibkr-scan` | Advisory warn only |
+| Strike vs support levels | `/chartreview` | Advisory (future: CHART CONTEXT) |
+| FOMC timing vs specific expiry | `/catalyst-check` + backend | Backend hard blocks rate-sensitive ETFs within 14d |
+| Earnings in key holdings | Backend only | Backend warns |
+| Exact strike delta | Backend only | Backend enforces |
+| GLD IV/HV < 1.10 | Backend only | Backend hard blocks (too subtle for watchlist scan) |
+
+**How to apply:** Before adding a hard block to gate_engine, ask: "Does `/ibkr-scan` already evaluate this?" If yes → warn, not block.
 
 ### Rule 18: Liquidity Gate Thresholds Must Be Direction-Aware.
 The "strike nearness" sub-check in the liquidity gate (contract within N% of underlying) WILL always fail for ITM buyer strategies by design — that's what ITM means. Applying an ATM nearness filter to a delta-0.68 ITM call is a structural mismatch.

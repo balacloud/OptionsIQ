@@ -1,5 +1,5 @@
 # OptionsIQ — API Contracts
-> **Last Updated:** Day 57 (May 29, 2026)
+> **Last Updated:** Day 62 (Jun 1, 2026)
 > **Backend base URL:** http://localhost:5051
 
 ---
@@ -191,6 +191,20 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
 - `exit_plan`: `{ rule, profit_target_pct, profit_target_credit, dte_exit, exit_date }`. TQQQ: 25%/14 DTE. Standard ETF sells: 50%/21 DTE. Buys: 100% gain / -50% stop.
 
 **Strategy types as of Day 57 (single-leg only):** `sell_put`, `sell_call`, `buy_call`, `buy_put`. Spread types (`bull_put_spread`, `bear_call_spread`, `itm_call`) are no longer returned.
+
+**Gate `blocking` field — Day 62 recalibration:** The `blocking` boolean on each gate object in `gates[]` controls whether the gate hard-blocks the verdict. As of Day 62, the following gates are **never** blocking (always `false`) because `/ibkr-scan` already validates these conditions before the user reaches analyze:
+- `ivr` (buyer IVR rank) — advisory warn only
+- `hv_iv` (HV/IV ratio for buyers) — advisory warn only
+- `market_regime` (SPY 200SMA / 5-day regime, all directions) — advisory warn only
+- `max_loss` (position size vs account) — advisory warn only
+
+**Remaining hard blocks (still `blocking: true` when failed):**
+- `trend_ema`: sell_put/buy_call when price below 200 EMA; buy_put when price above 200 EMA
+- `hv_iv_vrp` (VRP gate): GLD only — IV/HV < 1.10 blocks sellers
+- `tqqq_satellite`: no gate-level block (TQQQ constraints enforced in strategy_ranker delta caps)
+- `events` (FOMC): XLF/XLRE/TQQQ within 14 days of FOMC
+
+**`scan_context` request field (added Day 60):** Optional string. Paste the SCAN CONTEXT line from `/ibkr-scan` skill output. Parser extracts `IVR`, `IV_HV`, `PEMA200`, `PEMA50`, `PC` and merges into gate payload — overrides stale DB values with live IBKR data. Format: `TICKER=QQQ  IVR=36  IV_HV=1.214  PEMA200=+8.2  PEMA50=+3.1  PC=0.94  DIRECTION=sell_put`
 
 **OI/Volume source:** `open_interest` and `volume` in strategies are supplemented from MarketData.app REST API when available. Falls back to 0 if MarketData.app times out or is unreachable. IBKR `reqMktData` does not return per-contract OI (platform limitation KI-035).
 

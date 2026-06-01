@@ -20,7 +20,6 @@ import PaperTradeDashboard from './components/PaperTradeDashboard';
 import BestSetups from './components/BestSetups';
 import DataProvenance from './components/DataProvenance';
 import useOptionsData from './hooks/useOptionsData';
-import useSectorData from './hooks/useSectorData';
 import './index.css';
 
 // Display labels for directions
@@ -43,7 +42,6 @@ const SECTOR_DIR_TO_CORE = {
   sell_put: 'sell_put',
 };
 
-const FILTER_OPTIONS = ['all', 'analyze', 'watch', 'skip'];
 
 function QualityBanner({ data }) {
   const source = data?.data_source;
@@ -189,14 +187,10 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
 
 export default function App() {
   const { data, loading, error, analyze } = useOptionsData();
-  const sectorHook = useSectorData();
 
-  const [selectedETF, setSelectedETF]     = useState(null);    // { etf, suggested_direction, ... }
+  const [selectedETF, setSelectedETF]     = useState(null);
   const [direction, setDirection]         = useState('buy_call');
-  const [filter, setFilter]               = useState('all');
-  const [l2ETF, setL2ETF]                 = useState(null);    // ETF being shown in L2 detail
-  const [activeTab, setActiveTab]         = useState('setups'); // 'setups' is the home screen
-  const [seedIVState, setSeedIVState]     = useState({ loading: false, result: null, error: null });
+  const [activeTab, setActiveTab]         = useState('setups');
   const [dashRefreshTick, setDashRefreshTick] = useState(0);
   const [scanContext, setScanContext]     = useState('');
 
@@ -205,87 +199,20 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
-  const handleSeedIV = async () => {
-    setSeedIVState({ loading: true, result: null, error: null });
-    try {
-      const res = await fetch('/api/admin/seed-iv/all', { method: 'POST' });
-      if (!res.ok) {
-        const text = await res.text();
-        setSeedIVState({ loading: false, result: null, error: `Seed failed (HTTP ${res.status}) — ${text.slice(0, 120)}` });
-        setTimeout(() => setSeedIVState(s => ({ ...s, error: null })), 8000);
-        return;
-      }
-      const data = await res.json();
-      setSeedIVState({ loading: false, result: data, error: null });
-      setTimeout(() => setSeedIVState(s => ({ ...s, result: null })), 10000);
-    } catch (e) {
-      setSeedIVState({ loading: false, result: null, error: 'Seed failed — backend not reachable. Is it running?' });
-      setTimeout(() => setSeedIVState(s => ({ ...s, error: null })), 8000);
-    }
-  };
 
-  const seedIVMessage = (result) => {
-    if (!result) return null;
-    if (result.pacing_warning) {
-      return { type: 'warn', text: 'IBKR pacing limit hit — nothing new pulled. Wait ~10 min and retry. Your existing data is intact.' };
-    }
-    const sources = result.sources_used?.length ? result.sources_used.join(' + ') : 'unknown';
-    const sourceLabel = sources.includes('ibkr') ? 'IBKR' : sources.includes('yfinance') ? 'yfinance (HV proxy)' : sources;
-    const errNote = result.errors?.length ? ` · ${result.errors.length} ticker${result.errors.length > 1 ? 's' : ''} failed` : '';
-    return {
-      type: result.errors?.length ? 'warn' : 'ok',
-      text: `✓ Seeded ${result.total_iv_rows} rows from ${sourceLabel} across ${result.tickers_seeded} ETFs${errNote}`,
-    };
-  };
-
-  // Auto-trigger sector scan on mount — swallow error, hook stores it in sectorHook.error
-  useEffect(() => {
-    if (!sectorHook.sectors) sectorHook.scanSectors().catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const sectors = sectorHook.sectors?.sectors || [];
-
-  const counts = {
-    all:     sectors.length,
-    analyze: sectors.filter(s => s.action === 'ANALYZE').length,
-    watch:   sectors.filter(s => s.action === 'WATCH').length,
-    skip:    sectors.filter(s => s.action === 'SKIP').length,
-  };
-
-  const filtered = filter === 'all'
-    ? sectors
-    : sectors.filter(s => s.action === filter.toUpperCase());
 
   const runAnalysis = useCallback((etfTicker, dir) => {
     const ctx = scanContext.trim();
     analyze({ ticker: etfTicker, direction: dir, ...(ctx ? { scan_context: ctx } : {}) }).catch(() => {});
   }, [analyze, scanContext]);
 
-  // Click ETF card: set active ETF, auto-direction from regime, trigger L3 analysis
-  const handleSelectETF = useCallback((etf) => {
-    const coreDir = SECTOR_DIR_TO_CORE[etf.suggested_direction] || 'buy_call';
-    setSelectedETF(etf);
-    setDirection(coreDir);
-    setL2ETF(null);
-    runAnalysis(etf.etf, coreDir);
-  }, [runAnalysis]);
-
-  // Select from Best Setups → switch to signal board with ETF pre-analyzed
+  // Select from Today's Trade → switch to signal board with ETF pre-analyzed
   const handleSelectFromSetups = useCallback((ticker, direction) => {
-    const fakeEtf = { etf: ticker, suggested_direction: direction };
-    setSelectedETF(fakeEtf);
+    setSelectedETF({ etf: ticker, suggested_direction: direction });
     setDirection(direction);
-    setL2ETF(null);
     runAnalysis(ticker, direction);
     setActiveTab('signals');
   }, [runAnalysis]);
-
-  // L2 detail expand
-  const handleL2 = useCallback((etf) => {
-    if (etf.etf === l2ETF) { setL2ETF(null); sectorHook.clearDetail(); return; }
-    setL2ETF(etf.etf);
-    sectorHook.analyzeETF(etf.etf).catch(() => {});
-  }, [l2ETF, sectorHook]);
 
   // Direction override in analysis panel → re-run
   const handleDirectionChange = useCallback((newDir) => {
@@ -303,7 +230,7 @@ export default function App() {
   return (
     <div className="app-shell">
       {/* Regime bar — always visible */}
-      <RegimeBar sectorData={sectorHook.sectors} />
+      <RegimeBar />
 
       {/* Top-level tab nav */}
       <div className="app-tab-nav">
@@ -347,108 +274,8 @@ export default function App() {
       <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups onSelect={handleSelectFromSetups} /></div>
       <div style={{ display: activeTab === 'data' ? 'block' : 'none' }}><DataProvenance /></div>
 
-      <div style={{ display: activeTab === 'signals' ? undefined : 'none' }} className={`signal-board ${hasAnalysisPanel ? 'signal-board-split' : ''}`}>
-        {/* ── Left: ETF Scanner ── */}
-        <div className="scanner-panel">
-          <div className="scanner-header">
-            <div className="scanner-title">ETF Signal Scanner</div>
-            <div className="scanner-header-actions">
-              <button
-                className="sector-refresh-btn"
-                onClick={sectorHook.scanSectors}
-                disabled={sectorHook.loading}
-              >
-                {sectorHook.loading ? 'Scanning...' : '↻ Scan'}
-              </button>
-              <button
-                className="seed-iv-btn"
-                onClick={handleSeedIV}
-                disabled={seedIVState.loading}
-                title="Pull 1 year of IV history from IBKR for all ETFs — seeds the IVR gate. Takes ~30s."
-              >
-                {seedIVState.loading ? 'Seeding IVR… (~30s)' : '↓ Seed IV'}
-              </button>
-            </div>
-          </div>
-          {seedIVState.result && (() => {
-            const msg = seedIVMessage(seedIVState.result);
-            if (!msg) return null;
-            const cls = msg.type === 'ok' ? 'seed-iv-success' : 'seed-iv-warn';
-            return <div className={`seed-iv-toast ${cls}`}>{msg.text}</div>;
-          })()}
-          {seedIVState.error && (
-            <div className="seed-iv-toast seed-iv-error">⚠ {seedIVState.error}</div>
-          )}
-
-          {/* Filter bar */}
-          <div className="scanner-filters">
-            {FILTER_OPTIONS.map(f => (
-              <button
-                key={f}
-                className={`sector-filter-btn ${filter === f ? 'active' : ''}`}
-                onClick={() => setFilter(f)}
-              >
-                {f.charAt(0).toUpperCase() + f.slice(1)} ({counts[f]})
-              </button>
-            ))}
-          </div>
-
-          {sectorHook.error && (
-            <div className="scanner-sta-offline">
-              <div className="sta-offline-icon">⚡</div>
-              <div className="sta-offline-msg">STA offline</div>
-              <div className="sta-offline-sub">Start STA at localhost:5001 to load sector signals</div>
-              <button className="sector-refresh-btn" style={{ marginTop: 8 }} onClick={() => sectorHook.scanSectors().catch(() => {})}>
-                Retry
-              </button>
-            </div>
-          )}
-
-          {/* L2 detail inline panel */}
-          {(sectorHook.etfDetail || sectorHook.detailLoading) && (
-            <div className="l2-inline-panel">
-              {sectorHook.detailLoading && <div className="l2-loading">Loading L2 data...</div>}
-              {sectorHook.etfDetail && !sectorHook.detailLoading && (
-                <L2InlineDetail
-                  detail={sectorHook.etfDetail}
-                  onClose={sectorHook.clearDetail}
-                  onDeepDive={handleSelectETF}
-                />
-              )}
-            </div>
-          )}
-
-          {/* ETF list — scanner rows */}
-          <div className="scanner-list">
-            {filtered.map(etf => (
-              <ScannerRow
-                key={etf.etf}
-                etf={etf}
-                isSelected={selectedETF?.etf === etf.etf}
-                onSelect={handleSelectETF}
-                onL2={handleL2}
-              />
-            ))}
-            {!sectorHook.loading && sectorHook.sectors && filtered.length === 0 && (
-              <div className="scanner-empty">No ETFs match filter "{filter}"</div>
-            )}
-            {sectorHook.loading && !sectorHook.sectors && (
-              <div className="scanner-empty">Scanning sector ETFs...</div>
-            )}
-          </div>
-
-          {sectorHook.sectors && (
-            <div className="sector-footer">
-              STA: {sectorHook.sectors.sta_status === 'ok' ? '● Connected' : '○ Offline'}
-              {sectorHook.sectors.timestamp && (
-                <span className="text-dim"> · {new Date(sectorHook.sectors.timestamp).toLocaleTimeString()}</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Right: Analysis Panel (opens when ETF selected) ── */}
-        {hasAnalysisPanel && (
+      <div style={{ display: activeTab === 'signals' ? undefined : 'none' }}>
+        {hasAnalysisPanel ? (
           <AnalysisPanel
             ticker={selectedETF.etf}
             direction={direction}
@@ -462,13 +289,10 @@ export default function App() {
             scanContext={scanContext}
             onScanContextChange={setScanContext}
           />
-        )}
-
-        {/* Empty state when no ETF selected */}
-        {!hasAnalysisPanel && sectorHook.sectors && (
+        ) : (
           <div className="analysis-empty">
             <div className="analysis-empty-icon">↑</div>
-            <div className="analysis-empty-msg">Select an ETF to run gate analysis</div>
+            <div className="analysis-empty-msg">Select an ETF from Today's Trade</div>
           </div>
         )}
       </div>
@@ -476,66 +300,3 @@ export default function App() {
   );
 }
 
-// ── Scanner Row: compact ETF row with key signals ──
-function ScannerRow({ etf, isSelected, onSelect, onL2 }) {
-  const QUADRANT_CLS = {
-    Leading: 'q-leading', Improving: 'q-improving',
-    Weakening: 'q-weakening', Lagging: 'q-lagging',
-  };
-  const qCls = QUADRANT_CLS[etf.quadrant] || '';
-  const dirLabel = etf.suggested_direction ? (DIR_LABELS[etf.suggested_direction] || etf.suggested_direction) : null;
-  const isBear = etf.suggested_direction && ['bear_call_spread', 'sell_call', 'buy_put'].includes(etf.suggested_direction);
-
-  return (
-    <div
-      className={`scanner-row ${isSelected ? 'scanner-row-selected' : ''} ${etf.action === 'SKIP' ? 'scanner-row-skip' : ''}`}
-      onClick={() => etf.action === 'ANALYZE' && onSelect(etf)}
-      title={etf.action !== 'ANALYZE' ? `${etf.action} — ${etf.quadrant}` : undefined}
-    >
-      <div className="sr-ticker">{etf.etf}</div>
-      <div className={`sr-quadrant ${qCls}`}>{etf.quadrant}</div>
-      <div className={`sr-direction ${isBear ? 'sr-bear' : 'sr-bull'}`}>
-        {dirLabel || <span className="text-dim">{etf.action}</span>}
-      </div>
-      <div className="sr-changes">
-        <span className={`sr-chg ${etf.week_change >= 0 ? 'text-green' : 'text-red'}`}>
-          {etf.week_change != null ? `${etf.week_change >= 0 ? '+' : ''}${etf.week_change.toFixed(1)}%` : '—'}
-        </span>
-      </div>
-      {etf.action === 'ANALYZE' && (
-        <button
-          className="sr-l2-btn"
-          onClick={(e) => { e.stopPropagation(); onL2(etf); }}
-          title="L2 IV Detail"
-        >
-          IV
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── L2 inline detail panel (inside scanner) ──
-function L2InlineDetail({ detail, onClose, onDeepDive }) {
-  return (
-    <div className="l2-detail">
-      <div className="l2-detail-header">
-        <span className="l2-detail-title">{detail.etf} — IV / Liquidity</span>
-        <button className="etf-detail-close" onClick={onClose}>✕</button>
-      </div>
-      <div className="etf-detail-grid">
-        <div className="etf-detail-item"><span className="etf-detail-label">IV</span><span className="etf-detail-value monospace">{detail.iv_current != null ? `${detail.iv_current}%` : '—'}</span></div>
-        <div className="etf-detail-item"><span className="etf-detail-label">IVR</span><span className={`etf-detail-value monospace ${detail.iv_percentile > 50 ? 'text-red' : detail.iv_percentile < 25 ? 'text-green' : ''}`}>{detail.iv_percentile != null ? `${detail.iv_percentile}%` : '—'}</span></div>
-        <div className="etf-detail-item"><span className="etf-detail-label">HV20</span><span className="etf-detail-value monospace">{detail.hv_20 != null ? `${detail.hv_20}%` : '—'}</span></div>
-        <div className="etf-detail-item"><span className="etf-detail-label">Sug. DTE</span><span className="etf-detail-value monospace">{detail.suggested_dte ?? '—'}d</span></div>
-        <div className="etf-detail-item"><span className="etf-detail-label">Spread</span><span className={`etf-detail-value monospace ${detail.atm_spread_pct > 5 ? 'text-red' : detail.atm_spread_pct > 2 ? 'text-amber' : 'text-green'}`}>{detail.atm_spread_pct != null ? `${detail.atm_spread_pct}%` : '—'}</span></div>
-        <div className="etf-detail-item"><span className="etf-detail-label">OI</span><span className="etf-detail-value monospace">{detail.atm_oi != null ? detail.atm_oi.toLocaleString() : '—'}</span></div>
-      </div>
-      {detail.ivr_bear_warning && <div className="etf-warning etf-warning-bear">⚠ {detail.ivr_bear_warning}</div>}
-      {detail.catalyst_warnings?.map((w, i) => <div key={i} className="etf-warning">⚠ {w}</div>)}
-      <button className="etf-btn etf-btn-deep" style={{ marginTop: 10, width: '100%' }} onClick={() => { onClose(); onDeepDive(detail); }}>
-        Full Gate Analysis →
-      </button>
-    </div>
-  );
-}

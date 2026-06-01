@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 61 (May 31, 2026)
-> **Current Version:** v0.35.3
-> **Project Phase:** Scan context integration SHIPPED (Day 60). Day 61: analysis-only — ibkr-scan live test on IBKR watchlist (Sunday, market closed). QQQ top pick 4/7, GLD hard block (IV/HV 0.927), XLF P/C=2.64 extreme. EMA data unavailable (Sunday). Trend gate live integration test deferred to Monday. 52 tests. 0 HIGH/MEDIUM open issues.
+> **Last Updated:** Day 62 (Jun 1, 2026)
+> **Current Version:** v0.35.4
+> **Project Phase:** Gate recalibration SHIPPED (Day 62). 5 gates changed hard-block → advisory warn (ibkr-scan already validates these). Dead ETF Signal Scanner removed. Scan context confirmed working live. Rule 23 added. 52 tests. 0 HIGH/MEDIUM open issues.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY61_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY61.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY62_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY62.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -245,6 +245,7 @@ Open (LOW):
 2. **KI-099:** buy_call direction for Leading/Improving ETFs — deferred, single-leg only.
 3. **KI-110:** _rank_buy_call returns "itm_call"/"atm_call"/"otm_call" instead of "buy_call" — inconsistent naming (functional, not broken)
 
+Resolved (Day 62): Dead ETF Signal Scanner ✅ (removed from App.jsx). Over-blocking gates ✅ (5 gates → non-blocking warn).
 Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_context_parser + trend_ema_gate).
 Resolved (Day 59): KI-107 ✅, KI-108 ✅, KI-109 ✅.
 
@@ -283,6 +284,7 @@ Resolved (Day 59): KI-107 ✅, KI-108 ✅, KI-109 ✅.
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 62 | Jun 1, 2026 | **Gate recalibration + dead scanner removal (v0.35.4).** 5 gates changed hard-block → non-blocking warn: ivr buyer, hv_iv buyer, market_regime (all dirs), max_loss, VRP non-GLD. GLD IV/HV < 1.10 hard block kept. ETF Signal Scanner deleted from App.jsx (was causing 410 error on Scan click). Scan context confirmed working: IVR/IV_HV/PC all overriding correctly. Workflow documented: ibkr-scan → OptionsIQ → chartreview → catalyst-check. Chart Context feature planned. Rule 23 added to GOLDEN_RULES. 52 tests. |
 | Day 61 | May 31, 2026 | **Analysis-only session — ibkr-scan live test (v0.35.3 — no change).** ibkr-scan skill run on IBKR Options_IQ_Claude watchlist (Sunday, market closed). QQQ top pick 4/7 (IVR=36, IV/HV=1.214, P/C=0.94). GLD HARD BLOCK: IV/HV=0.927 < 1.00. XLF WARNING: P/C=2.64 extreme institutional put buying. All P/EMA columns "—" (closed market — expected). Trend gate cannot activate without EMA data. Partial SCAN CONTEXT generated: TICKER=QQQ IVR=36 IV_HV=1.214 PC=0.94 DIRECTION=sell_put. Full live test deferred to Monday (market hours). |
 | Day 60 | May 30, 2026 | **Scan context integration — /ibkr-scan → analyze backend data pass (v0.35.3).** scan_context_parser.py: parse_scan_context() KEY=VALUE regex extraction. apply_scan_context_to_gate_payload() merges live IVR, P/C ratio, P/EMA200/50. gate_engine: _trend_ema_gate() added to all 4 ETF tracks (HARD BLOCK sell_put when P/EMA200 < 0). App.jsx: textarea for SCAN CONTEXT paste, scan_context sent in analyze payload. ibkr-scan.md: SCAN CONTEXT block added to output format. 52 tests (37→52). |
 | Day 59 | May 29, 2026 | **KI-107/108/109 resolved — TQQQ delta guard + GLD IV/HV gate + sell_call FOMC consistency (v0.35.2).** strategy_ranker: TQQQ sell_put now uses delta 0.10/0.08/0.06. gate_engine: _tqqq_satellite_gate() wired into sell_put + sell_call. GLD IV/HV < 1.10 now hard-blocks at gate level (not just ibkr-scan layer). sell_call FOMC gate replaced with _etf_fomc_gate(p, dte, "sell_call") — 22 lines → 1. 37 tests pass. 0 HIGH/MEDIUM open. |
@@ -316,29 +318,33 @@ Resolved (Day 59): KI-107 ✅, KI-108 ✅, KI-109 ✅.
 
 ---
 
-## Next Session Priorities (Day 62)
+## Next Session Priorities (Day 63)
 
-### P0 — Live integration test (30 min) — REQUIRES MARKET HOURS
-Refresh IBKR watchlist during market hours → get live P/EMA200 and P/EMA50 → build full SCAN CONTEXT (including PEMA200/PEMA50) → paste into App.jsx textarea → verify: (a) IVR overrides stale DB value (ivr_confidence="known"), (b) P/C gate activates with real ratio, (c) _trend_ema_gate fires with BLOCK/WARN/PASS based on P/EMA200.
+### P0 — Live integration test (REQUIRES MARKET HOURS — Monday)
+Refresh IBKR watchlist → get live P/EMA200 + P/EMA50 → full SCAN CONTEXT with all 7 fields → paste → verify trend gate fires BLOCK/WARN/PASS based on real EMA data.
 
-### P1 — KI-110 (LOW): Fix buy_call/_rank_buy_put stale strategy_type names (~8 lines)
-`_rank_buy_call` returns `"itm_call"/"atm_call"/"otm_call"` instead of `"buy_call"`.
-`_rank_buy_put` returns `"itm_put"/"atm_put"/"otm_put"` instead of `"buy_put"`.
-Fix: update `stype` configs in both methods. Update pnl_calculator + TopThreeCards handlers to match.
+### P1 — Chart Context feature (~2 hrs)
+1. Update `/chartreview` skill to emit CHART CONTEXT block: `S1=710.00  S2=695.00  R1=748.00  TREND=up  RSI=58  ATR=8.20`
+2. `backend/chart_context_parser.py` — new file (~50 lines), extracts S1/S2/R1/R2/TREND/RSI/ATR
+3. `backend/analyze_service.py` — apply chart context, compute `strike_vs_support` label per strategy
+4. `frontend/App.jsx` — second textarea for CHART CONTEXT paste
+5. `frontend/TopThreeCards.jsx` — display `strike_vs_support` label
 
-### P2 — End-to-end morning workflow test
-Full visual: /ibkr-scan screenshot → SCAN CONTEXT paste → analyze → TopThreeCards expected_move + exit plan → paper trade log.
+### P2 — KI-110 (LOW): Fix buy_call type names (~8 lines)
+`_rank_buy_call` → `"buy_call"` not `"itm_call"`. Update pnl_calculator handlers.
 
-### P3 — Audit (Day 65 trigger)
-MASTER_AUDIT_FRAMEWORK v1.5. Last run Day 58. Next trigger: Day 65. Gate calibration + test coverage.
+### P3 — Frontend redesign (planning session needed)
+Warnings-only gate display. One trade per screen. Clean aesthetic. Needs dedicated planning.
+
+### P4 — Audit (Day 65 trigger)
+MASTER_AUDIT_FRAMEWORK v1.5. Last run Day 58. Next trigger Day 65.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY61.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY61_SHORT.md` — Day 61 summary
-- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger) v1.5
-- `.claude/commands/ibkr-scan.md` — core daily skill (built Day 57, SCAN CONTEXT added Day 60)
-- `.claude/commands/chartreview.md` — TradingView chart review skill (built Day 59)
-- `.claude/commands/catalyst-check.md` — catalyst risk check skill (built Day 59)
-- `docs/stable/IBKR_WATCHLIST_SETUP.md` — 11-column config, thresholds, decision matrix
-- `docs/Research/ETF_Universe_5_Day56.md` — Multi-LLM ETF research + watchlist column synthesis
-- `docs/Research/Daily_Trade_Prompts.md` — 7 prompts for Perplexity/ChatGPT/Gemini pre-trade research
+- `docs/versioned/KNOWN_ISSUES_DAY62.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY62_SHORT.md` — Day 62 summary
+- `docs/stable/GOLDEN_RULES.md` — Rule 23 added (pre-filter tools own their checks)
+- `docs/stable/API_CONTRACTS.md` — gate blocking table updated (Day 62)
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — v1.5
+- `.claude/commands/ibkr-scan.md` — core daily skill
+- `.claude/commands/chartreview.md` — TradingView chart review (CHART CONTEXT output planned)
+- `.claude/commands/catalyst-check.md` — catalyst risk check skill

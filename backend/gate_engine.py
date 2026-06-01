@@ -364,8 +364,8 @@ class GateEngine:
         elif total <= account * MAX_LOSS_FAIL_PCT:
             s, r = "warn", "Max loss elevated vs account size"
         else:
-            s, r = "fail", "Max loss exceeds 20% account"
-        out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}", f"<={MAX_LOSS_WARN_PCT:.0%} pass, {MAX_LOSS_WARN_PCT:.0%}-{MAX_LOSS_FAIL_PCT:.0%} warn, >{MAX_LOSS_FAIL_PCT:.0%} fail", r, s == "fail"))
+            s, r = "warn", f"Max loss ${total:,.0f} — size to 1 lot"
+        out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}", f"<={MAX_LOSS_WARN_PCT:.0%} pass, {MAX_LOSS_WARN_PCT:.0%}-{MAX_LOSS_FAIL_PCT:.0%} warn, >{MAX_LOSS_FAIL_PCT:.0%} warn", r, False))
 
         return out
 
@@ -713,16 +713,16 @@ class GateEngine:
             else:
                 s, r = "fail", "IV elevated — IV crush risk on entry"
             return _gate("ivr", "IV Rank", s, f"IV {iv:.2f}% (fallback)",
-                         f"IV <{IV_ABS_BUYER_PASS_PCT} pass, >{IV_ABS_BUYER_WARN_PCT} fail", r, s == "fail")
+                         f"IV <{IV_ABS_BUYER_PASS_PCT} pass, >{IV_ABS_BUYER_WARN_PCT} warn", r, False)
         ivr = float(ivr)
         if ivr < IVR_BUYER_PASS_PCT:
             s, r = "pass", "IV rank low — ideal for buying options"
         elif ivr <= IVR_BUYER_WARN_PCT:
             s, r = "warn", "Moderate IV rank — acceptable"
         else:
-            s, r = "fail", "IV rank elevated — IV crush risk on entry"
+            s, r = "warn", "IV elevated — IV crush risk, verify with /ibkr-scan"
         return _gate("ivr", "IV Rank", s, f"IVR {ivr:.1f}%",
-                     f"<{IVR_BUYER_PASS_PCT} pass, {IVR_BUYER_PASS_PCT}–{IVR_BUYER_WARN_PCT} warn, >{IVR_BUYER_WARN_PCT} fail", r, s == "fail")
+                     f"<{IVR_BUYER_PASS_PCT} pass, {IVR_BUYER_PASS_PCT}–{IVR_BUYER_WARN_PCT} warn", r, False)
 
     def _etf_hv_iv_gate(self, p: dict) -> dict:
         """HV/IV ratio gate — same math for all 4 ETF directions."""
@@ -733,16 +733,16 @@ class GateEngine:
             if current_iv < IV_ABS_LOW_HV_PASS_PCT:
                 s, r = "pass", "Low HV regime: IV still acceptable"
             else:
-                s, r = "fail", "Low HV regime but IV not cheap enough"
+                s, r = "warn", "Low HV regime — IV elevated, IV crush risk"
         else:
             if ratio < HV_IV_PASS_RATIO:
                 s, r = "pass", "Options fairly priced vs realized vol"
             elif ratio <= HV_IV_WARN_RATIO:
                 s, r = "warn", "Paying average vol risk premium"
             else:
-                s, r = "fail", "IV significantly overpriced vs HV"
+                s, r = "warn", "IV overpriced vs HV — verify /ibkr-scan IV/HV"
         return _gate("hv_iv", "HV/IV Ratio", s, f"IV/HV {ratio:.2f}",
-                     f"<{HV_IV_PASS_RATIO} pass, {HV_IV_PASS_RATIO}–{HV_IV_WARN_RATIO} warn, >{HV_IV_WARN_RATIO} fail", r, s == "fail")
+                     f"<{HV_IV_PASS_RATIO} pass, {HV_IV_PASS_RATIO}–{HV_IV_WARN_RATIO} warn", r, False)
 
     def _etf_hv_iv_seller_gate(self, p: dict) -> dict:
         """Volatility Risk Premium gate for sellers (Sinclair).
@@ -772,11 +772,11 @@ class GateEngine:
         else:  # IV/HV < 1.0: HV exceeds IV → no seller edge
             s, r = "fail", "HV exceeds IV — realized vol > implied, no edge selling"
 
-        threshold_str = "GLD: IV/HV >=1.10 required; Others: >=1.05 pass, 1.0-1.05 warn, <1.0 fail" if is_gld else f"IV/HV >={HV_IV_SELL_PASS_RATIO} pass, 1.0–{HV_IV_SELL_PASS_RATIO} warn, <1.0 fail"
+        threshold_str = "GLD: IV/HV >=1.10 required (hard block); Others: >=1.05 pass, 1.0-1.05 warn, <1.0 warn" if is_gld else f"IV/HV >={HV_IV_SELL_PASS_RATIO} pass, 1.0–{HV_IV_SELL_PASS_RATIO} warn, <1.0 warn"
         return _gate("hv_iv_vrp", "Vol Risk Premium", s,
                      f"IV/HV {ratio:.2f} (IV {current_iv:.1f}%, HV {hv_20:.1f}%)",
                      threshold_str,
-                     r, s == "fail")
+                     r, is_gld and s == "fail")
 
     def _vix_regime_gate(self, p: dict) -> dict:
         """VIX regime gate for sellers. Perplexity: 21-year tastylive study.
@@ -956,10 +956,10 @@ class GateEngine:
         elif spy_above and SPY_BULL_5D_FAIL <= spy_5d <= SPY_BULL_5D_WARN:
             s, r = "warn", "Market softening — tighten entries"
         else:
-            s, r = "fail", "Market regime unsupportive for call buying"
+            s, r = "warn", "Market regime mixed — direction confirmed by /ibkr-scan"
         return _gate("market_regime", "Market Regime", s,
                      f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
-                     f"above 200SMA and 5d>{SPY_BULL_5D_WARN:.0%}", r, s == "fail")
+                     f"above 200SMA and 5d>{SPY_BULL_5D_WARN:.0%}", r, False)
 
     def _etf_spy_regime_bear_gate(self, p: dict) -> dict:
         """SPY regime gate for bearish ETF buyers (buy_put)."""
@@ -974,10 +974,10 @@ class GateEngine:
         elif spy_5d < SPY_BUYPUT_5D_WARN:
             s, r = "warn", "Market weakening — reasonable for defensive puts"
         else:
-            s, r = "fail", "Market regime not supportive for put buying"
+            s, r = "warn", "Market trending up — direction confirmed by /ibkr-scan"
         return _gate("market_regime", "Market Regime", s,
                      f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
-                     f"below 200SMA and 5d<{SPY_BUYPUT_5D_PASS:.0%} pass", r, s == "fail")
+                     f"below 200SMA preferred for put buying", r, False)
 
     def _etf_position_size_gate(self, p: dict) -> dict:
         """Position sizing gate — same math for all directions."""
@@ -1333,9 +1333,9 @@ class GateEngine:
         elif total <= account * MAX_LOSS_FAIL_PCT:
             s, r = "warn", "Max loss elevated vs account size"
         else:
-            s, r = "fail", "Max loss exceeds 20% of account"
+            s, r = "warn", f"Max loss ${total:,.0f} — size to 1 lot"
         out.append(_gate("max_loss", "Max Loss Defined", s, f"${total:.2f}",
-                         f"<={MAX_LOSS_WARN_PCT:.0%} pass, >{MAX_LOSS_FAIL_PCT:.0%} fail", r, s == "fail"))
+                         f"<={MAX_LOSS_WARN_PCT:.0%} pass, >{MAX_LOSS_FAIL_PCT:.0%} warn", r, False))
 
         # Gate 9: Trend gate (from /ibkr-scan P/EMA200 + P/EMA50 — pass-through if no scan data)
         out.append(self._trend_ema_gate(p, "sell_put"))

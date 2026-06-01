@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 61 (May 31, 2026)
-> **Current Version:** v0.35.3
+> **Last Updated:** Day 62 (Jun 1, 2026)
+> **Current Version:** v0.35.4
 
 ---
 
@@ -239,8 +239,13 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] `_trend_ema_gate()` — wired into all 4 ETF gate tracks; HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback ✅ Day 60
 - [x] App.jsx scan context textarea — paste SCAN CONTEXT from /ibkr-scan; auto-includes in analyze payload ✅ Day 60
 - [x] /ibkr-scan.md SCAN CONTEXT output block — format spec + decimal conversion notes ✅ Day 60
-- [ ] End-to-end workflow test: /ibkr-scan → SCAN CONTEXT paste → analyze gate verification → paper trade
+- [x] Scan context integration confirmed live (Day 62): IVR/IV_HV/PC/PEMA200 all flowing correctly ✅
+- [x] Gate recalibration (Day 62): ivr buyer, hv_iv buyer, market_regime (all), max_loss, VRP non-GLD → non-blocking warn. GLD block kept. ✅
+- [x] Dead ETF Signal Scanner removed (Day 62): useSectorData + ScannerRow + L2InlineDetail deleted from App.jsx ✅
+- [ ] End-to-end workflow test: /ibkr-scan with market hours → full SCAN CONTEXT (PEMA200+PEMA50) → verify trend gate
+- [ ] Chart Context feature: /chartreview emits CHART CONTEXT block → S1/S2/R1/R2 paste → strike_vs_support label per strategy
 - [ ] KI-110: Fix _rank_buy_call stale type names (itm_call/atm_call/otm_call → buy_call) — LOW, ~8 lines
+- [ ] Frontend redesign: warnings-only gate display, one trade per screen, clean aesthetic
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -286,6 +291,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.35.4 | Day 62 | **Gate recalibration + dead scanner removal.** 5 gates changed from hard-block to advisory warn (ivr buyer, hv_iv buyer, market_regime all dirs, max_loss, VRP non-GLD). GLD IV/HV < 1.10 hard block kept. ETF Signal Scanner deleted from App.jsx (was calling 410 endpoint). Rule 23 added: pre-filter tools own their checks. Scan context integration confirmed live (IVR override, P/C, IV_HV all flowing). 52 tests. |
 | v0.35.3 | Day 60 | **Scan context integration — /ibkr-scan → analyze backend data pass.** scan_context_parser.py: parse_scan_context() KEY=VALUE regex + apply_scan_context_to_gate_payload(). gate_engine: _trend_ema_gate() wired into all 4 ETF tracks (HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback; direction-aware for all 4 strategies). App.jsx: scanContext state + textarea in AnalysisPanel; scan_context included in analyze payload. ibkr-scan.md: SCAN CONTEXT output block + decimal conversion notes. test_scan_context.py: 15 new tests. 52 tests total. |
 | v0.35.2 | Day 59 | **KI-107/108/109 resolved.** strategy_ranker: TQQQ sell_put uses delta 0.10/0.08/0.06. gate_engine: _tqqq_satellite_gate() wired into sell_put + sell_call. GLD IV/HV < 1.10 now hard-blocks at backend gate level. sell_call FOMC gate replaced with _etf_fomc_gate tier logic (22 lines → 1). 37 tests. 0 HIGH/MEDIUM open. |
 | v0.35.1 | Day 58 | **Audit + 4 HIGH fixes + Today's Trade + TopThreeCards.** MASTER_AUDIT_FRAMEWORK v1.5. pnl_calculator otm_call/otm_put P&L fix. TradeExplainer otm_put fixes (isBearish/getMoneyness/headline). DirectionGuide sell_call "Uncapped naked call". FOMC gate direction-aware (buy directions warn, not block). TopThreeCards expected_move banner + strike_vs_em_label + ExitPlanBlock. BestSetups → Today's Trade. |
