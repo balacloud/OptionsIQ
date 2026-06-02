@@ -1,38 +1,98 @@
-# /ibkr-scan — IBKR Watchlist Morning Scan
+# /ibkr-scan — IBKR Watchlist Morning Scan (MCP-Powered)
 
-You are a professional options premium seller analyzing an IBKR watchlist screenshot.
-The user has pasted a screenshot of the `Options_IQ_Claude` watchlist.
+Pull live market data for all 6 ETFs via IBKR MCP, score them through the 4-layer sieve,
+and output a ranked table + SCAN CONTEXT ready to paste into the OptionsIQ analyze tool.
 
-**Your job:** Read the data, apply the decision logic below, output a scored table, pick one trade.
+No screenshot needed. All data comes from live IBKR API calls.
 
 ---
 
-## Watchlist Layout
+## Contract IDs (hardcoded — stable, do not need to search)
 
-The screenshot shows 6 rows (SPY + 5 tradeable ETFs) with these columns:
+| ETF  | Contract ID | Exchange |
+|------|-------------|----------|
+| SPY  | 756733      | ARCA     |
+| QQQ  | 320227571   | NASDAQ   |
+| IWM  | 9579970     | ARCA     |
+| XLF  | 4215220     | ARCA     |
+| TQQQ | 72539702    | NASDAQ   |
+| GLD  | 51529211    | ARCA     |
 
-| Column | What it shows | Pre-market behavior |
-|--------|--------------|---------------------|
-| LAST | Current price | Use this if UNDERLYING PRICE shows "—" |
-| UNDERLYING PRICE | Same as Last | Often shows "—" pre-open — use LAST |
-| 52 WEEK IV RANK | Raw number (e.g. 40, not 40%) | Active pre-market |
-| 52 IV PERC. | Percentage (e.g. 71%) | Active pre-market |
-| IMPLIED VOL./HIST... | IV÷HV as % (e.g. 124.7%) | Active pre-market |
-| OPT. IMP. VOL. CHA... | IV change vs yesterday (e.g. +0.195) | Active pre-market |
-| OPT. VOLUME | Absolute options contracts today | 0 pre-market — skip this check |
-| PRICE/EMA(200) | % above/below 200 EMA (e.g. +19.64%) | Active pre-market |
-| PRICE/EMA(50) | % above/below 50 EMA (e.g. +9.73%) | Active pre-market |
-| PUT/CALL VOLUME | Put÷Call ratio (e.g. 1.21) | 0.00 pre-market — skip this check |
+---
+
+## Step 0 — Pull Live Data (do this for all 6 ETFs before scoring)
+
+For each ETF, make **two MCP calls**:
+
+### Call A — Price Snapshot
+`get_price_snapshot(contract_id, exchange="SMART", market_data_names=[...])`
+
+Request all of these fields in one call:
+```
+"implied-vol-underlying"          → annual_iv (fraction → ×100 = IV%)
+"historical-vol"                   → annual_pct (fraction → ×100 = HV%)
+"implied-volatility-percentile"    → high_13w, high_26w, high_52w (fractions → ×100)
+"underlying-today-option-volume"   → callVolume, putVolume
+"underlying-avg-option-volume"     → avgCallVolume, avgPutVolume
+"misc-statistics"                  → high_52w (price), low_52w (price)
+"year-to-date-change"              → change_pct
+"last"                             → current price
+```
+
+### Call B — Price History (for EMA computation)
+`get_price_history(contract_id, exchange=[see table above], security_type="STK", step="ONE_DAY", period="TWO_YEARS", outside_rth=false)`
+
+### Compute from history bars (close prices, oldest-first):
+```
+EMA(n) algorithm:
+  ema = close[0]
+  k   = 2 / (n + 1)
+  for each price in close[1:]:
+      ema = price * k + ema * (1 - k)
+
+EMA200 = EMA(200) applied to all ~502 close bars
+EMA50  = EMA(50)  applied to all ~502 close bars
+
+P/EMA200 = (current_price - EMA200) / EMA200 × 100   [sign matters: negative = below 200 EMA]
+P/EMA50  = (current_price - EMA50)  / EMA50  × 100
+
+If -1% < P/EMA200 < +1%: flag as "(near 200 EMA — borderline)"
+```
+
+### Derived values per ETF:
+```
+IV_pct     = implied-vol-underlying.annual_iv × 100
+HV_pct     = historical-vol.annual_pct × 100
+IV_HV      = IV_pct / HV_pct              [e.g. 1.254 = IV 25% above HV]
+IV_edge    = IV_pct - HV_pct              [e.g. +4.1% = seller's edge]
+IVR_13w    = implied-volatility-percentile.high_13w × 100
+IVR_26w    = implied-volatility-percentile.high_26w × 100
+IVR_52w    = implied-volatility-percentile.high_52w × 100
+call_vol   = underlying-today-option-volume.callVolume
+put_vol    = underlying-today-option-volume.putVolume
+avg_call   = underlying-avg-option-volume.avgCallVolume
+avg_put    = underlying-avg-option-volume.avgPutVolume
+PC_ratio   = put_vol / call_vol            [e.g. 1.15 = put-leaning]
+call_pct   = call_vol / avg_call × 100    [e.g. 72% of 90d avg]
+put_pct    = put_vol  / avg_put  × 100
+hi_52w     = misc-statistics.high_52w     [52-week price high]
+lo_52w     = misc-statistics.low_52w      [52-week price low]
+range_pos  = (current_price - lo_52w) / (hi_52w - lo_52w) × 100  [0–100+ %ile]
+```
+
+**Market closed / pre-market detection:**
+If `call_vol = 0` AND `put_vol = 0` → market is closed or pre-market.
+In that case: skip Layer 4 (sentiment). Note "pre-market — volume signals unavailable."
 
 ---
 
 ## Step 1 — Regime Check (read SPY row first)
 
-| SPY P/EMA(200) | Regime | Impact |
-|----------------|--------|--------|
-| > +1% | BULL — clear | Sell puts OK on all ETFs |
-| 0% to +1% | BULL — marginal | Proceed with caution, lower delta |
-| < 0% | BEAR | Hard block on ALL sell_put. Sell_call only. |
+| SPY P/EMA200 | Regime | Impact |
+|--------------|--------|--------|
+| > +1%        | BULL — clear | Sell puts OK on all ETFs |
+| 0% to +1%    | BULL — marginal | Proceed with caution, lower delta |
+| < 0%         | BEAR | Hard block on ALL sell_put. Sell_call only. |
 
 If regime is BEAR, output the block and stop. Do not score individual ETFs.
 
@@ -40,57 +100,81 @@ If regime is BEAR, output the block and stop. Do not score individual ETFs.
 
 ## Step 2 — Score Each ETF (5 tradeable: QQQ, IWM, XLF, TQQQ, GLD)
 
-Apply these in order. Stop at any hard block.
+Apply layers in order. Stop at any hard block.
 
-### Layer 1 — IV Gate
+### Layer 1 — IV Gate (primary: IVR_52w + IV/HV)
+
 | Condition | Points | Label |
 |-----------|--------|-------|
-| IV Pctl ≥ 75% AND IV/HV ≥ 120% | +3 | BEST |
-| IV Pctl ≥ 60% AND IV/HV ≥ 110% | +2 | TRADABLE |
-| IV Pctl 50–59% AND IV/HV ≥ 110% | +1 | MARGINAL |
-| IV Pctl < 50% OR IV/HV < 105% | 0 | SKIP |
-| IV/HV < 100% | -1 | IV CHEAP — do not sell |
+| IVR_52w ≥ 75% AND IV_HV ≥ 1.20 | +3 | BEST |
+| IVR_52w ≥ 60% AND IV_HV ≥ 1.10 | +2 | TRADABLE |
+| IVR_52w 50–59% AND IV_HV ≥ 1.10 | +1 | MARGINAL |
+| IVR_52w < 50% OR IV_HV < 1.05 | 0 | SKIP |
+| IV_HV < 1.00 | -1 | IV CHEAP — do not sell |
+
+**Multi-window context (no scoring impact — informational):**
+- If IVR_13w < 35% while IVR_52w ≥ 60%: add note "IV recently compressed — may be deflating"
+- If IVR_13w ≥ 60%: add note "IV elevated on both short and long windows — strong seller's environment"
 
 ### Layer 2 — Trend Gate
+
 | Condition | Points | Label |
 |-----------|--------|-------|
-| P/EMA(200) > 0 AND P/EMA(50) > 0 | +2 | UPTREND |
-| P/EMA(200) > 0 AND P/EMA(50) < 0 | +1 | PULLBACK — use delta 0.15 max |
-| P/EMA(200) < 0 | HARD BLOCK | Output ❌, score = 0, skip remaining layers |
+| P/EMA200 > 0 AND P/EMA50 > 0 | +2 | UPTREND |
+| P/EMA200 > 0 AND P/EMA50 < 0 | +1 | PULLBACK — use delta 0.15 max |
+| P/EMA200 < 0 | HARD BLOCK | Output ❌, score = 0, stop scoring this ETF |
 
-### Layer 3 — IV Direction
+### Layer 3 — Volume Conviction
+
+Replaces the old "IV Change" layer (not available via MCP without yesterday's snapshot).
+
 | Condition | Points | Note |
 |-----------|--------|------|
-| Opt Imp Vol Change ≤ 0 | +1 | IV cooling — sell window |
-| Opt Imp Vol Change 0 to +1.0 | 0 | IV ticking up — note but don't block |
-| Opt Imp Vol Change > +1.0 | -1 | IV expanding — WAIT. Flag this. |
+| call_pct ≥ 80% AND put_pct ≥ 80% | +1 | Normal-to-elevated activity — confirms flow |
+| call_pct 50–79% OR put_pct 50–79% | 0 | Below-avg volume — muted conviction |
+| call_pct < 50% AND put_pct < 50% | -1 | Very low volume — treat as pre-market |
+| Skip entirely if market closed | — | Note "pre-market — skip Layer 3" |
 
-### Layer 4 — Activity + Sentiment (skip if pre-market, i.e. Opt Volume = 0 and P/C = 0.00)
+### Layer 4 — Put/Call Sentiment
+
+Skip entirely if market closed (call_vol = 0).
+
 | Condition | Points | Note |
 |-----------|--------|------|
-| Put/Call Volume < 1.0 | +1 | Bullish sentiment — confirms sell_put |
-| Put/Call Volume 1.0–1.5 | 0 | Neutral |
-| Put/Call Volume > 1.5 | -1 | Fear — wait even if IVR elevated |
-| Put/Call Volume < 0.5 | 0 | Complacency — note it |
+| PC_ratio < 1.0 | +1 | Call-dominant — bullish flow, confirms sell_put |
+| PC_ratio 1.0–1.5 | 0 | Neutral |
+| PC_ratio > 1.5 | -1 | Fear — institutional put buying. Wait even if IVR elevated. |
+| PC_ratio < 0.5 | 0 | Complacency — note it |
 
-**Max score: 7 (BEST IV + UPTREND + IV cooling + bullish sentiment)**
+**Volume split context (informational, no scoring):**
+Output `calls: [call_pct]% of avg · puts: [put_pct]% of avg` alongside PC ratio.
+
+### Layer 5 — Price Extension (advisory only, no scoring impact)
+
+| Condition | Advisory |
+|-----------|---------|
+| range_pos > 99% (above 52w high) | "Above 52w ATH — breakout extension. Support is below; pullback risk elevated." |
+| range_pos 95–99% | "Near 52w high — extended rally. Valid for sell_put (lots of distance to strike); adds risk for sell_call." |
+| range_pos < 20% | "Near 52w low. Oversold zone — confirm SPY regime before sell_put." |
+
+**Max score: 7 (BEST IV + UPTREND + normal volume + bullish sentiment)**
 **Tradable threshold: ≥ 4**
 
 ---
 
 ## Step 3 — TQQQ Special Rules
 
-TQQQ is a SATELLITE position. Even if it scores high, apply these hard gates:
+TQQQ is a SATELLITE position. Even if it scores high:
 
 | Gate | Requirement |
 |------|-------------|
-| Regime | SPY P/EMA(200) must be > +1% (comfortably bull) |
-| TQQQ trend | TQQQ P/EMA(50) must be > 0 |
+| Regime | SPY P/EMA200 > +1% (comfortably bull — not marginal) |
+| TQQQ trend | TQQQ P/EMA50 must be > 0 |
 | Max delta | 0.10 (not the standard 0.15–0.20) |
 | Max size | 1–2% account risk only |
 | Label | Always output as "SATELLITE" in verdict |
 
-If TQQQ passes all gates: label as "SELL PUT (SATELLITE) — delta 0.10 max"
+If TQQQ passes all gates: label "SELL PUT (SATELLITE) — delta 0.10 max"
 
 ---
 
@@ -98,63 +182,76 @@ If TQQQ passes all gates: label as "SELL PUT (SATELLITE) — delta 0.10 max"
 
 | Gate | Requirement |
 |------|-------------|
-| IV/HV minimum | Must be ≥ 110% (GLD has no structural upward bias) |
-| IV Rank minimum | ≥ 35 (GLD mutes for long stretches) |
+| IV/HV minimum | IV_HV must be ≥ 1.10 (GLD has no structural upward bias — needs clear VRP) |
+| IVR_52w minimum | ≥ 35% (GLD IV mutes for long stretches) |
 | Hard stop reminder | 2–3× premium collected. Never roll down. |
 
-If GLD IV/HV < 100%: explicitly output "IV CHEAP — realized vol exceeds implied. Do not sell."
+If GLD IV_HV < 1.00: output "IV CHEAP — realized vol exceeds implied. Never sell cheap vol."
+If GLD IV_HV 1.00–1.09: output "HARD BLOCK — IV/HV below 1.10 threshold. GLD rule."
 
 ---
 
 ## Step 5 — System-Level Warnings
 
-Check these after scoring all ETFs:
+Check after scoring all ETFs:
 
-**Macro fear flag:** If 4 or more of the 5 ETFs show IV Pctl ≥ 35% simultaneously → output:
-`⚠️ MACRO FEAR SIGNAL: 4+ ETFs with elevated IVR. Reduce to 1 position max or wait.`
+**Macro fear flag:** If 4 or more of the 5 tradeable ETFs show IVR_52w ≥ 35% simultaneously:
+`⚠️ MACRO FEAR SIGNAL: 4+ ETFs with elevated IVR. Reduce to 1 position max or wait for peak.`
 
-**Broad IV expansion:** If 3+ ETFs show Opt Imp Vol Change > +0.5 → output:
-`⚠️ Broad IV expansion across watchlist. Recheck IV Change at 9:35 AM. Favor waiting for peak.`
+**Broad low volume:** If 4+ ETFs show call_pct < 60% AND put_pct < 60%:
+`⚠️ Below-avg volume across watchlist. Low conviction day — treat all signals as pre-market quality.`
 
-**XLF below 200 EMA:** Output explicitly — rate regime concern.
+**XLF below 200 EMA:** Always call out explicitly — rate regime concern for financials.
+
+**Breakout extension:** If 3+ ETFs show range_pos > 95%:
+`⚠️ Broad ATH extension across watchlist. Market extended — prefer further OTM strikes, smaller size.`
 
 ---
 
 ## Output Format
 
 ```
-IBKR SCAN — [Date] [Pre-open / Market hours]
+IBKR SCAN — [Date] [Pre-market / Market hours] [MCP live]
 
 REGIME: [BULL/BEAR] — SPY P/EMA(200) = [value]
 
-| ETF  | IVR | Pctl | IV/HV | IV Chg | P/EMA200 | P/EMA50 | Score | Verdict            |
-|------|-----|------|-------|--------|----------|---------|-------|--------------------|
-| SPY  | ... | ...  | ...   | ...    | ...      | ...     | —     | Regime anchor      |
-| QQQ  | ... | ...  | ...   | ...    | ...      | ...     | x/7   | [verdict]          |
-| IWM  | ... | ...  | ...   | ...    | ...      | ...     | x/7   | [verdict]          |
-| XLF  | ... | ...  | ...   | ...    | ...      | ...     | x/7   | [verdict]          |
-| TQQQ | ... | ...  | ...   | ...    | ...      | ...     | x/7   | [verdict]          |
-| GLD  | ... | ...  | ...   | ...    | ...      | ...     | x/7   | [verdict]          |
+| ETF  | IVR 52w | IV/HV | Edge  | P/EMA200 | P/EMA50 | P/C  | Score | Verdict                         |
+|------|---------|-------|-------|----------|---------|------|-------|---------------------------------|
+| SPY  |   27%   | 1.23x | +3.8% | +12.15%  |  +5.76% |  —   |   —   | Regime anchor                   |
+| QQQ  |   72%   | 1.25x | +4.1% | +19.92%  | +10.35% | 1.20 |  5/7  | SELL PUT ✅                     |
+| IWM  |   40%   | 1.16x | +2.5% | +14.03%  |  +5.56% | 1.61 |  2/7  | SKIP — P/C fear + IVR marginal  |
+| XLF  |   51%   | 1.18x | +2.9% |  -0.25%  |  +0.08% | 1.58 |  0/7  | HARD BLOCK ❌ (below 200 EMA)   |
+| TQQQ |   71%   | 1.24x | +4.5% | +59.58%  | +29.99% | 1.15 |  5/7  | SELL PUT (SATELLITE) delta 0.10 |
+| GLD  |   53%   | 0.94x | -1.4% |  +2.70%  |  -3.46% | 0.67 |  0/7  | HARD BLOCK ❌ (IV/HV < 1.10)   |
 
-TOP PICK: [ETF] [direction]
-Rationale: [one sentence — the 2-3 signals that made this the winner]
+IVR multi-window context:
+  QQQ: 13w=33% (compressed) / 26w=55% / 52w=72% ← IV elevated yearly but recently deflating
+  IWM: 13w=xx% / 26w=xx% / 52w=40%
 
-NEXT STEP: /api/options/analyze?ticker=[ETF]&direction=[direction]
+Volume conviction (market hours):
+  QQQ: calls 84% of avg · puts 95% of avg
+  IWM: calls 77% · puts 78%
 
-[Any system warnings]
-[Pre-market notes if applicable]
+Price extension:
+  QQQ: range_pos=101% — above 52w ATH. Support is present; watch for mean reversion.
+
+TOP PICK: QQQ sell_put
+Rationale: IVR_52w 72%, IV/HV 1.25x (+4.1% seller edge), clean uptrend both EMAs. Top pick.
+Runner-up: TQQQ — satellite only, delta 0.10 max, 1 lot.
+
+[System warnings if any]
 
 ━━━ SCAN CONTEXT — copy and paste into OptionsIQ analyze tool ━━━
-TICKER=[ETF]  IVR=[52wk IV Rank number]  IV_HV=[IV/HV as decimal e.g. 1.21]  PEMA200=[P/EMA200 as decimal e.g. +3.1]  PEMA50=[P/EMA50 as decimal e.g. +1.2]  PC=[Put/Call ratio e.g. 0.85]  DIRECTION=[direction]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Notes on SCAN CONTEXT format:
-- IVR: raw number from watchlist (e.g. 40, not 40%)
-- IV_HV: convert from % to decimal (e.g. 124.7% → 1.247)
-- PEMA200/PEMA50: use the % value directly with sign (e.g. +19.64% → +19.64, -0.58% → -0.58)
-- PC: Put/Call Volume ratio (e.g. 1.21). Omit if pre-market (shows 0.00).
-- DIRECTION: one of sell_put / sell_call / buy_call / buy_put
+TICKER=QQQ  IVR=72  IV_HV=1.254  PC=1.20  PEMA200=+19.92  PEMA50=+10.35  DIRECTION=sell_put
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+**SCAN CONTEXT field notes (MCP sources):**
+- `IVR=` → use `IVR_52w` as integer (e.g., 0.716 → 72). Backend field is `ivr_pct` — expects percentile 0-100.
+- `IV_HV=` → ratio as decimal (e.g., 1.254). Computed as `annual_iv / annual_pct`.
+- `PC=` → put/call ratio (e.g., 1.20). Computed as `put_vol / call_vol`. Omit if market closed.
+- `PEMA200=` / `PEMA50=` → computed from price history EMA, with sign (e.g., +19.92, -0.25).
+- `DIRECTION=` → one of: `sell_put` / `sell_call` / `buy_call` / `buy_put`
 
 ---
 
@@ -162,58 +259,75 @@ Notes on SCAN CONTEXT format:
 
 | Score | Label |
 |-------|-------|
-| 6–7 | **SELL PUT ✅** (or SELL CALL if downtrend) |
-| 4–5 | **SELL PUT** (watch IV direction) |
-| 3 | **MARGINAL** — lower delta only |
+| 6–7 | **SELL PUT ✅** (or SELL CALL if downtrend regime) |
+| 4–5 | **SELL PUT** (check advisory notes) |
+| 3 | **MARGINAL** — lower delta only (0.15 max) |
 | 1–2 | **SKIP** |
 | 0 or HARD BLOCK | **HARD BLOCK ❌** or **NO TRADE** |
 | TQQQ passing | **SELL PUT (SATELLITE) — delta 0.10 max** |
 
 ---
 
-## Pre-market vs Market Hours Behavior
+## Market Closed / Pre-Market Behavior
 
-**Pre-market (Opt Volume = 0, Put/Call = 0.00):**
-- Skip Layer 4 entirely (no options volume yet)
-- Note: "Pre-market — volume signals unavailable, recheck at 9:35 AM"
-- All other layers apply normally
-- Opt Imp Vol Change is valid pre-market
+**Detected by:** `call_vol = 0` AND `put_vol = 0` in `underlying-today-option-volume`.
 
-**At market open (9:30–9:45 AM):**
-- Recheck Opt Imp Vol Change first — if it spiked at open, wait
-- Opt Volume and Put/Call activate — apply Layer 4
+When market is closed:
+- Skip Layer 3 (volume conviction) and Layer 4 (put/call sentiment)
+- All other layers use prior-close IV/HV values — valid for gate checks
+- EMA data (P/EMA200, P/EMA50) is always computed from history — unaffected by market hours
+- Note in output: "Market closed / pre-market — volume signals unavailable, recheck at 9:35 AM"
+- SCAN CONTEXT: omit `PC=` field when market is closed
 
 ---
 
-## Example Output (Pre-open)
+## Fallback — Screenshot Mode
+
+If the user pastes a screenshot instead of typing `/ibkr-scan` without arguments:
+- Read the screenshot columns using the original watchlist layout (see git history for the old skill)
+- Apply the same 4-layer scoring (use IV Pctl column for IVR_52w, IV/HV column for IV_HV)
+- Layer 5 (price extension) unavailable from screenshot — skip
+- Note "screenshot mode — EMA computed from watchlist values, not MCP"
+
+---
+
+## Example — Full Market Hours Output
 
 ```
-IBKR SCAN — May 29, 2026 Pre-open
+IBKR SCAN — Jun 2, 2026 Market hours [MCP live]
 
-REGIME: BULL — SPY P/EMA(200) = +11.70% ✅
+REGIME: BULL — SPY P/EMA(200) = +12.15% ✅
 
-| ETF  | IVR | Pctl | IV/HV | IV Chg | P/EMA200 | P/EMA50 | Score | Verdict                        |
-|------|-----|------|-------|--------|----------|---------|-------|-------------------------------|
-| SPY  |  16 |  30% |  125% |  +0.13 |  +11.70% |  +5.45% | —     | Regime anchor                  |
-| QQQ  |  40 |  71% |  125% |  +0.20 |  +19.64% |  +9.73% | 5/7   | SELL PUT ✅                    |
-| IWM  |  29 |  51% |  118% |  +0.10 |  +14.57% |  +6.14% | 2/7   | Skip — IVR/Pctl below threshold|
-| XLF  |  25 |  51% |  119% |  +0.38 |   -0.58% |  -0.22% | 0/7   | HARD BLOCK ❌ (below 200 EMA)  |
-| TQQQ |  45 |  72% |  124% |  +0.46 |  +55.99% | +27.90% | 5/7   | SELL PUT (SATELLITE) delta 0.10|
-| GLD  |  22 |  52% |   94% |  +0.08 |   +3.62% |  -2.76% | 0/7   | NO TRADE — IV cheap (HV > IV)  |
+| ETF  | IVR 52w | IV/HV | Edge  | P/EMA200 | P/EMA50 | P/C  | Score | Verdict                          |
+|------|---------|-------|-------|----------|---------|------|-------|----------------------------------|
+| SPY  |   27%   | 1.23x | +3.8% | +12.15%  |  +5.76% |  —   |   —   | Regime anchor                    |
+| QQQ  |   72%   | 1.25x | +4.1% | +19.92%  | +10.35% | 1.20 |  5/7  | SELL PUT ✅                      |
+| IWM  |   40%   | 1.16x | +2.5% | +14.03%  |  +5.56% | 1.61 |  2/7  | SKIP — P/C fear (>1.5)           |
+| XLF  |   51%   | 1.18x | +2.9% |  -0.25%  |  +0.08% | 1.58 |  0/7  | HARD BLOCK ❌ (below 200 EMA)    |
+| TQQQ |   71%   | 1.24x | +4.5% | +59.58%  | +29.99% | 1.15 |  5/7  | SELL PUT (SATELLITE) delta 0.10  |
+| GLD  |   53%   | 0.94x | -1.4% |  +2.70%  |  -3.46% | 0.67 |  0/7  | HARD BLOCK ❌ (GLD IV/HV < 1.10) |
+
+IVR multi-window:
+  QQQ: 13w=33% (recently compressed) / 26w=55% / 52w=72% ← note IV deflating short-term
+  IWM: 13w=28% / 26w=38% / 52w=40% — all windows marginal
+
+Volume conviction:
+  QQQ: calls 84% of avg · puts 95% of avg — normal activity
+  IWM: calls 72% · puts 78% — slightly below avg
+
+Price extension:
+  QQQ: 101% of 52w range — +0.34% above prior ATH. Extended but support-rich for sell_put.
+  TQQQ: 99th pct — near ATH, confirm SPY holds before opening satellite.
 
 TOP PICK: QQQ sell_put
-Rationale: IVR 40, Pctl 71%, IV/HV 1.25 — all three IV gates pass. Both EMAs positive. Cleanest setup.
+Rationale: IVR_52w 72%, IV/HV 1.25x (seller has +4.1% edge), both EMAs positive, P/C neutral.
 
-NEXT STEP: /api/options/analyze?ticker=QQQ&direction=sell_put
+SATELLITE CANDIDATE: TQQQ — delta 0.10 max, 1 lot only, only if SPY stays > +1% EMA200.
 
-NOTES:
-- Pre-market: volume signals (Opt Volume, Put/Call) unavailable — recheck at 9:35 AM
-- All Opt IV Change positive (0.08–0.46): broad slight IV expansion pre-open. If QQQ's IV Change > 1.0 at open, wait.
-- TQQQ: satellite candidate if you want 2 positions. Delta 0.10 max, 1–2% account risk only.
-- XLF: below 200 EMA — rate regime concern. Hard block until it reclaims +0%.
-- GLD: IV/HV 94% means realized vol exceeds implied. Never sell cheap vol.
+⚠️ NOTE: QQQ 13w IVR only 33% — IV has compressed recently vs the 52w window.
+   Use delta 0.20 (not 0.28) and pick the 30-35 DTE expiry to stay away from near-term events.
 
 ━━━ SCAN CONTEXT — copy and paste into OptionsIQ analyze tool ━━━
-TICKER=QQQ  IVR=40  IV_HV=1.25  PEMA200=+19.64  PEMA50=+9.73  DIRECTION=sell_put
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TICKER=QQQ  IVR=72  IV_HV=1.254  PC=1.20  PEMA200=+19.92  PEMA50=+10.35  DIRECTION=sell_put
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

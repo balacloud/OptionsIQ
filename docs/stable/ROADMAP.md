@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 62 (Jun 1, 2026)
-> **Current Version:** v0.35.4
+> **Last Updated:** Day 63 (Jun 2, 2026)
+> **Current Version:** v0.35.5
 
 ---
 
@@ -242,8 +242,15 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] Scan context integration confirmed live (Day 62): IVR/IV_HV/PC/PEMA200 all flowing correctly ✅
 - [x] Gate recalibration (Day 62): ivr buyer, hv_iv buyer, market_regime (all), max_loss, VRP non-GLD → non-blocking warn. GLD block kept. ✅
 - [x] Dead ETF Signal Scanner removed (Day 62): useSectorData + ScannerRow + L2InlineDetail deleted from App.jsx ✅
-- [ ] End-to-end workflow test: /ibkr-scan with market hours → full SCAN CONTEXT (PEMA200+PEMA50) → verify trend gate
-- [ ] Chart Context feature: /chartreview emits CHART CONTEXT block → S1/S2/R1/R2 paste → strike_vs_support label per strategy
+- [x] End-to-end workflow test: /ibkr-scan with live market hours EMA data → trend gate confirmed working ✅ Day 63
+- [x] /ibkr-scan rewritten — MCP-powered, no screenshot needed. 12 MCP calls, TWO_YEARS EMA, P/C from live split, 3-window IVR ✅ Day 63
+- [x] /catalyst-check dual-mode — reads constants.py (Claude Code) or web search (browser context) ✅ Day 63
+- [ ] Three-input context: CHART CONTEXT + CATALYST CONTEXT parsers + analyze_service wiring + frontend — PLANNED (see docs/Research/Three_Input_Context_Architecture_Day63.md)
+  - [ ] `chart_context_parser.py` + tests (P0 Day 64)
+  - [ ] `catalyst_context_parser.py` + tests (P0 Day 64)
+  - [ ] Gate engine + analyze_service wiring (P1 Day 64)
+  - [ ] chartreview.md + catalyst-check.md machine blocks (P2 Day 64)
+  - [ ] App.jsx + TopThreeCards.jsx frontend (P3 Day 64)
 - [ ] KI-110: Fix _rank_buy_call stale type names (itm_call/atm_call/otm_call → buy_call) — LOW, ~8 lines
 - [ ] Frontend redesign: warnings-only gate display, one trade per screen, clean aesthetic
 
@@ -291,6 +298,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.35.5 | Day 63 | **MCP integration + three-input architecture.** /ibkr-scan rewritten — 12 MCP calls replace screenshot. All 6 ETF contract IDs confirmed (SPY/QQQ/IWM/XLF/TQQQ/GLD). /catalyst-check dual-mode. P0 live test confirmed (XLF hard block, QQQ PAUSE verdict). Workflow split: browser skills vs Claude Code dev. Opus-designed three-input CHART+CATALYST context architecture planned and saved. 52 tests. |
 | v0.35.4 | Day 62 | **Gate recalibration + dead scanner removal.** 5 gates changed from hard-block to advisory warn (ivr buyer, hv_iv buyer, market_regime all dirs, max_loss, VRP non-GLD). GLD IV/HV < 1.10 hard block kept. ETF Signal Scanner deleted from App.jsx (was calling 410 endpoint). Rule 23 added: pre-filter tools own their checks. Scan context integration confirmed live (IVR override, P/C, IV_HV all flowing). 52 tests. |
 | v0.35.3 | Day 60 | **Scan context integration — /ibkr-scan → analyze backend data pass.** scan_context_parser.py: parse_scan_context() KEY=VALUE regex + apply_scan_context_to_gate_payload(). gate_engine: _trend_ema_gate() wired into all 4 ETF tracks (HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback; direction-aware for all 4 strategies). App.jsx: scanContext state + textarea in AnalysisPanel; scan_context included in analyze payload. ibkr-scan.md: SCAN CONTEXT output block + decimal conversion notes. test_scan_context.py: 15 new tests. 52 tests total. |
 | v0.35.2 | Day 59 | **KI-107/108/109 resolved.** strategy_ranker: TQQQ sell_put uses delta 0.10/0.08/0.06. gate_engine: _tqqq_satellite_gate() wired into sell_put + sell_call. GLD IV/HV < 1.10 now hard-blocks at backend gate level. sell_call FOMC gate replaced with _etf_fomc_gate tier logic (22 lines → 1). 37 tests. 0 HIGH/MEDIUM open. |

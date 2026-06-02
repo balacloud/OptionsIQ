@@ -21,14 +21,24 @@ From `$ARGUMENTS` (e.g., "XLF 35 sell_put $49"):
 
 ---
 
-## Step 2 — Read the Calendars
+## Step 2 — Get Calendar Data
 
-Read `backend/constants.py` and extract these variables exactly:
-- `FOMC_DATES` — list of all FOMC announcement dates
-- `MACRO_DATES` — dict with keys "CPI", "NFP", "PCE"
-- `ETF_KEY_HOLDINGS` — dict mapping ticker → list of major holdings
-- `COMPANY_EARNINGS` — dict mapping company → list of earnings dates
-- `FOMC_BLOCK_TICKERS`, `FOMC_WARN_TICKERS`, `FOMC_BLOCK_DAYS`, `FOMC_WARN_DAYS_NEAR`
+**If `backend/constants.py` is readable (Claude Code context):** Read it and extract:
+`FOMC_DATES`, `MACRO_DATES`, `ETF_KEY_HOLDINGS`, `COMPANY_EARNINGS`,
+`FOMC_BLOCK_TICKERS`, `FOMC_WARN_TICKERS`, `FOMC_BLOCK_DAYS`, `FOMC_WARN_DAYS_NEAR`
+
+**If file is not accessible (browser/Claude.ai context):** Use web search instead:
+- Search "next FOMC meeting date 2026" → get next 2 FOMC dates
+- Search "CPI release date [current month] 2026" → next CPI
+- Search "NFP jobs report date [current month] 2026" → next NFP
+- Search "PCE inflation release date [current month] 2026" → next PCE
+- Search "[TICKER] key holdings ETF composition" if not in the reference below
+
+**Embedded config (same in both contexts — do not override from file):**
+- FOMC_BLOCK_TICKERS: XLF, XLRE, TQQQ — within 14 days = HARD BLOCK
+- FOMC_WARN_TICKERS: QQQ, IWM, GLD — always WARN only, never block
+- FOMC_BLOCK_DAYS: 14
+- Key holdings (from constants): QQQ → NVDA/AAPL/MSFT/AMZN/META; XLF → JPM/V/MA/BAC; GLD → none; IWM → none (too diversified)
 
 ---
 
