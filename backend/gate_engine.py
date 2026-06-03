@@ -36,6 +36,7 @@ from constants import (
     MIN_PREMIUM_DOLLAR,
     MIN_VOLUME_OI_RATIO,
     SELL_CALL_OTM_PASS_PCT,
+    SELL_PUT_OTM_PASS_PCT,
     SPY_BULL_5D_FAIL,
     SPY_BULL_5D_WARN,
     SPY_BUYPUT_5D_PASS,
@@ -1260,7 +1261,7 @@ class GateEngine:
         und = float(p.get("underlying_price", 0.0) or 0.0)
         if und > 0:
             otm_pct = (und - strike) / und * 100  # positive = OTM for puts
-            if otm_pct >= 3.0:
+            if otm_pct >= SELL_PUT_OTM_PASS_PCT:
                 s, r = "pass", f"Strike {otm_pct:.1f}% OTM — safe cushion for put selling"
             elif otm_pct >= 0:
                 s, r = "warn", "Strike near ATM — elevated assignment risk"
@@ -1270,7 +1271,7 @@ class GateEngine:
             s, r = "warn", "Unable to verify strike vs underlying"
         out.append(_gate("strike_otm", "Strike OTM Check", s,
                          f"strike {strike:.2f}, und {und:.2f}",
-                         ">=3% OTM pass; ATM warn; ITM fail", r, s == "fail"))
+                         f">={SELL_PUT_OTM_PASS_PCT}% OTM pass; ATM warn; ITM fail", r, s == "fail"))
 
         # Gate 3: DTE seller window — ETF-specific: 21–45 DTE sweet spot (tastylive)
         dte = int(p.get("selected_expiry_dte", 0) or 0)

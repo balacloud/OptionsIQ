@@ -66,6 +66,7 @@ MIN_CREDIT_WIDTH_RATIO  = 0.33   # Credit < 33% of spread width = thin premium, 
 STRIKE_NEARNESS_PCT     = 0.05   # ATM = within 5% of underlying price
 STRIKE_SAFETY_RATIO     = 0.995  # sell_put strike must be <= 0.995 × S1 support
 SELL_CALL_OTM_PASS_PCT  = 2.0    # sell_call: strike ≥ 2% OTM for pass
+SELL_PUT_OTM_PASS_PCT   = 3.0    # sell_put: strike ≥ 3% OTM for pass (wider cushion than sell_call)
 MAX_LOSS_WARN_PCT       = 0.10   # Max loss > 10% of account = warn
 MAX_LOSS_FAIL_PCT       = 0.20   # Max loss > 20% of account = hard fail
 

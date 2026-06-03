@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 63 (Jun 2, 2026)
-> **Current Version:** v0.35.5
+> **Last Updated:** Day 64 (Jun 3, 2026)
+> **Current Version:** v0.35.6
 
 ---
 
@@ -251,7 +251,11 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
   - [ ] Gate engine + analyze_service wiring (P1 Day 64)
   - [ ] chartreview.md + catalyst-check.md machine blocks (P2 Day 64)
   - [ ] App.jsx + TopThreeCards.jsx frontend (P3 Day 64)
-- [ ] KI-110: Fix _rank_buy_call stale type names (itm_call/atm_call/otm_call → buy_call) — LOW, ~8 lines
+- [x] MASTER_AUDIT_FRAMEWORK v1.6 — Rule 23 principles, scan_context/trend_ema claims, GLD/TQQQ resolved language, Day 59-63 audit log entries ✅ Day 64
+- [x] SELL_PUT_OTM_PASS_PCT constant — R3 violation fixed, gate_engine.py magic 3.0 → constant ✅ Day 64
+- [x] fomc_gate GATE_KB entry — GateExplainer now shows 3-tier explanation when gate fires ✅ Day 64
+- [x] ivr_seller 35% threshold — GATE_KB pass answer now cites explicit IVR threshold ✅ Day 64
+- [ ] KI-110: Fix _rank_buy_call + _rank_buy_put stale type names (itm_call/atm_call/otm_call → buy_call/buy_put) — LOW, ~8 lines (P4 Day 65)
 - [ ] Frontend redesign: warnings-only gate display, one trade per screen, clean aesthetic
 
 ## Phase 10 — Order Execution (Day 23, deferred)

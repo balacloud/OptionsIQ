@@ -1,6 +1,6 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 58 (May 29, 2026)
-> **Version:** v1.5
+> **Last Updated:** Day 64 (Jun 3, 2026)
+> **Version:** v1.6
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
 > **Time estimate:** 30-45 mins for Categories 1-9. Category 10 (effectiveness) runs monthly or when setups are dry.
 
@@ -63,6 +63,9 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 - **`_f(x) or None` is dangerous for valid 0.0 values** — `0.0 or None` evaluates to `None` in Python. Deep-OTM options legitimately have delta=0.0. Use `float(g[k]) if g.get(k) is not None else None` instead (KI-090 lesson).
 - **Data source labels must reflect actual source** — if Tradier fills the BOD cache, call it "bod_cache" not "ibkr_cache". Lying labels corrupt the DataProvenance UI and iv_provider selection downstream (KI-092/093 lesson).
 - **SQLite CURRENT_TIMESTAMP is UTC** — when parsing in JavaScript, always append 'Z' before `new Date(...)`. Without 'Z', Chrome treats the string as local time → 4-hour offset in EDT. Use `.replace(' ', 'T') + 'Z'` consistently.
+- **Pre-filter tools own their checks — don't double-gate** — If `/ibkr-scan` already validated IVR/IV_HV/market_regime, the backend gate for that same condition must be advisory WARN only (Rule 23 lesson, Day 62). Hard-blocking contradicts a pre-filter the user already ran.
+- **scan_context_parser overrides are the bridge** — `parse_scan_context()` extracts KEY=VALUE pairs from SCAN CONTEXT block; `apply_scan_context_to_gate_payload()` injects live IVR, IV_HV, P/C ratio directly into the gate payload before gate_engine runs. This is how `/ibkr-scan` data flows into the backend without a direct API call (Day 60 lesson).
+- **Trend gate is the ONE hard block that pre-filter cannot own** — `_trend_ema_gate()` is direction-aware: blocks sell_put + buy_call when below 200EMA, blocks buy_put when above 200EMA (warns sell_call). Too subtle for watchlist scan; backend enforces. All other trend/regime checks are advisory only per Rule 23.
 
 ---
 
@@ -131,6 +134,29 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     → Read: gate_engine — FOMC gate tiers. Do TQQQ + XLF block within 14d for sellers?
     → Confirm: buy_call and buy_put are excluded from the FOMC block (WARN only)
 
+[ ] "trend_ema gate is direction-aware — hard-blocks any direction fighting the 200EMA trend"
+    → sell_put: P/EMA200 < 0 → blocking=True (downtrend structural risk for put sellers)
+    → buy_call: P/EMA200 < 0 → blocking=True (downtrend structural headwind for call buyers)
+    → buy_put: P/EMA200 > 0 → blocking=True (uptrend structural headwind for put buyers)
+    → sell_call: P/EMA200 > 0 → blocking=False WARN only
+    → Read: gate_engine._trend_ema_gate() — verify all 4 branches and blocking flags
+    → Confirm: all 4 ETF tracks call _trend_ema_gate()
+
+[ ] "scan_context_parser.py parses IBKR SCAN CONTEXT block and overrides gate payload"
+    → Read: scan_context_parser.parse_scan_context() — extracts IVR, IV_HV, P/C from KEY=VALUE block
+    → Read: scan_context_parser.apply_scan_context_to_gate_payload() — merges overrides into payload
+    → Read: App.jsx — is there a SCAN CONTEXT textarea? Does it send scan_context in the analyze payload?
+    → Read: analyze_service — does it call apply_scan_context_to_gate_payload() before gate_engine?
+
+[ ] "5 advisory-only gates (Rule 23 — Day 62): ivr_buyer, hv_iv_buyer, market_regime, max_loss, VRP (non-GLD)"
+    → Read: gate_engine — do these 5 gates return blocking=False even when conditions fail?
+    → Confirm: GLD IV/HV < 1.10 is the EXCEPTION — remains a hard block (gate_engine._hv_iv_vrp_gate for GLD)
+    → GLD hard block wired since Day 59 (KI-108 resolved)
+
+[ ] "TQQQ delta cap implemented: strategy_ranker uses delta 0.10/0.08/0.06 for sell_put"
+    → Read: strategy_ranker._rank_sell_put_etf() for TQQQ — verify delta targets are 0.10/0.08/0.06
+    → Confirm: TQQQ_MAX_DELTA = 0.10 in constants.py (KI-107 resolved Day 59)
+
 [ ] "ETF universe is exactly 6 tickers: QQQ, IWM, XLF, GLD, TQQQ, SPY"
     → Read: constants.py ETF_TICKERS — verify exact set. SPY is regime anchor only (no trades).
 
@@ -183,6 +209,10 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 [ ] R16-restart: After this audit session, any Python changes must trigger kill+restart+health-check
 [ ] R18: liquidity gate strike nearness uses direction-aware threshold
 [ ] R21: last analysis result — does it pass quant filter? (is IVR actually flowing? is skew returning?)
+[ ] R23: advisory-only gates — IVR, IV/HV, market_regime, max_loss, VRP (non-GLD) are all blocking=False
+    → grep gate_engine.py for each: confirm blocking=False (or no hard block) for these 5
+    → Exception: GLD hv_iv gate stays blocking=True. trend_ema gate stays blocking=True for sellers.
+    → Confirm scan_context_parser.py exists and apply_scan_context_to_gate_payload() is called in analyze_service
 ```
 
 ---
@@ -227,13 +257,15 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     Tier 2 WARN:  QQQ, IWM, GLD — WARN only (never block) within 7 days of FOMC
     Buy directions (buy_call, buy_put): WARN only regardless of ticker, never block
 
-[ ] GLD gate: IV/HV ≥ 1.10 required for sellers (KI-108 — may not be implemented yet)
-    → Read: gate_engine — is there a GLD-specific IV/HV ≥ 1.10 hard block?
-    → If not present, this is KI-108 MEDIUM
+[ ] GLD gate: IV/HV ≥ 1.10 required for sellers — IMPLEMENTED Day 59 (KI-108 resolved)
+    → Read: gate_engine — verify _hv_iv_vrp_gate (or _tqqq_satellite_gate / GLD path) hard-blocks when IV/HV < 1.10
+    → Confirm: this is a HARD BLOCK (blocking=True), NOT advisory warn — per Rule 23 GLD exception
+    → Cross-check: all other hv_iv gates for non-GLD are now advisory WARN only (Day 62)
 
-[ ] TQQQ gate: delta ≤ TQQQ_MAX_DELTA (0.10) enforced (KI-107 — may not be implemented yet)
-    → Read: gate_engine — is there a TQQQ delta enforcement gate?
-    → If not present, this is KI-107 MEDIUM
+[ ] TQQQ delta enforcement: _tqqq_satellite_gate() wired — IMPLEMENTED Day 59 (KI-107 resolved)
+    → Read: gate_engine._tqqq_satellite_gate() — wired into sell_put AND sell_call for TQQQ?
+    → Read: strategy_ranker._rank_sell_put_etf() — TQQQ uses delta 0.10/0.08/0.06 (not 0.20/0.15/0.28)
+    → Confirm: TQQQ_MAX_DELTA = 0.10 in constants.py
 
 [ ] Theta burn calculation:
     burn = abs(theta * hold_days) / premium * 100
@@ -400,10 +432,10 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
     | Direction  | Live Tested? | Last Test | Provider | Bugs Found |
     |------------|-------------|-----------|----------|------------|
     | buy_call   | YES ✅      | Day 21 (XLU ETF) | IBKR | IBKR dead — Tradier untested for this direction |
-    | sell_put   | YES ✅      | Day 57 (XLF/QQQ) | Tradier | delta-centered sort fix (Day 57) |
-    | sell_call  | NO ❌       | Day 21 (XLU ETF) | IBKR | Not tested with Tradier + single-leg |
+    | sell_put   | YES ✅      | Day 61/62 (QQQ/XLF) | Tradier+SCAN CONTEXT | trend_ema gate end-to-end confirmed |
+    | sell_call  | PARTIAL ⚠️ | Day 59 (FOMC gate fix) | Tradier | Single-leg FOMC gate fix confirmed; full chain path unverified |
     | buy_put    | NO ❌       | Day 21 (XLU ETF) | IBKR | Not tested with Tradier + single-leg |
-    Note: sell_call and buy_put not verified with current Tradier+single-leg architecture.
+    Note: buy_put not verified with current Tradier+single-leg+scan_context architecture. buy_call Tradier path untested.
 ```
 
 ---
@@ -494,6 +526,11 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
 | Day 45 Framework Update | May 6, 2026 | 10 (new) | Category 10 added — Trading Effectiveness | 0 | 0 | Gate pass rate, "always one direction" claim, DTE calibration, adversarial LLM review, expected value sanity. v1.4. Not yet run against live data. |
 | Day 58 Framework Update | May 29, 2026 | All | v1.5 — reflect Day 57-58 architecture pivot | TBD | TBD | Single-leg only, 6-ETF universe, expected_move/exit_plan fields, FOMC 3-tier gate, Today's Trade tab. Full audit run follows update. |
 | Day 58 Full Audit | May 29, 2026 | 1-9 | 0 CRITICAL · 4 HIGH · 3 MEDIUM · 2 LOW | 0 | 4 HIGH fixed same session | HIGH: otm_call/otm_put in pnl_calculator (zero P&L for R3), TradeExplainer isBearish/getMoneyness missing otm_put, sell_call DirectionGuide risk label stale ("Spread width"), FOMC gate blocked buyers. All 4 HIGH fixed. MEDIUM open: KI-107 (TQQQ delta guard), KI-108 (GLD IV/HV gate), sell_call FOMC tier not using _etf_fomc_gate. |
+| Day 59 KI Resolution | May 29, 2026 | 3,7 | KI-107+108+109 resolved | 0 | 0 | TQQQ _tqqq_satellite_gate() + sell_put delta 0.10/0.08/0.06. GLD IV/HV < 1.10 hard block in gate_engine. sell_call FOMC gate → _etf_fomc_gate(). 37 tests pass. All MEDIUM open issues resolved. |
+| Day 60 Framework Update | May 30, 2026 | 1,2,7 | scan_context_parser + trend_ema_gate shipped | 0 | 0 | New: parse_scan_context(), apply_scan_context_to_gate_payload(), _trend_ema_gate() wired all 4 tracks. App.jsx SCAN CONTEXT textarea. 52 tests. ibkr-scan SCAN CONTEXT block added. |
+| Day 62 Gate Recalibration | Jun 1, 2026 | 2,3 | 5 gates advisory-only per Rule 23 | 0 | 0 (intentional design change) | ivr_buyer, hv_iv_buyer, market_regime, max_loss, VRP (non-GLD) changed hard-block → advisory warn. GLD IV/HV exception kept. Rule 23 added to GOLDEN_RULES. ETF Signal Scanner removed from App.jsx. 52 tests pass. |
+| Day 63 MCP Integration | Jun 2, 2026 | 1 | /ibkr-scan rewritten — MCP replaces screenshot | 0 | 0 | ibkr-scan.md: 12 MCP calls for all 6 ETFs. Three-input architecture (CHART+CATALYST+SCAN) designed. chart_context_parser.py + catalyst_context_parser.py created (not yet wired). Workflow split: browser (flat rate) vs Claude Code (dev). |
+| Day 64 Full Audit | Jun 3, 2026 | 1-9 | 0 CRITICAL · 0 HIGH · 3 MEDIUM · 2 LOW | 0 | 0 HIGH fixed (none found) | MEDIUM: R3 magic 3.0 in gate_engine → SELL_PUT_OTM_PASS_PCT constant added; fomc_gate missing from GATE_KB → added; trend_ema gate description too narrow → corrected (blocks all 4 dirs direction-aware). LOW: KI-110 (buy_call stale type names), R4 app.py 360 lines. All MEDIUM fixed same session. |
 
 ---
 
@@ -529,11 +566,13 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
     ExitPlanBlock renders: rule text + green target chip + date chip (stop chip for buys only)
     When gatedOut: exit plan and P&L chips are hidden (GATED OUT overlay instead)
 
-[ ] BestSetups.jsx → Today's Trade (Day 58 — replaced):
+[ ] BestSetups.jsx → Today's Trade (Day 58 — replaced, scanner removed Day 62):
     No API calls on mount (zero STA/backend fetches — was causing "STA offline" error)
     Shows 6-ETF grid: QQQ, IWM, XLF, GLD, TQQQ (satellite), SPY (regimeOnly/disabled)
     After ETF selection: shows 4-direction picker + TQQQ rules (blue) or GLD rules (amber)
     Analyze button calls onSelect(ticker, direction) → App.jsx handleSelectFromSetups
+    ETF Signal Scanner tab: REMOVED Day 62 (was causing 410 on scan click — dead endpoint)
+    Verify: no "Scan" button or scanner import remains in App.jsx or BestSetups.jsx
 
 [ ] GateExplainer GATE_KB accuracy:
     Open GateExplainer.jsx — GATE_KB object

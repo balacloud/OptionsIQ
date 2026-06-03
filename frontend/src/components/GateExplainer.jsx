@@ -12,9 +12,9 @@ const GATE_KB = {
   ivr_seller: {
     category: 'pricing',
     question: 'Is premium expensive enough to sell?',
-    passAnswer: 'YES — IV is elevated, so you collect richer premium for selling.',
-    failAnswer: 'NO — IV is too low, meaning you\'re selling options cheaply for the risk you\'re taking.',
-    why: 'When you sell options, high IV means you get paid more. One bad move can wipe out several wins if premium is thin.',
+    passAnswer: 'YES — IVR ≥ 35%: IV is elevated enough to collect meaningful premium for selling.',
+    failAnswer: 'NO — IVR < 35%: IV is too low, meaning you\'re selling options cheaply for the risk you\'re taking.',
+    why: 'When you sell options, high IV means you get paid more. The 35% IVR threshold (tastylive empirical) balances trade frequency vs premium quality. One bad move can wipe out several wins if premium is thin.',
   },
   hv_iv: {
     category: 'pricing',
@@ -113,6 +113,13 @@ const GATE_KB = {
     passAnswer: 'YES — VIX is in the 15–30 range: premiums are rich enough to collect without crisis-level risk.',
     failAnswer: 'NO — VIX is either too low (premiums too thin) or in crisis territory (above 40, negative expectancy for sellers).',
     why: 'VIX below 15 means options are cheap — you\'re selling for too little. Above 40 means the market is gapping unpredictably — short premium positions face catastrophic assignment risk.',
+  },
+  fomc_gate: {
+    category: 'market',
+    question: 'Does a Federal Reserve meeting fall inside your holding window?',
+    passAnswer: 'NO — No FOMC meeting falls within your expiry window. Rate-surprise risk is not a factor for this trade.',
+    failAnswer: 'YES — An FOMC meeting falls before expiry. Rate-sensitive ETFs (XLF, TQQQ) are blocked; others get a warning.',
+    why: 'FOMC announcements can gap rate-sensitive ETFs (XLF, XLRE, TQQQ) by 1–3% overnight. A surprise hike or cut can blow through sell strikes or spike volatility against buyers. Tier 1 (XLF/TQQQ sellers within 14d): blocked. Tier 2 (QQQ/IWM/GLD within 7d): advisory warning. Buyers always get a warning only — never a block.',
   },
 };
 

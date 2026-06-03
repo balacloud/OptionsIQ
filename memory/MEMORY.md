@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 61 — v0.35.3)
-Analysis-only session (Sunday, market closed). ibkr-scan live test run on IBKR Options_IQ_Claude watchlist. QQQ top pick 4/7 (IVR=36, IV/HV=1.214, P/C=0.94). GLD HARD BLOCK (IV/HV=0.927 < 1.00). XLF WARNING (P/C=2.64 extreme institutional put buying). All P/EMA columns "—" (stale watchlist + closed market). Trend gate integration test deferred to Monday market hours. 52 tests. 0 HIGH/MEDIUM open. Next: P0 live integration test (Monday, market hours — refresh watchlist, get EMA data, build full SCAN CONTEXT, verify _trend_ema_gate fires), P1 KI-110, P2 end-to-end workflow.
+## Current Phase (Day 64 — v0.35.6)
+Audit session. MASTER_AUDIT_FRAMEWORK updated to v1.6. Full audit: 0C/0H/3M/2L — all MEDIUM fixed same session. Fixes: SELL_PUT_OTM_PASS_PCT constant (R3 violation), fomc_gate GATE_KB entry, ivr_seller 35% threshold. Trend_ema gate confirmed direction-aware for all 4 directions. 52 tests. 0 HIGH/MEDIUM open. Next: Three-input context (CHART+CATALYST parsers) is P0 Day 65.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY61_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY61.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY64_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY64.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -36,9 +36,10 @@ backend/
                       Day 43: _extract_iv_data() ATM IV, _days_until_next_macro(), fomc_days_away fix.
                       Day 47: ETF_OPTIONS_LIQUID_TIER1 imported, _is_early_market_session() helper,
                       "ticker" in gate_payload, actionable liquidity gate messages in apply_etf_gate_adjustments.
-  constants.py        DONE (Day 19+27+28+29+32+43+47) — ETF_OPTIONS_LIQUID_TIER1 (Day 47).
+  constants.py        DONE (Day 19+27+28+29+32+43+47+64) — ETF_OPTIONS_LIQUID_TIER1 (Day 47).
                       ETF_DTE_SELLER_PASS_MIN=30 (Day 46, tastylive 200k+ trade research).
                       MIN_CREDIT_WIDTH_RATIO=0.33, IVR_SELLER_PASS_PCT=35, HV_IV_SELL_PASS_RATIO=1.05.
+                      Day 64: SELL_PUT_OTM_PASS_PCT=3.0 added (R3 fix — was magic number in gate_engine).
   marketdata_provider.py  DONE (Day 27+35+36) — 114 lines. OI/volume + IV+greeks supplement. Non-blocking.
                           Credit tracking Day 35. IV/delta/gamma/theta/vega surfaced Day 36.
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
@@ -64,7 +65,7 @@ backend/
   tests/              52 tests (pytest). 7 files. (37→52 Day 60: test_scan_context.py added — 15 new tests).
 
 frontend/
-  components/GateExplainer.jsx   DONE — events gate in GATE_KB ✅. fomc_gate (gate ID "events"). risk_defined present (stale for single-leg but not harmful).
+  components/GateExplainer.jsx   UPDATED (Day 64) — fomc_gate entry added to GATE_KB (3-tier logic explanation). ivr_seller updated with explicit 35% threshold + tastylive citation.
   components/DirectionGuide.jsx  UPDATED (Day 58) — sell_call risk: "Uncapped naked call" (was "Spread width (capped)").
   components/TradeExplainer.jsx  UPDATED (Day 58) — otm_call/otm_put in headline/isBearish/getMoneyness.
   App.jsx                        UPDATED (Day 58) — expectedMove1sd prop to TopThreeCards, tab label "Today's Trade".
@@ -92,11 +93,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 62 Priorities
-1. **P0:** Live integration test (MONDAY — market hours required) — refresh IBKR watchlist → get live P/EMA200/PEMA50 → build full SCAN CONTEXT with PEMA fields → paste into App.jsx → verify: IVR updates, P/C gate activates, trend_ema_gate fires with BLOCK/WARN/PASS.
-2. **P1:** KI-110 (LOW) — Fix _rank_buy_call/_rank_buy_put stale type names (itm_call → buy_call). ~8 lines.
-3. **P2:** End-to-end morning workflow test: ibkr-scan → SCAN CONTEXT paste → analyze → paper trade.
-4. **P3:** Audit trigger (MASTER_AUDIT_FRAMEWORK v1.5 — last run Day 58, next Day 65).
+## Day 65 Priorities
+1. **P0:** Three-input context parsers — `chart_context_parser.py` + `catalyst_context_parser.py` + tests (see docs/Research/Three_Input_Context_Architecture_Day63.md)
+2. **P1:** Gate engine + analyze_service wiring for CHART+CATALYST contexts
+3. **P2:** chartreview.md + catalyst-check.md machine block additions (30 min)
+4. **P3:** App.jsx + TopThreeCards.jsx frontend wiring
+5. **P4:** KI-110 fix — _rank_buy_call/_rank_buy_put stale type names (~8 lines)
 
 ## TradingView Pine Script
 - File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)
@@ -114,9 +116,9 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
-- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (9 categories, weekly trigger). v1.3 (Day 42).
-- `docs/versioned/KNOWN_ISSUES_DAY51.md`
-- `docs/status/PROJECT_STATUS_DAY51_SHORT.md`
+- `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger). v1.6 (Day 64).
+- `docs/versioned/KNOWN_ISSUES_DAY64.md`
+- `docs/status/PROJECT_STATUS_DAY64_SHORT.md`
 - `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
