@@ -57,6 +57,24 @@ function buildPrompt(ticker, direction, data) {
     pnlLines = rows.join('\n');
   }
 
+  // Chart context
+  const chartLevels = data.chart_levels || {};
+  const chartLines = Object.keys(chartLevels).length > 0
+    ? `  Chart verdict: ${data.chart_verdict || 'n/a'}
+  Support: S1=$${chartLevels.s1 || '—'} · S2=$${chartLevels.s2 || '—'}
+  Resistance: R1=$${chartLevels.r1 || '—'} · R2=$${chartLevels.r2 || '—'}
+  Strike vs support: ${strat?.strike_vs_support?.label || 'n/a'}`
+    : '  Chart context not provided.';
+
+  // Catalyst context
+  const cat = data.catalyst_summary || {};
+  const catLines = cat.catalyst_verdict
+    ? `  Catalyst verdict: ${cat.catalyst_verdict}
+  FOMC tier: ${cat.fomc_tier || 'n/a'} · Macro events: ${cat.macro_count ?? 'n/a'}
+  Holdings risk: ${cat.holdings_risk ? `YES — ${cat.holdings_company} in ${cat.holdings_days}d` : 'none'}
+  R1 expiry check: ${strat?.catalyst_overlay?.label || 'n/a'}`
+    : '  Catalyst context not provided.';
+
   return `Today is ${today}. I'm analyzing an options trade and need your help stress-testing it.
 
 ═══════════════════════════════════════
@@ -65,7 +83,7 @@ TRADE SETUP (from OptionsIQ analysis)
 Ticker: ${ticker}
 Direction: ${DIR_LABELS[direction] || direction}
 Underlying price: $${data.underlying_price?.toFixed(2) || 'N/A'}
-Verdict: ${v.color?.toUpperCase() || 'N/A'} — ${v.score_label || ''} (${v.pass || 0}/${(v.pass || 0) + (v.warn || 0) + (v.fail || 0)} gates passed)
+Verdict: ${v.color?.toUpperCase() || 'N/A'} — ${v.score_label || ''} gates passed
 Verdict headline: "${v.headline || ''}"
 
 GATE SCORES:
@@ -73,6 +91,12 @@ ${gateLines || '  No gate data.'}
 
 TOP STRATEGY (Rank 1):
 ${stratLines}
+
+CHART CONTEXT:
+${chartLines}
+
+CATALYST CONTEXT:
+${catLines}
 
 IV DATA:
 ${ivrLines}
@@ -86,6 +110,7 @@ WHAT I NEED FROM YOU
 
 1. **3 STRONGEST BEAR CASES** — reasons this trade fails even though the system says GO.
    Be specific. Not "markets can go down." Name the actual risk for ${ticker} right now.
+   Consider: the chart levels (is the strike above support?), the catalyst window (earnings timing), and current IV environment.
 
 2. **WHAT WOULD INVALIDATE THIS SETUP**
    - If ${ticker} closes below $X, the thesis is broken
@@ -94,6 +119,7 @@ WHAT I NEED FROM YOU
 3. **IS THE STRUCTURE RIGHT?**
    - Given this setup, is ${strat?.label || 'this strategy'} the right instrument?
    - Any adjustment worth considering? (different DTE, different strike, spread instead of naked?)
+   - Does the expiry clear known events (earnings, FOMC)?
 
 4. **FINAL VERDICT: TAKE THE TRADE OR WAIT?**
    One sentence with the main reason.`;

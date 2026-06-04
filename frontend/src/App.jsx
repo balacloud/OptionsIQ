@@ -3,9 +3,8 @@
  * Layout: RegimeBar (top) | ETF Scanner (left) | Analysis Panel (right)
  * No tab switching. Click ETF → analysis panel opens inline.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import RegimeBar from './components/RegimeBar';
-import DirectionGuide from './components/DirectionGuide';
 import MasterVerdict from './components/MasterVerdict';
 import GateExplainer from './components/GateExplainer';
 import TradeExplainer from './components/TradeExplainer';
@@ -14,7 +13,6 @@ import ExecutionCard from './components/ExecutionCard';
 import PnLTable from './components/PnLTable';
 import PaperTradeBanner from './components/PaperTradeBanner';
 import CopyForChatGPT from './components/CopyForChatGPT';
-import PreAnalysisPrompts from './components/PreAnalysisPrompts';
 import LearnTab from './components/LearnTab';
 import PaperTradeDashboard from './components/PaperTradeDashboard';
 import BestSetups from './components/BestSetups';
@@ -22,25 +20,7 @@ import DataProvenance from './components/DataProvenance';
 import useOptionsData from './hooks/useOptionsData';
 import './index.css';
 
-// Display labels for directions
-const DIR_LABELS = {
-  buy_call: 'Buy Call',
-  bull_call_spread: 'Bull Call Spread',
-  sell_call: 'Sell Call',
-  bear_call_spread: 'Bear Call Spread',
-  buy_put: 'Buy Put',
-  sell_put: 'Sell Put',
-};
 
-// Map sector display hints → core 4 directions for gate engine
-const SECTOR_DIR_TO_CORE = {
-  buy_call: 'buy_call',
-  bull_call_spread: 'buy_call',
-  bear_call_spread: 'sell_call',
-  sell_call: 'sell_call',
-  buy_put: 'buy_put',
-  sell_put: 'sell_put',
-};
 
 
 function QualityBanner({ data }) {
@@ -66,121 +46,183 @@ function QualityBanner({ data }) {
   );
 }
 
-function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged, scanContext, onScanContextChange }) {
+function ContextChips({ scanContext, chartVerdict, catalystVerdict }) {
+  if (!scanContext?.trim() && !chartVerdict && !catalystVerdict) return null;
+  const chartStyle = { go: { color: '#7fe0a0', label: '📈 Chart GO ✅' }, wait: { color: '#e0b87e', label: '📈 Chart WAIT ⚠️' }, block: { color: '#e05252', label: '📈 Chart BLOCK ❌' } };
+  const catStyle   = { proceed: { color: '#7fe0a0', label: '📅 Events ✅' }, caution: { color: '#e0b87e', label: '📅 Events ⚠️' }, abort: { color: '#e05252', label: '📅 Events ❌' } };
+  return (
+    <div className="context-chips">
+      {scanContext?.trim()  && <span className="context-chip scan">📊 SCAN ✅</span>}
+      {chartVerdict && chartStyle[chartVerdict]    && <span className="context-chip" style={{ color: chartStyle[chartVerdict].color }}>{chartStyle[chartVerdict].label}</span>}
+      {catalystVerdict && catStyle[catalystVerdict] && <span className="context-chip" style={{ color: catStyle[catalystVerdict].color }}>{catStyle[catalystVerdict].label}</span>}
+    </div>
+  );
+}
+
+function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged, scanContext, onScanContextChange, chartContext, onChartContextChange, catalystContext, onCatalystContextChange }) {
+  const [selectedRank, setSelectedRank] = useState(null);
+  const hasData = !!data?.top_strategies?.[0];
+  const strategyForLog = selectedRank
+    ? data?.top_strategies?.find(s => s.rank === selectedRank)
+    : data?.top_strategies?.[0];
+
   return (
     <div className="analysis-panel">
+      {/* ── Header ── */}
       <div className="analysis-panel-header">
-        <div>
-          <div className="analysis-panel-title">{ticker}</div>
-          <div className="analysis-panel-sub">Gate Analysis · L3</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div>
+            <div className="analysis-panel-title">{ticker}</div>
+            <div className="analysis-panel-sub">Options Analysis</div>
+          </div>
+          {data?.underlying_price && (
+            <span className="underlying-price" style={{ fontSize: 18, marginLeft: 8 }}>
+              ${data.underlying_price.toFixed(2)}
+            </span>
+          )}
+          {data?.ivr_data?.ivr_pct != null && (
+            <span className={`ivr-badge ${data.ivr_data.ivr_pct > 50 ? 'ivr-high' : data.ivr_data.ivr_pct < 25 ? 'ivr-low' : 'ivr-mid'}`}>
+              IVR {data.ivr_data.ivr_pct.toFixed(0)}%
+            </span>
+          )}
         </div>
         <button className="analysis-panel-close" onClick={onClose}>✕</button>
       </div>
 
       <QualityBanner data={data} />
 
-      {data?.underlying_price && (
-        <div className="analysis-price-row">
-          <span className="underlying-label">Underlying</span>
-          <span className="underlying-price">${data.underlying_price.toFixed(2)}</span>
-          {data.ivr_data?.ivr_pct != null && (
-            <span className={`ivr-badge ${data.ivr_data.ivr_pct > 50 ? 'ivr-high' : data.ivr_data.ivr_pct < 25 ? 'ivr-low' : 'ivr-mid'}`}>
-              IVR {data.ivr_data.ivr_pct.toFixed(0)}%
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Direction Guide — replaces bare DirectionSelector */}
+      {/* ── Setup zone — direction + 3-column context inputs ── */}
       <div className="card card-sm">
-        <DirectionGuide
-          direction={direction}
-          setDirection={setDirection}
-          locked={[]}
-        />
-        <PreAnalysisPrompts ticker={ticker} direction={direction} />
-
-        {/* Scan Context — paste /ibkr-scan SCAN CONTEXT block here */}
-        <div style={{ marginTop: 10 }}>
-          <textarea
-            placeholder="Optional: paste SCAN CONTEXT from /ibkr-scan to activate live IVR, P/C ratio, and trend gate&#10;Example: TICKER=XLF  IVR=47  IV_HV=1.21  PEMA200=+3.1  PEMA50=+1.2  PC=0.85  DIRECTION=sell_put"
-            value={scanContext}
-            onChange={e => onScanContextChange(e.target.value)}
-            style={{
-              width: '100%', boxSizing: 'border-box', minHeight: 52,
-              padding: '6px 8px', borderRadius: 6, border: '1px solid #334',
-              background: scanContext.trim() ? '#0d2a1a' : '#151520',
-              color: scanContext.trim() ? '#7fe0a0' : '#6b7280',
-              fontSize: 11, fontFamily: 'monospace', resize: 'vertical',
-              outline: 'none',
-            }}
-          />
-          {scanContext.trim() && (
-            <div style={{ fontSize: 10, color: '#7fe0a0', marginTop: 2 }}>
-              Scan context active — IVR, P/C, and trend gates will use live IBKR data
-            </div>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>Direction:</span>
+          <select
+            value={direction}
+            onChange={e => setDirection(e.target.value)}
+            style={{ background: '#1a1a2e', color: '#e0e0e0', border: '1px solid #334', borderRadius: 4, padding: '3px 6px', fontSize: 12 }}
+          >
+            <option value="sell_put">Sell Put</option>
+            <option value="sell_call">Sell Call</option>
+            <option value="buy_call">Buy Call</option>
+            <option value="buy_put">Buy Put</option>
+          </select>
         </div>
 
-        <button
-          className="analyze-btn"
-          style={{ marginTop: 10, width: '100%' }}
-          onClick={onAnalyze}
-          disabled={loading}
-        >
+        {/* 3-column context grid */}
+        <div className="context-grid">
+          <div className="context-input-col">
+            <div className="context-input-label">1 — SCAN CONTEXT <span style={{ color: '#7fe0a0' }}>/ibkr-scan</span></div>
+            <textarea
+              placeholder="TICKER=QQQ  IVR=75  IV_HV=1.299  PC=1.008  PEMA200=+20.49  PEMA50=+10.04  DIRECTION=sell_put"
+              value={scanContext}
+              onChange={e => onScanContextChange(e.target.value)}
+              className={`context-textarea scan${scanContext.trim() ? ' active' : ''}`}
+            />
+            {scanContext.trim() && <div className="context-active-msg scan">✓ IVR · P/C · trend gates active</div>}
+          </div>
+          <div className="context-input-col">
+            <div className="context-input-label">2 — CHART CONTEXT <span style={{ color: '#7ec8e0' }}>/chartreview</span></div>
+            <textarea
+              placeholder="CHART CONTEXT  TICKER=QQQ  TREND=UPTREND  S1=710.00  S2=695.00  R1=748.00  CHART_VERDICT=go"
+              value={chartContext}
+              onChange={e => onChartContextChange(e.target.value)}
+              className={`context-textarea chart${chartContext.trim() ? ' active' : ''}`}
+            />
+            {chartContext.trim() && <div className="context-active-msg chart">✓ Strike vs support active</div>}
+          </div>
+          <div className="context-input-col">
+            <div className="context-input-label">3 — CATALYST CONTEXT <span style={{ color: '#e0b87e' }}>/catalyst-check</span></div>
+            <textarea
+              placeholder="CATALYST CONTEXT  TICKER=QQQ  FOMC_DAYS=16  FOMC_TIER=warn  HOLDINGS_RISK=true  HOLDINGS_COMPANY=NVDA  HOLDINGS_DAYS=23  CATALYST_VERDICT=caution"
+              value={catalystContext}
+              onChange={e => onCatalystContextChange(e.target.value)}
+              className={`context-textarea catalyst${catalystContext.trim() ? ' active' : ''}`}
+            />
+            {catalystContext.trim() && <div className="context-active-msg catalyst">✓ Event risk overlay active</div>}
+          </div>
+        </div>
+
+        <button className="analyze-btn" style={{ marginTop: 10, width: '100%' }} onClick={onAnalyze} disabled={loading}>
           {loading ? 'Analyzing...' : 'Run Analysis'}
         </button>
       </div>
 
       {error && <div className="error-bar">{error}</div>}
 
-      <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} />
+      {/* ── Decision zone — only when data exists ── */}
+      {hasData && (
+        <>
+          {/* Context status chips */}
+          <ContextChips
+            scanContext={scanContext}
+            chartVerdict={data?.chart_verdict}
+            catalystVerdict={data?.catalyst_summary?.catalyst_verdict}
+          />
 
-      <CopyForChatGPT ticker={ticker} direction={direction} data={data} />
-
-      {/* Trade Explainer — visual "what is this trade" */}
-      {data?.top_strategies?.[0] && (
-        <TradeExplainer
-          strategy={data.top_strategies[0]}
-          underlyingPrice={data.underlying_price}
-          ticker={ticker}
-          direction={direction}
-        />
-      )}
-
-      {/* Gate Explainer — replaces GatesGrid */}
-      <GateExplainer gates={data?.gates || []} direction={direction} />
-
-      <TopThreeCards
-        strategies={data?.top_strategies || []}
-        gates={data?.gates || []}
-        pnlTable={data?.pnl_table}
-        expectedMove1sd={data?.expected_move_1sd}
-      />
-      <ExecutionCard
-        ticker={ticker}
-        strategy={data?.top_strategies?.[0]}
-        verdict={data?.verdict}
-      />
-      <PnLTable
-        table={data?.pnl_table}
-        gateFailed={false}
-      />
-
-      {/* ETF behavioral checks — regime/IV context advisories */}
-      {data?.behavioral_checks?.length > 0 && (
-        <div className="card">
-          <div className="section-title">Advisories</div>
-          {data.behavioral_checks.map(c => (
-            <div key={c.id} className={`behavioral-check behavioral-check-${c.type}`}>
-              <span className="bc-label">{c.label}</span>
-              <span className="bc-msg">{c.message}</span>
+          {/* Two-column layout: verdict left, trade right */}
+          <div className="decision-layout">
+            <div className="verdict-col">
+              <MasterVerdict verdict={data?.verdict} gates={data?.gates || []} compact={true} />
             </div>
-          ))}
-        </div>
-      )}
+            <div className="trade-col">
+              <TopThreeCards
+                strategies={data?.top_strategies || []}
+                gates={data?.gates || []}
+                pnlTable={data?.pnl_table}
+                expectedMove1sd={data?.expected_move_1sd}
+                chartVerdict={data?.chart_verdict}
+                selectedRank={selectedRank}
+                onSelectRank={setSelectedRank}
+              />
+              {/* Log Paper Trade — inline under the trade cards */}
+              <PaperTradeBanner
+                ticker={ticker}
+                direction={direction}
+                data={selectedRank ? { ...data, top_strategies: [strategyForLog, ...(data?.top_strategies?.filter(s => s.rank !== selectedRank) || [])] } : data}
+                onLogged={onTradeLogged}
+              />
+            </div>
+          </div>
 
-      <PaperTradeBanner ticker={ticker} direction={direction} data={data} onLogged={onTradeLogged} />
+          {/* Below-fold collapsibles — educational/detail */}
+          <details className="below-fold-section">
+            <summary>Understand this trade</summary>
+            <TradeExplainer strategy={data.top_strategies[0]} underlyingPrice={data.underlying_price} ticker={ticker} direction={direction} />
+          </details>
+
+          <details className="below-fold-section">
+            <summary>All {data?.gates?.length ?? 0} gate checks</summary>
+            <GateExplainer gates={data?.gates || []} direction={direction} />
+          </details>
+
+          <details className="below-fold-section">
+            <summary>Place in IBKR</summary>
+            <ExecutionCard ticker={ticker} strategy={data?.top_strategies?.[0]} verdict={data?.verdict} />
+          </details>
+
+          <details className="below-fold-section">
+            <summary>P&amp;L table</summary>
+            <PnLTable table={data?.pnl_table} gateFailed={false} />
+          </details>
+
+          {data?.behavioral_checks?.length > 0 && (
+            <details className="below-fold-section">
+              <summary>Advisories ({data.behavioral_checks.length})</summary>
+              <div className="card" style={{ marginTop: 0 }}>
+                {data.behavioral_checks.map(c => (
+                  <div key={c.id} className={`behavioral-check behavioral-check-${c.type}`}>
+                    <span className="bc-label">{c.label}</span>
+                    <span className="bc-msg">{c.message}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          <div style={{ textAlign: 'right', marginTop: 8 }}>
+            <CopyForChatGPT ticker={ticker} direction={direction} data={data} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -192,7 +234,9 @@ export default function App() {
   const [direction, setDirection]         = useState('buy_call');
   const [activeTab, setActiveTab]         = useState('setups');
   const [dashRefreshTick, setDashRefreshTick] = useState(0);
-  const [scanContext, setScanContext]     = useState('');
+  const [scanContext, setScanContext]       = useState('');
+  const [chartContext, setChartContext]     = useState('');
+  const [catalystContext, setCatalystContext] = useState('');
 
   const handleTradeLogged = () => {
     setDashRefreshTick(t => t + 1);
@@ -202,9 +246,16 @@ export default function App() {
 
 
   const runAnalysis = useCallback((etfTicker, dir) => {
-    const ctx = scanContext.trim();
-    analyze({ ticker: etfTicker, direction: dir, ...(ctx ? { scan_context: ctx } : {}) }).catch(() => {});
-  }, [analyze, scanContext]);
+    const ctx  = scanContext.trim();
+    const chrt = chartContext.trim();
+    const cat  = catalystContext.trim();
+    analyze({
+      ticker: etfTicker, direction: dir,
+      ...(ctx  ? { scan_context:     ctx  } : {}),
+      ...(chrt ? { chart_context:    chrt } : {}),
+      ...(cat  ? { catalyst_context: cat  } : {}),
+    }).catch(() => {});
+  }, [analyze, scanContext, chartContext, catalystContext]);
 
   // Select from Today's Trade → switch to signal board with ETF pre-analyzed
   const handleSelectFromSetups = useCallback((ticker, direction) => {
@@ -232,26 +283,8 @@ export default function App() {
       {/* Regime bar — always visible */}
       <RegimeBar />
 
-      {/* Top-level tab nav */}
+      {/* Top-level tab nav — 4 primary tabs + ⚙ overflow */}
       <div className="app-tab-nav">
-        <button
-          className={`app-tab-btn ${activeTab === 'signals' ? 'app-tab-active' : ''}`}
-          onClick={() => setActiveTab('signals')}
-        >
-          Signal Board
-        </button>
-        <button
-          className={`app-tab-btn ${activeTab === 'learn' ? 'app-tab-active' : ''}`}
-          onClick={() => setActiveTab('learn')}
-        >
-          Learn Options
-        </button>
-        <button
-          className={`app-tab-btn ${activeTab === 'dashboard' ? 'app-tab-active' : ''}`}
-          onClick={() => setActiveTab('dashboard')}
-        >
-          Dashboard
-        </button>
         <button
           className={`app-tab-btn ${activeTab === 'setups' ? 'app-tab-active' : ''}`}
           onClick={() => setActiveTab('setups')}
@@ -259,10 +292,31 @@ export default function App() {
           Today's Trade
         </button>
         <button
+          className={`app-tab-btn ${activeTab === 'signals' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('signals')}
+        >
+          Signal Board
+        </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'dashboard' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          Paper Trades
+        </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'learn' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('learn')}
+        >
+          Learn
+        </button>
+        {/* ⚙ overflow — maintenance/debug tools */}
+        <button
           className={`app-tab-btn ${activeTab === 'data' ? 'app-tab-active' : ''}`}
           onClick={() => setActiveTab('data')}
+          title="Data Health — infrastructure monitoring"
+          style={{ marginLeft: 'auto', opacity: 0.6, fontSize: 14 }}
         >
-          Data Health
+          ⚙
         </button>
       </div>
 
@@ -288,6 +342,10 @@ export default function App() {
             onTradeLogged={handleTradeLogged}
             scanContext={scanContext}
             onScanContextChange={setScanContext}
+            chartContext={chartContext}
+            onChartContextChange={setChartContext}
+            catalystContext={catalystContext}
+            onCatalystContextChange={setCatalystContext}
           />
         ) : (
           <div className="analysis-empty">

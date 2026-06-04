@@ -10,8 +10,8 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 64 — v0.35.6)
-Audit session. MASTER_AUDIT_FRAMEWORK updated to v1.6. Full audit: 0C/0H/3M/2L — all MEDIUM fixed same session. Fixes: SELL_PUT_OTM_PASS_PCT constant (R3 violation), fomc_gate GATE_KB entry, ivr_seller 35% threshold. Trend_ema gate confirmed direction-aware for all 4 directions. 52 tests. 0 HIGH/MEDIUM open. Next: Three-input context (CHART+CATALYST parsers) is P0 Day 65.
+## Current Phase (Day 65 — v0.35.7)
+Three-input context complete. SCAN+CHART+CATALYST context parsers + gate wiring + frontend all shipped. KI-110 fixed. 93 tests. 0 CRITICAL/HIGH/MEDIUM open. Rule 24 added (Opus for design, Sonnet for execution). Skills moved to `skills/` folder (symlinked from `.claude/commands/`).
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
@@ -60,9 +60,11 @@ backend/
                       apply_scan_context_to_gate_payload() merges live IVR, P/C ratio, trend EMA into gate_payload.
                       Bridges /ibkr-scan skill output to analyze backend via copy-paste.
   strategy_ranker.py  UPDATED (Day 57+59) — single-leg only. Day 59: _rank_sell_put_etf TQQQ branch (delta 0.10/0.08/0.06).
-                      NOTE: buy_call returns "itm_call"/"atm_call"/"otm_call" (not "buy_call") — KI-110 LOW.
-  pnl_calculator.py   UPDATED (Day 58) — otm_call/otm_put now compute correct P&L (was 0.0). All types covered.
-  tests/              52 tests (pytest). 7 files. (37→52 Day 60: test_scan_context.py added — 15 new tests).
+                      Day 65: buy_call now returns "buy_call", buy_put returns "buy_put" — KI-110 FIXED.
+  pnl_calculator.py   UPDATED (Day 58+65) — otm_call/otm_put P&L fixed. buy_call/buy_put unified types added. All types covered.
+  chart_context_parser.py   NEW (Day 65) — parse_chart_context(), compute_strike_vs_support(), apply_chart_context_to_response()
+  catalyst_context_parser.py NEW (Day 65) — parse_catalyst_context(), apply_catalyst_context_to_gate_payload(), _strategy_catalyst_overlay()
+  tests/              93 tests (pytest). 9 files. (52→93 Day 65: test_chart_context.py + test_catalyst_context.py, 41 new tests).
 
 frontend/
   components/GateExplainer.jsx   UPDATED (Day 64) — fomc_gate entry added to GATE_KB (3-tier logic explanation). ivr_seller updated with explicit 35% threshold + tastylive citation.
@@ -105,7 +107,7 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Apply to 1D chart on any of QQQ/IWM/XLF/GLD/TQQQ
 - Adds: EMA 20/50/200 lines, pivot markers, dashed S1/S2/R1/R2 lines, dashboard table (top-right)
 - Dashboard table shows: Price, Trend verdict, EMA values + % + slope, ATR(14), RSI(14), R1/R2/S1/S2/S3
-- Usage: screenshot chart → paste to `opus /chartreview [ETF] [direction]`
+- Usage: screenshot chart → paste to `/chartreview [ETF] [direction]`
 - User has not yet tested this on TradingView — to try when market is open
 
 ## Git Status

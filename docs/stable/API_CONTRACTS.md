@@ -206,6 +206,17 @@ Main analysis endpoint. Takes swing data + direction, returns gates + strategies
 
 **`scan_context` request field (added Day 60):** Optional string. Paste the SCAN CONTEXT line from `/ibkr-scan` skill output. Parser extracts `IVR`, `IV_HV`, `PEMA200`, `PEMA50`, `PC` and merges into gate payload — overrides stale DB values with live IBKR data. Format: `TICKER=QQQ  IVR=36  IV_HV=1.214  PEMA200=+8.2  PEMA50=+3.1  PC=0.94  DIRECTION=sell_put`
 
+**`chart_context` request field (added Day 65):** Optional string. Paste the CHART CONTEXT line from `/chartreview` skill output. Applied post-gate — never modifies gate_payload (zero blast radius). Adds `strike_vs_support` to each strategy and `chart_verdict`/`chart_levels` to response. Format: `CHART CONTEXT  TICKER=QQQ  DIRECTION=sell_put  TREND=UPTREND  S1=710.00  S2=695.00  R1=748.00  RSI=58  ATR=8.40  CHART_VERDICT=go`
+
+**`catalyst_context` request field (added Day 65):** Optional string. Paste the CATALYST CONTEXT line from `/catalyst-check` skill output. Merges into gate_payload as advisory `catalyst_override` before gates run. Rule 23: cannot override structural hard blocks (XLF/TQQQ FOMC within 14d). Appends confirmation/mismatch notes to FOMC and holdings gate reason strings. Adds `catalyst_summary` to response and `catalyst_overlay` (clears_event per expiry) to each strategy. Format: `CATALYST CONTEXT  TICKER=QQQ  DIRECTION=sell_put  FOMC_DAYS=16  FOMC_TIER=warn  HOLDINGS_RISK=true  HOLDINGS_COMPANY=NVDA  HOLDINGS_DAYS=23  MACRO_COUNT=1  CATALYST_VERDICT=caution`
+
+**New response fields (Day 65):**
+- `chart_verdict`: `{verdict, trend, rsi, atr}` — present when `chart_context` supplied
+- `chart_levels`: `{s1, s2, s3, r1, r2}` — support/resistance dollar levels from chart
+- `catalyst_summary`: full catalyst_override dict — present when `catalyst_context` supplied
+- Per-strategy `strike_vs_support`: `{zone, label, atr_distance}` — where strike sits vs S/R levels
+- Per-strategy `catalyst_overlay`: `{clears_event, label, earnings_date}` — whether expiry clears upcoming earnings
+
 **OI/Volume source:** `open_interest` and `volume` in strategies are supplemented from MarketData.app REST API when available. Falls back to 0 if MarketData.app times out or is unreachable. IBKR `reqMktData` does not return per-contract OI (platform limitation KI-035).
 
 **`md_supplement`:** Present when MarketData.app returns data. Contains raw greeks + OI/volume from MD.app for the nearest ATM contract (~30 DTE). `iv` is decimal (e.g. 0.17 = 17%). `null` when MD.app call fails or returns no data. When chain IV is absent (Alpaca fallback), `ivr_data.iv_source` will be `"marketdata"` — the IV was patched from this field.

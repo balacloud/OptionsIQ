@@ -91,6 +91,41 @@ def _gate(
     }
 
 
+def _append_fomc_catalyst_note(gate: dict, p: dict) -> dict:
+    """Additive-only: append catalyst confirmation or mismatch note to FOMC gate reason.
+
+    Rule 23: hard-block branches are never touched — this only annotates warn/pass outcomes.
+    Effect 1: no reconcile notes + warn gate → "(confirmed by /catalyst-check)"
+    Effect 2: FOMC mismatch note present → append it so the user sees the disagreement.
+    """
+    if gate.get("blocking"):
+        return gate  # never annotate hard blocks
+    override = p.get("catalyst_override")
+    if not override:
+        return gate
+    fomc_notes = [n for n in (override.get("reconcile_notes") or []) if "FOMC" in n]
+    if fomc_notes:
+        gate["reason"] = gate["reason"] + f" ⚠️ {fomc_notes[0]}"
+    elif gate["status"] == "warn" and not override.get("reconcile_notes"):
+        gate["reason"] = gate["reason"] + " (confirmed by /catalyst-check)"
+    return gate
+
+
+def _append_holdings_catalyst_note(gate: dict, p: dict) -> dict:
+    """Additive-only: append holdings mismatch note to holdings_earnings gate reason.
+
+    Rule 23: if catalyst says HOLDINGS_RISK=false but backend found at-risk holdings,
+    surface the disagreement — disagreement is a signal, never silent (Rule 11).
+    """
+    override = p.get("catalyst_override")
+    if not override:
+        return gate
+    holdings_notes = [n for n in (override.get("reconcile_notes") or []) if "Holdings" in n]
+    if holdings_notes:
+        gate["reason"] = gate["reason"] + f" ⚠️ {holdings_notes[0]}"
+    return gate
+
+
 @dataclass
 class GateEngine:
     planned_hold_days: int = 7
@@ -848,10 +883,11 @@ class GateEngine:
         count = len(at_risk)
         names = ", ".join(f"{h['symbol']} ({h['days_away']}d)" for h in at_risk[:4])
         r = f"{count} holding{'s' if count > 1 else ''} report before expiry: {names}"
-        return _gate("holdings_earnings", "Key Holdings Earnings", "warn",
-                     f"{count} at risk",
-                     "warn if any key holding reports inside DTE window",
-                     r, False)
+        g = _gate("holdings_earnings", "Key Holdings Earnings", "warn",
+                  f"{count} at risk",
+                  "warn if any key holding reports inside DTE window",
+                  r, False)
+        return _append_holdings_catalyst_note(g, p)
 
     def _etf_event_density_gate(self, p: dict, dte: int) -> dict:
         """KI-097: count ALL macro events in the DTE window, not just the nearest one.
@@ -893,6 +929,7 @@ class GateEngine:
           Never block on FOMC. Warn + delta cap within FOMC_WARN_DAYS_NEAR (7d).
           FOMC meets 8x/year; blocking QQQ on FOMC presence prevents trading 70-95% of time.
         All others: warn if event falls inside holding window.
+        Catalyst note: additive-only annotation on warn/pass branches (Rule 23).
         """
         ticker    = p.get("ticker", "")
         fomc_days = int(p.get("fomc_days_away", 999) or 999)
@@ -905,44 +942,52 @@ class GateEngine:
         if ticker in FOMC_BLOCK_TICKERS:
             if fomc_days <= FOMC_BLOCK_DAYS:
                 if is_seller:
+                    # Hard block — never annotated by catalyst (Rule 23: catalyst cannot unblock)
                     return _gate("events", "Event Calendar", "fail", val,
                                  f"{ticker}: FOMC must be >{FOMC_BLOCK_DAYS}d away",
                                  f"FOMC in {fomc_days}d — {ticker} is rate/leverage sensitive. Hard block within {FOMC_BLOCK_DAYS} days.",
                                  True)
-                else:
-                    return _gate("events", "Event Calendar", "warn", val,
-                                 f"FOMC within {FOMC_BLOCK_DAYS}d — buyers: consider sizing down",
-                                 f"FOMC in {fomc_days}d. Buyers have defined risk but vol event may spike IV unfavorably. Reduce size.",
-                                 False)
+                g = _gate("events", "Event Calendar", "warn", val,
+                          f"FOMC within {FOMC_BLOCK_DAYS}d — buyers: consider sizing down",
+                          f"FOMC in {fomc_days}d. Buyers have defined risk but vol event may spike IV unfavorably. Reduce size.",
+                          False)
             elif fomc_days < dte:
-                return _gate("events", "Event Calendar", "warn", val, threshold_str,
-                             f"FOMC in {fomc_days}d inside holding window — {ticker} rate-sensitive. Consider reducing size.",
-                             False)
+                g = _gate("events", "Event Calendar", "warn", val, threshold_str,
+                          f"FOMC in {fomc_days}d inside holding window — {ticker} rate-sensitive. Consider reducing size.",
+                          False)
+            else:
+                g = _gate("events", "Event Calendar", "pass", val,
+                          threshold_str, "No major events inside holding window", False)
 
         elif ticker in FOMC_WARN_TICKERS:
             if fomc_days <= FOMC_WARN_DAYS_NEAR:
-                return _gate("events", "Event Calendar", "warn", val,
-                             f"FOMC within {FOMC_WARN_DAYS_NEAR}d → use delta 0.15 max",
-                             f"FOMC imminent ({fomc_days}d). Reduce delta to 0.15 max. Not a block.",
-                             False)
+                g = _gate("events", "Event Calendar", "warn", val,
+                          f"FOMC within {FOMC_WARN_DAYS_NEAR}d → use delta 0.15 max",
+                          f"FOMC imminent ({fomc_days}d). Reduce delta to 0.15 max. Not a block.",
+                          False)
             elif fomc_days < dte:
-                return _gate("events", "Event Calendar", "warn", val,
-                             "FOMC in window → use delta 0.15",
-                             f"FOMC in {fomc_days}d inside holding window. Use delta 0.15 instead of 0.20.",
-                             False)
+                g = _gate("events", "Event Calendar", "warn", val,
+                          "FOMC in window → use delta 0.15",
+                          f"FOMC in {fomc_days}d inside holding window. Use delta 0.15 instead of 0.20.",
+                          False)
+            else:
+                g = _gate("events", "Event Calendar", "pass", val,
+                          threshold_str, "No major events inside holding window", False)
 
         else:
             nearest_days = min(fomc_days, macro_days)
             nearest_name = "FOMC" if fomc_days <= macro_days else macro_name
             if nearest_days < 5:
-                return _gate("events", "Event Calendar", "warn", val, threshold_str,
-                             f"{nearest_name} imminent — consider reducing size or avoid entry", False)
+                g = _gate("events", "Event Calendar", "warn", val, threshold_str,
+                          f"{nearest_name} imminent — consider reducing size or avoid entry", False)
             elif nearest_days < dte:
-                return _gate("events", "Event Calendar", "warn", val, threshold_str,
-                             f"{nearest_name} in {nearest_days}d falls inside holding window ({dte} DTE)", False)
+                g = _gate("events", "Event Calendar", "warn", val, threshold_str,
+                          f"{nearest_name} in {nearest_days}d falls inside holding window ({dte} DTE)", False)
+            else:
+                g = _gate("events", "Event Calendar", "pass", val,
+                          threshold_str, "No major events inside holding window", False)
 
-        return _gate("events", "Event Calendar", "pass", val,
-                     threshold_str, "No major events inside holding window", False)
+        return _append_fomc_catalyst_note(g, p)
 
     def _etf_spy_regime_bull_gate(self, p: dict) -> dict:
         """SPY regime gate for bullish ETF buyers (buy_call)."""

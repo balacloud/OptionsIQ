@@ -47,15 +47,15 @@ export default function BestSetups({ onSelect }) {
       <div className="tt-steps">
         <div className="tt-step">
           <span className="tt-step-n">1</span>
-          Screenshot IBKR watchlist → paste to <code className="tt-code">/ibkr-scan</code>
+          Run <code className="tt-code">/ibkr-scan</code> in browser (MCP auto-pulls all 6 ETFs + screenshot) → names top pick
         </div>
         <div className="tt-step">
           <span className="tt-step-n">2</span>
-          /ibkr-scan names the ETF + direction (e.g. "XLF sell_put")
+          Run <code className="tt-code">/chartreview</code> + <code className="tt-code">/catalyst-check</code> → copy all 3 context blocks
         </div>
         <div className="tt-step">
           <span className="tt-step-n">3</span>
-          Select below → Analyze → review gates → log paper trade
+          Select ETF below → paste 3 contexts → Run Analysis → log paper trade
         </div>
       </div>
 

@@ -225,9 +225,9 @@ class StrategyRanker:
         d30 = self._closest_delta(calls, 0.30)
 
         configs = [
-            (d68, "itm_call", "ITM call — delta 0.68. Intrinsic value shields theta. Best for sustained directional moves.", None),
-            (d50, "atm_call", "ATM call — delta 0.50. Balanced cost and leverage. Standard entry for moderate moves.", None),
-            (d30, "otm_call", "OTM call — delta 0.30. High leverage, highest risk. Requires strong breakout confirmation.",
+            (d68, "buy_call", "ITM call — delta 0.68. Intrinsic value shields theta. Best for sustained directional moves.", None),
+            (d50, "buy_call", "ATM call — delta 0.50. Balanced cost and leverage. Standard entry for moderate moves.", None),
+            (d30, "buy_call", "OTM call — delta 0.30. High leverage, highest risk. Requires strong breakout confirmation.",
              "OTM — theta burns fast. Needs quick directional move. Size small."),
         ]
 
@@ -261,9 +261,9 @@ class StrategyRanker:
         d30 = self._closest_delta(puts, 0.30)
 
         configs = [
-            (d68, "itm_put", "ITM put — delta 0.68. Intrinsic value shields theta. Best for momentum breakdowns.", None),
-            (d50, "atm_put", "ATM put — delta 0.50. Balanced cost and leverage. Standard entry for confirmed downtrends.", None),
-            (d30, "otm_put", "OTM put — delta 0.30. High leverage, highest risk. Requires strong breakdown confirmation.",
+            (d68, "buy_put", "ITM put — delta 0.68. Intrinsic value shields theta. Best for momentum breakdowns.", None),
+            (d50, "buy_put", "ATM put — delta 0.50. Balanced cost and leverage. Standard entry for confirmed downtrends.", None),
+            (d30, "buy_put", "OTM put — delta 0.30. High leverage, highest risk. Requires strong breakdown confirmation.",
              "OTM — theta burns fast. Needs quick move lower. Size small."),
         ]
 

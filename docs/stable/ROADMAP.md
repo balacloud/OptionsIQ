@@ -219,7 +219,7 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-104: reqMktData snapshot=True invalid with genericTickList — switched to snapshot=False ✅ Day 51
 - [x] KI-105: tick 104 invalid for STK contracts — corrected to 106,411,100,105 ✅ Day 51
 - [ ] IBKR market data subscription — required for ETF generic ticks via reqMktData (~$6/month, optional — Tradier covers same data free)
-- [x] **Architecture pivot — /ibkr-scan skill** — `.claude/commands/ibkr-scan.md` built; 4-layer scoring (Regime→IV→Trend→Sentiment); TQQQ delta 0.10 max; GLD IV/HV ≥ 1.10 required ✅ Day 57
+- [x] **Architecture pivot — /ibkr-scan skill** — `skills/ibkr-scan.md` built; 4-layer scoring (Regime→IV→Trend→Sentiment); TQQQ delta 0.10 max; GLD IV/HV ≥ 1.10 required ✅ Day 57
 - [x] **FOMC 3-tier gate** — BLOCK: XLF/XLRE/TQQQ within 14d; WARN: QQQ/IWM/GLD within 7d; event density threshold 7→12 ✅ Day 57
 - [x] **expected_move + exit_plan in analyze response** — `expected_move_1sd`, per-strategy `expected_move`/`strike_vs_expected_move`/`strike_vs_em_label`/`exit_plan` ✅ Day 57
 - [x] **strategy_ranker.py single-leg rewrite** — 700→280 lines; removed all spread builders; sell_put/call/buy_call/put single-leg only ✅ Day 57
@@ -232,8 +232,8 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] KI-107: TQQQ delta guard — strategy_ranker uses 0.10/0.08/0.06; `_tqqq_satellite_gate()` wired into sell_put + sell_call ✅ Day 59
 - [x] KI-108: GLD IV-cheap gate — `_etf_hv_iv_seller_gate()` hard-blocks GLD when IV/HV < 1.10 ✅ Day 59
 - [x] KI-109: sell_call FOMC consistency — Gate 6 replaced with `_etf_fomc_gate(p, dte, "sell_call")` ✅ Day 59
-- [x] `/chartreview` skill — `.claude/commands/chartreview.md` built; Opus-powered; reads OptionsIQ dashboard table from TradingView if present ✅ Day 59
-- [x] `/catalyst-check` skill — `.claude/commands/catalyst-check.md` built; reads constants.py FOMC/MACRO/EARNINGS + web search ✅ Day 59
+- [x] `/chartreview` skill — `skills/chartreview.md` built; reads OptionsIQ dashboard table from TradingView if present ✅ Day 59
+- [x] `/catalyst-check` skill — `skills/catalyst-check.md` built; reads constants.py FOMC/MACRO/EARNINGS + web search ✅ Day 59
 - [x] TradingView Pine Script — `tradingview/OptionsIQ_ChartReview.pine` (Indicator type; EMA 20/50/200; pivot S/R; dashboard table top-right) ✅ Day 59
 - [x] Scan context parser — `backend/scan_context_parser.py` KEY=VALUE regex; `apply_scan_context_to_gate_payload()` merges live IVR + P/C + trend ✅ Day 60
 - [x] `_trend_ema_gate()` — wired into all 4 ETF gate tracks; HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback ✅ Day 60

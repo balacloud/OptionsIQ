@@ -1,4 +1,3 @@
-import { useState } from 'react';
 
 function fmt(v) {
   if (v == null) return '—';
@@ -102,8 +101,25 @@ function ExitPlanBlock({ exitPlan, strategyType }) {
   );
 }
 
-export default function TopThreeCards({ strategies, gates, pnlTable, expectedMove1sd }) {
-  const [altsOpen, setAltsOpen] = useState(false);
+const SUPPORT_ZONE_COLOR = {
+  above_s1:      '#e0b87e',  // amber — exposed
+  between_s1_s2: '#c0c0c0',  // neutral
+  below_s1:      '#7fe0a0',  // green
+  below_s2:      '#7fe0a0',  // green
+  above_r2:      '#7fe0a0',
+  above_r1:      '#7fe0a0',
+  between_r1_r2: '#c0c0c0',
+  below_r1:      '#e0b87e',
+  no_data:       null,
+};
+
+const CHART_VERDICT_STYLE = {
+  go:    { color: '#7fe0a0', label: 'Chart GO ✅' },
+  wait:  { color: '#e0b87e', label: 'Chart WAIT ⚠️' },
+  block: { color: '#e05252', label: 'Chart BLOCK ❌' },
+};
+
+export default function TopThreeCards({ strategies, gates, pnlTable, expectedMove1sd, chartVerdict, selectedRank, onSelectRank }) {
 
   const pivotFail       = gates.some((g) => g.id === 'pivot_confirm' && g.status === 'fail');
   const anyBlockingFail = gates.some((g) => g.blocking && g.status === 'fail');
@@ -143,6 +159,11 @@ export default function TopThreeCards({ strategies, gates, pnlTable, expectedMov
           <div className="em-context">
             <span>±<strong>${Number(expectedMove1sd).toFixed(2)}</strong> expected move (1σ, {rank1.dte ?? '?'}d)</span>
             <span style={{ marginLeft: 10, color: 'var(--text-muted)' }}>— strikes outside this range have PoP ≥ 84%</span>
+            {chartVerdict && CHART_VERDICT_STYLE[chartVerdict] && (
+              <span style={{ marginLeft: 12, fontSize: 11, color: CHART_VERDICT_STYLE[chartVerdict].color, fontWeight: 600 }}>
+                {CHART_VERDICT_STYLE[chartVerdict].label}
+              </span>
+            )}
           </div>
         )}
 
@@ -201,6 +222,14 @@ export default function TopThreeCards({ strategies, gates, pnlTable, expectedMov
                 <div className="val" style={{ fontSize: 13 }}>{rank1.strike_vs_em_label}</div>
               </div>
             )}
+            {rank1.strike_vs_support?.label && rank1.strike_vs_support.zone !== 'no_data' && (
+              <div className="strategy-detail-item" style={{ gridColumn: '1 / -1' }}>
+                <label>vs Support</label>
+                <div className="val" style={{ fontSize: 12, color: SUPPORT_ZONE_COLOR[rank1.strike_vs_support.zone] || 'inherit' }}>
+                  {rank1.strike_vs_support.label}
+                </div>
+              </div>
+            )}
             {rank1.credit_to_width_ratio != null && (
               <div className="strategy-detail-item">
                 <label>Credit / Width</label>
@@ -233,63 +262,54 @@ export default function TopThreeCards({ strategies, gates, pnlTable, expectedMov
               <span>{rank1.warning}</span>
             </div>
           )}
+          {rank1.catalyst_overlay?.clears_event === false && rank1.catalyst_overlay?.label && (
+            <div className="strategy-warning" style={{ borderLeftColor: '#e0b87e', color: '#e0b87e' }}>
+              <span>!</span>
+              <span>{rank1.catalyst_overlay.label}</span>
+            </div>
+          )}
         </div>
 
-        {/* Ranks 2 & 3 — collapsible */}
+        {/* Ranks 2 & 3 — always-visible compact rows */}
         {alts.length > 0 && (
-          <div className="collapsible" style={{ marginTop: 10 }}>
-            <div className="collapsible-header" onClick={() => setAltsOpen((o) => !o)}>
-              <div className="collapsible-title" style={{ fontSize: 12 }}>
-                Alternative Strategies
-              </div>
-              <span className={`collapsible-arrow ${altsOpen ? 'open' : ''}`}>▼</span>
-            </div>
-            {altsOpen && (
-              <div className="collapsible-body">
-                <div className="strategy-alts">
-                  {alts.map((s) => {
-                    const pnl = extractPnl(pnlTable, s.rank);
-                    return (
-                      <div key={s.rank} className="strategy-alt" style={{ position: 'relative' }}>
-                        {gatedOut && <div className="strategy-overlay">GATED OUT</div>}
-                        <div className="strategy-alt-rank">#{s.rank}</div>
-                        <div className="strategy-alt-title">{s.label}</div>
-                        <div className="strategy-alt-meta">
-                          {s.strike_display && <div>Strike: {s.strike_display}</div>}
-                          {s.expiry_display && <div>Expiry: {s.expiry_display}</div>}
-                          {s.premium_per_lot != null && <div>Premium: ${fmt(s.premium_per_lot)}/lot</div>}
-                          {s.breakeven      != null && <div>Breakeven: ${fmt(s.breakeven)}</div>}
-                          {s.strike_vs_em_label != null && (
-                            <div style={{ marginTop: 4 }}>{s.strike_vs_em_label}</div>
-                          )}
-                          {s.exit_plan?.exit_date && (
-                            <div style={{ color: 'var(--text-muted)' }}>Exit by {s.exit_plan.exit_date}</div>
-                          )}
-                        </div>
-                        {!gatedOut && pnl.target != null && (
-                          <div style={{ marginTop: 8, fontSize: 12 }}>
-                            <span className="text-green">Target: +${Math.abs(pnl.target).toFixed(0)}</span>
-                            {pnl.stop != null && (
-                              <span className="text-red" style={{ marginLeft: 10 }}>
-                                Stop: -${Math.abs(pnl.stop).toFixed(0)}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {s.why && (
-                          <div className="strategy-alt-meta" style={{ marginTop: 6 }}>{s.why}</div>
-                        )}
-                        {s.warning && (
-                          <div className="strategy-warning" style={{ marginTop: 6, fontSize: 11 }}>
-                            <span>!</span><span>{s.warning}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+          <div className="strategy-alts-compact">
+            {alts.map((s) => {
+              const pnl = extractPnl(pnlTable, s.rank);
+              const isSelected = selectedRank === s.rank;
+              return (
+                <div
+                  key={s.rank}
+                  className={`strategy-alt-row ${isSelected ? 'selected' : ''}`}
+                  style={{ opacity: gatedOut ? 0.5 : 1 }}
+                >
+                  <span className="sar-rank">#{s.rank}</span>
+                  <span className="sar-label">{s.label}</span>
+                  {s.strike_vs_em_label && (
+                    <span className="sar-sigma">{s.strike_vs_em_label}</span>
+                  )}
+                  {pnl.target != null && (
+                    <span className="sar-pnl text-green">+${Math.abs(pnl.target).toFixed(0)}</span>
+                  )}
+                  {pnl.stop != null && (
+                    <span className="sar-pnl text-red">-${Math.abs(pnl.stop).toFixed(0)}</span>
+                  )}
+                  {s.catalyst_overlay?.clears_event === false && (
+                    <span style={{ fontSize: 10, color: '#e0b87e' }}>⚠️ earnings</span>
+                  )}
+                  {s.strike_vs_support?.zone === 'above_s1' && (
+                    <span style={{ fontSize: 10, color: '#e0b87e' }}>⚠️ above S1</span>
+                  )}
+                  {onSelectRank && (
+                    <button
+                      className="sar-select-btn"
+                      onClick={() => onSelectRank(isSelected ? null : s.rank)}
+                    >
+                      {isSelected ? '✓ selected' : 'select'}
+                    </button>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
         )}
       </div>

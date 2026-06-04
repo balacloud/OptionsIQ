@@ -40,6 +40,8 @@ from constants import (
 )
 from gate_engine import GateEngine
 from scan_context_parser import apply_scan_context_to_gate_payload
+from chart_context_parser import parse_chart_context, compute_strike_vs_support
+from catalyst_context_parser import apply_catalyst_context_to_gate_payload, _strategy_catalyst_overlay
 
 logger = logging.getLogger(__name__)
 
@@ -966,6 +968,9 @@ def analyze_etf(payload: dict, ticker: str, *,
         gate_payload, ivr_for_gates, ivr_confidence, payload
     )
 
+    # Merge /catalyst-check context: advisory overlay — never overrides hard blocks (Rule 23).
+    gate_payload, catalyst_overlay = apply_catalyst_context_to_gate_payload(gate_payload, payload)
+
     gates = engine.run(direction, gate_payload, etf_mode=is_etf)
 
     if is_etf:
@@ -988,6 +993,19 @@ def analyze_etf(payload: dict, ticker: str, *,
         ivr_data.get("current_iv"),
         ticker, direction,
     )
+
+    # Attach chart + catalyst context labels per strategy — post-gate, advisory only.
+    chart_ctx         = parse_chart_context(payload.get("chart_context", ""))
+    _holdings_days    = catalyst_overlay.get("holdings_days")    if catalyst_overlay else None
+    _holdings_company = catalyst_overlay.get("holdings_company") if catalyst_overlay else None
+    for _s in strategies:
+        _strike = _s.get("strike")
+        _s["strike_vs_support"] = (
+            compute_strike_vs_support(float(_strike), chart_ctx, direction, underlying, chart_ctx.get("atr"))
+            if _strike and underlying else {"zone": "no_data", "label": None, "atr_distance": None}
+        )
+        _s["catalyst_overlay"] = _strategy_catalyst_overlay(_s, _holdings_days, _holdings_company)
+
     gate8 = next((g for g in gates if g["id"] == "pivot_confirm"), {"status": "pass"})
     pnl_table = pnl_calculator.calculate(
         current_price=underlying,
@@ -1038,4 +1056,7 @@ def analyze_etf(payload: dict, ticker: str, *,
             ["buy_call", "sell_put"] if swing_data.get("signal") == "SELL" else []
         ),
         "skew": skew_data,
+        "chart_verdict": chart_ctx.get("chart_verdict") if chart_ctx else None,
+        "chart_levels": {k: chart_ctx[k] for k in ("s1", "s2", "s3", "r1", "r2") if k in chart_ctx} if chart_ctx else {},
+        "catalyst_summary": catalyst_overlay if catalyst_overlay else None,
     }

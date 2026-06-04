@@ -2,7 +2,7 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 62 (Jun 1, 2026)
+> **Last Updated:** Day 65 (Jun 3, 2026)
 
 ---
 
@@ -218,6 +218,17 @@ If a pre-filter tool (e.g. `/ibkr-scan`) has already validated a condition befor
 | GLD IV/HV < 1.10 | Backend only | Backend hard blocks (too subtle for watchlist scan) |
 
 **How to apply:** Before adding a hard block to gate_engine, ask: "Does `/ibkr-scan` already evaluate this?" If yes → warn, not block.
+
+### Rule 24: Opus for Design. Sonnet for Execution.
+
+Use the most capable model when **building or designing** something new — writing a skill, designing a scoring framework, thinking through edge cases, architecting a feature. That's where open-ended reasoning adds value.
+
+Use a standard model when **executing** a well-defined process — running a skill, following explicit rules, producing structured output. A skill whose every decision rule is already written out runs equally well on Sonnet. Defaulting to Opus for execution wastes capability on work that doesn't need it.
+
+**How to apply:**
+- Writing a new skill or gate → Opus
+- Running `/ibkr-scan`, `/chartreview`, `/catalyst-check` → Sonnet (rules are explicit, no open-ended judgment needed)
+- "Should I use Opus here?" → only if the task requires reasoning about something not already specified
 
 ### Rule 18: Liquidity Gate Thresholds Must Be Direction-Aware.
 The "strike nearness" sub-check in the liquidity gate (contract within N% of underlying) WILL always fail for ITM buyer strategies by design — that's what ITM means. Applying an ATM nearness filter to a delta-0.68 ITM call is a structural mismatch.
