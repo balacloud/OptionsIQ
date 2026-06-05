@@ -59,7 +59,7 @@ function ContextChips({ scanContext, chartVerdict, catalystVerdict }) {
   );
 }
 
-function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged, scanContext, onScanContextChange, chartContext, onChartContextChange, catalystContext, onCatalystContextChange }) {
+function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, onAnalyze, onClose, onTradeLogged, scanContext, onScanContextChange, chartCatalystContext, onChartCatalystContextChange }) {
   const [selectedRank, setSelectedRank] = useState(null);
   const hasData = !!data?.top_strategies?.[0];
   const strategyForLog = selectedRank
@@ -107,7 +107,7 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
           </select>
         </div>
 
-        {/* 3-column context grid */}
+        {/* 2-column context grid — box 2 accepts full /chartreview output (CHART CONTEXT + CATALYST CONTEXT lines together) */}
         <div className="context-grid">
           <div className="context-input-col">
             <div className="context-input-label">1 — SCAN CONTEXT <span style={{ color: '#7fe0a0' }}>/ibkr-scan</span></div>
@@ -120,24 +120,14 @@ function AnalysisPanel({ ticker, direction, setDirection, data, loading, error, 
             {scanContext.trim() && <div className="context-active-msg scan">✓ IVR · P/C · trend gates active</div>}
           </div>
           <div className="context-input-col">
-            <div className="context-input-label">2 — CHART CONTEXT <span style={{ color: '#7ec8e0' }}>/chartreview</span></div>
+            <div className="context-input-label">2 — CHART + CATALYST CONTEXT <span style={{ color: '#7ec8e0' }}>/chartreview</span></div>
             <textarea
-              placeholder="CHART CONTEXT  TICKER=QQQ  TREND=UPTREND  S1=710.00  S2=695.00  R1=748.00  CHART_VERDICT=go"
-              value={chartContext}
-              onChange={e => onChartContextChange(e.target.value)}
-              className={`context-textarea chart${chartContext.trim() ? ' active' : ''}`}
+              placeholder={"CHART CONTEXT  TICKER=QQQ  TREND=UPTREND  S1=710.00  S2=695.00  R1=748.00  CHART_VERDICT=go\nCATALYST CONTEXT  TICKER=QQQ  FOMC_DAYS=16  FOMC_TIER=warn  HOLDINGS_RISK=true  CATALYST_VERDICT=caution"}
+              value={chartCatalystContext}
+              onChange={e => onChartCatalystContextChange(e.target.value)}
+              className={`context-textarea chartcatalyst${chartCatalystContext.trim() ? ' active' : ''}`}
             />
-            {chartContext.trim() && <div className="context-active-msg chart">✓ Strike vs support active</div>}
-          </div>
-          <div className="context-input-col">
-            <div className="context-input-label">3 — CATALYST CONTEXT <span style={{ color: '#e0b87e' }}>/catalyst-check</span></div>
-            <textarea
-              placeholder="CATALYST CONTEXT  TICKER=QQQ  FOMC_DAYS=16  FOMC_TIER=warn  HOLDINGS_RISK=true  HOLDINGS_COMPANY=NVDA  HOLDINGS_DAYS=23  CATALYST_VERDICT=caution"
-              value={catalystContext}
-              onChange={e => onCatalystContextChange(e.target.value)}
-              className={`context-textarea catalyst${catalystContext.trim() ? ' active' : ''}`}
-            />
-            {catalystContext.trim() && <div className="context-active-msg catalyst">✓ Event risk overlay active</div>}
+            {chartCatalystContext.trim() && <div className="context-active-msg chartcatalyst">✓ Strike vs support · Event risk active</div>}
           </div>
         </div>
 
@@ -234,9 +224,8 @@ export default function App() {
   const [direction, setDirection]         = useState('buy_call');
   const [activeTab, setActiveTab]         = useState('setups');
   const [dashRefreshTick, setDashRefreshTick] = useState(0);
-  const [scanContext, setScanContext]       = useState('');
-  const [chartContext, setChartContext]     = useState('');
-  const [catalystContext, setCatalystContext] = useState('');
+  const [scanContext, setScanContext]               = useState('');
+  const [chartCatalystContext, setChartCatalystContext] = useState('');
 
   const handleTradeLogged = () => {
     setDashRefreshTick(t => t + 1);
@@ -246,16 +235,14 @@ export default function App() {
 
 
   const runAnalysis = useCallback((etfTicker, dir) => {
-    const ctx  = scanContext.trim();
-    const chrt = chartContext.trim();
-    const cat  = catalystContext.trim();
+    const ctx      = scanContext.trim();
+    const chartCat = chartCatalystContext.trim();
     analyze({
       ticker: etfTicker, direction: dir,
-      ...(ctx  ? { scan_context:     ctx  } : {}),
-      ...(chrt ? { chart_context:    chrt } : {}),
-      ...(cat  ? { catalyst_context: cat  } : {}),
+      ...(ctx      ? { scan_context: ctx } : {}),
+      ...(chartCat ? { chart_context: chartCat, catalyst_context: chartCat } : {}),
     }).catch(() => {});
-  }, [analyze, scanContext, chartContext, catalystContext]);
+  }, [analyze, scanContext, chartCatalystContext]);
 
   // Select from Today's Trade → switch to signal board with ETF pre-analyzed
   const handleSelectFromSetups = useCallback((ticker, direction) => {
@@ -342,10 +329,8 @@ export default function App() {
             onTradeLogged={handleTradeLogged}
             scanContext={scanContext}
             onScanContextChange={setScanContext}
-            chartContext={chartContext}
-            onChartContextChange={setChartContext}
-            catalystContext={catalystContext}
-            onCatalystContextChange={setCatalystContext}
+            chartCatalystContext={chartCatalystContext}
+            onChartCatalystContextChange={setChartCatalystContext}
           />
         ) : (
           <div className="analysis-empty">

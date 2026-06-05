@@ -3464,7 +3464,7 @@ tr:last-child td { border-bottom: none; }
 /* ── Redesign: Context grid ──────────────────────────────────── */
 .context-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 6px;
 }
@@ -3477,14 +3477,12 @@ tr:last-child td { border-bottom: none; }
   background: #151520; color: #6b7280;
   font-size: 10px; font-family: monospace; resize: vertical; outline: none;
 }
-.context-textarea.scan.active    { background: #0d2a1a; color: #7fe0a0; border-color: #1a4a2a; }
-.context-textarea.chart.active   { background: #0d1f2a; color: #7ec8e0; border-color: #1a3040; }
-.context-textarea.catalyst.active{ background: #2a1a0d; color: #e0b87e; border-color: #40280d; }
+.context-textarea.scan.active         { background: #0d2a1a; color: #7fe0a0; border-color: #1a4a2a; }
+.context-textarea.chartcatalyst.active{ background: #0d1e22; color: #7ec8e0; border-color: #1a3540; }
 
 .context-active-msg { font-size: 10px; margin-top: 1px; }
-.context-active-msg.scan     { color: #7fe0a0; }
-.context-active-msg.chart    { color: #7ec8e0; }
-.context-active-msg.catalyst { color: #e0b87e; }
+.context-active-msg.scan         { color: #7fe0a0; }
+.context-active-msg.chartcatalyst{ color: #7ec8e0; }
 
 /* ── Context chips ───────────────────────────────────────────── */
 .context-chips {
