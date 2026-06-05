@@ -45,6 +45,15 @@ Step 2: /chartreview (screenshot +     → CHART REVIEW + CATALYST CHECK
 
 Catalyst-check.md remains unchanged as standalone skill.
 
+### UI — Context Input Boxes: 3 → 2
+`frontend/src/App.jsx` + `frontend/src/index.css`:
+- `context-grid` changed from `1fr 1fr 1fr` → `1fr 1fr`
+- Boxes 2 (CHART CONTEXT) + 3 (CATALYST CONTEXT) merged into single box: `2 — CHART + CATALYST CONTEXT /chartreview`
+- Placeholder shows both lines so user knows to paste full /chartreview output block
+- Active message: `✓ Strike vs support · Event risk active`
+- Backend receives same combined text for both `chart_context` and `catalyst_context` — each parser extracts its own line via regex (no backend change needed)
+- Build clean — one pre-existing unused-var warning in LearnTab.jsx (unrelated)
+
 ---
 
 ## Test Count

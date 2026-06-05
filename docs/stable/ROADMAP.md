@@ -265,6 +265,7 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] `/chartreview` live-tested on QQQ daily — dashboard read, CHART CONTEXT generated ✅ Day 66
 - [x] External peer review — Perplexity (Q1 thresholds), Gemini (Q2 expected move), ChatGPT (Q2+Q3). Findings saved to Peer_Review_Gate_Logic_Day66.md ✅ Day 67
 - [x] chartreview + catalyst-check blended into single skill with direction verdict scoring (all 4 directions 0–6, winner selected, 3 machine blocks) ✅ Day 67
+- [x] UI context input boxes 3→2: chart+catalyst merged into single paste box (App.jsx + index.css) ✅ Day 67
 - [ ] IVR 35→40 + WARN band 35–40% — constants.py + gate_engine.py (P1 Day 68)
 - [ ] `expected_move_check` gate — distance ratio (not log-normal), STRONG WARN <0.50x EM, WARN <0.75x EM (P2 Day 68)
 - [ ] TQQQ separate thresholds in `_tqqq_satellite_gate()` — IVR>50, VRP>1.15, skew heavy 8pts (P3 Day 68 — CRITICAL per peer review)

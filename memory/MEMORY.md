@@ -11,7 +11,7 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
 ## Current Phase (Day 67 — v0.35.9)
-Peer review synthesis + blended skill session. 3-model gate review complete (Perplexity/Gemini/ChatGPT). Findings: IVR→40, TQQQ CRITICAL separate thresholds, expected move distance ratio gate, GLD skew inverted. chartreview.md rewritten as 3-in-1 blended skill (chart review + catalyst check + direction verdict scoring all 4 directions 0–6). Morning workflow now 2 steps. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
+Peer review synthesis + blended skill + UI merge. 3-model gate review complete (Perplexity/Gemini/ChatGPT). chartreview.md rewritten as 3-in-1 blended skill. UI context boxes merged 3→2: chart+catalyst is now one paste box. Morning workflow: 2 skill calls, 2 pastes. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
