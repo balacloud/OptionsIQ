@@ -101,32 +101,80 @@ Paste prompt for Q2 with the proposed gate formula. Ask for a better formulation
 
 ---
 
-## Findings
-
-*(paste model responses here)*
+## Findings — Day 67 (Jun 6, 2026)
 
 ### Perplexity — Q1: Threshold calibration
-```
-[paste response]
-```
 
-### ChatGPT — Q3: What's missing
-```
-[paste response]
-```
+**IVR seller pass 35% → ADJUST to 40–45%.** Tastylive's IVR > 35 is their minimum baseline, not optimized for systematic ETF-only sellers. A 4-year SPY analysis found elevated-IVR environments (filtered at higher cutoffs) produced materially better P/L per day. Tastylive's 2018 IVR-DTE interaction study showed best risk-adjusted outcomes at IVR > 40 using 30 DTE. Recommendation: raise hard pass to IVR > 40, retain WARN band 35–40%.
 
-### Gemini — Q2: Expected move gate
-```
-[paste response]
-```
+**VIX crisis block 40 → CONFIRM.** Tastylive 21-year study: VIX > 38 occurred only 3.4% of the time since 1995. Setting block at 40 adds buffer against false positives. No change needed.
+
+**GLD IV/HV block 1.10 → CLARIFY tenor.** 1.10x ratio is directionally correct — GLD IV mean-reverts slowly and skew inverts during rallies (call demand surges). Critical question: which IV tenor vs which HV tenor? Current live data shows GLD 20-day HV ~22.6% vs IV ~20.8% = ratio 0.92, which would trigger hard block. Standard: 30-day IV / 20-day HV ≥ 1.10. Accept that GLD frequently fails this gate in trending low-vol gold regimes.
+
+**TQQQ → CRITICAL STRUCTURAL WARNING.** TQQQ options cannot share the same IVR/VRP/DTE thresholds as non-leveraged ETFs. Specific risks: (1) IVR structurally appears elevated more often than QQQ even in identical conditions; (2) a "normal" VRP of 1.05x on TQQQ masks compressed real edge; (3) skew of 7-10 pts is qualitatively different from SPY/QQQ; (4) DTE 30-45 carries substantially higher gamma/gap risk. Recommendation: TQQQ-specific thresholds (IVR > 50%, VRP > 1.15, DTE floor 35, skew heavy at 8 pts).
+
+**GLD skew interpretation inverted.** GLD skew goes NEGATIVE during gold rallies (calls get bid above puts). A skew WARN based on put richness misses the elevated-risk regime for GLD call-sellers. Separate GLD-specific skew gate warranted.
+
+**DTE ↔ IVR co-dependence.** Tastylive finding: IVR > 40 warrants 30 DTE; IVR < 30 warrants 60 DTE. Static DTE gate should be co-dependent with IVR level (MEDIUM priority).
 
 ---
 
-## Synthesis (fill after all 3 responses)
+### Gemini — Q2: Expected move gate
 
-| Finding | Source | Action |
-|---------|--------|--------|
-| | | |
+**Drop the log-normal formula. Use delta proxy.** The standard formula (S × σ × √(DTE/365)) assumes symmetrical distribution — equities have significant downside skew. It also assumes constant volatility and ignores the smile. Professional desks use two methods:
+
+**Method 1 — Delta Proxy (most efficient):** A 1-SD move covers ~68.2% of occurrences, leaving ~15.9% on each side. A 16-delta option represents the 1-SD boundary. Because market makers price skew into delta, a 16-delta put is naturally further OTM than a 16-delta call on QQQ. Gate: `if abs(short_leg_delta) > 0.16: WARN "Strike inside 1-SD expected move"`.
+
+**Method 2 — Straddle approximation:** `expected_move_1sd = (atm_call_ask + atm_put_ask) × 0.85`. ATM straddle directly prices the 1-SD expected move with skew embedded.
+
+**Gemini verdict for OptionsIQ:** Use delta proxy. Delta already flows through the system. Gating at abs(delta) > 0.16 automatically accounts for the volatility smile and downside skew.
+
+---
+
+### ChatGPT — Q2+Q3: Expected move gate + what's missing
+
+**Critical correction on expected move framing:** "Inside 1-SD = POP < 50%" is WRONG. A 1-SD range = 68% confidence. At the 1-SD strike, POP is still ~84% OTM. The real risk is margin of safety and gamma exposure, not probability crossing 50%. Gate should be framed as strike proximity, not POP.
+
+**Better formulation — distance ratio:**
+```python
+em_1sd = expiry_iv * forward_price * sqrt(dte / 365)
+distance_ratio = (forward_price - short_put_strike) / em_1sd  # sell_put
+
+# Tiers:
+# < 0      → HARD BLOCK (strike ITM)
+# 0–0.35x  → STRONG WARN (too close, high gamma risk)
+# 0.35–0.75x → WARN (inside preferred buffer)
+# 0.75–1.25x → PASS
+# > 1.25x  → PASS + warn low credit
+```
+
+**Top 3 missing professional gates:**
+
+1. **Delta / probability ITM gate** — target 0.15–0.30 delta for short options; WARN > 0.35; HARD BLOCK > 0.45. More precise than "OTM check."
+
+2. **Term-structure / front-vol stress gate** — WARN if front IV > back IV by > 10–15%, or if VIX9D > VIX > VIX3M stress stack. Data source needed (VIX9D not currently pulled).
+
+3. **Portfolio-level beta/gamma concentration gate** — selling QQQ + IWM + TQQQ simultaneously = one correlated equity-vol bet. SPY beta-weighted delta + max loss under -3/-5/-8% gap. Not currently tracked.
+
+**Bid-ask 20% too loose for liquid ETFs:** SPY/QQQ should block > 10–12%; IWM/GLD/XLF > 15%; TQQQ max 20%.
+
+---
+
+## Synthesis
+
+| Finding | Source | Priority | Action |
+|---------|--------|----------|--------|
+| Raise IVR seller pass 35% → 40%, WARN band 35–40% | Perplexity | HIGH | `constants.py` IVR_SELLER_PASS_MIN=40, add IVR_SELLER_WARN_MIN=35 |
+| GLD IV/HV tenor — standardize 30d IV / 20d HV | Perplexity | HIGH | Audit gate_engine.py, document in GATE_REFERENCE.md |
+| TQQQ separate thresholds (IVR>50, VRP>1.15, skew 8pts) | Perplexity | CRITICAL | Add to `_tqqq_satellite_gate()` |
+| Expected move gate — use distance ratio, not formula | Gemini + ChatGPT | HIGH | Add `_add_em_check()` in analyze_service.py |
+| "POP <50% inside 1-SD" framing is WRONG | ChatGPT | HIGH | Fix gate message: "high gamma risk" not "POP <50%" |
+| GLD skew inverted — calls > puts during gold rallies | Perplexity | MEDIUM | Flag in `skew_flow` gate when GLD call IV > put IV |
+| DTE ↔ IVR co-dependence | Perplexity | MEDIUM | Defer — requires IVR-conditional DTE logic |
+| VIX 40 block — CONFIRMED | All models | — | No action |
+| Bid-ask 20% too loose for SPY/QQQ | ChatGPT | LOW | Defer — ticker-specific tiers not in scope yet |
+| Term-structure stress gate (VIX9D) | ChatGPT | LOW | Defer — VIX9D not currently available |
+| Portfolio beta/gamma concentration gate | ChatGPT | LOW | Defer — no portfolio tracking in system |
 
 ---
 

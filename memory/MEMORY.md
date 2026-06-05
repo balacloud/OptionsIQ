@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 66 — v0.35.8)
-Gate philosophy session. skew_flow gate added (institutional IV skew, WARN only). Marcus Webb adversarial review: ivr_seller + market_regime_seller downgraded to WARN. sell_put hard blocks: 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Pine Script v6 fixed + direction-aware gate verdicts. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
+## Current Phase (Day 67 — v0.35.9)
+Peer review synthesis + blended skill session. 3-model gate review complete (Perplexity/Gemini/ChatGPT). Findings: IVR→40, TQQQ CRITICAL separate thresholds, expected move distance ratio gate, GLD skew inverted. chartreview.md rewritten as 3-in-1 blended skill (chart review + catalyst check + direction verdict scoring all 4 directions 0–6). Morning workflow now 2 steps. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY66_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY66.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY67_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY67.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -96,12 +96,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 67 Priorities
-1. **P0:** Live end-to-end test — /ibkr-scan + /chartreview + /catalyst-check → paste all 3 into OptionsIQ
-2. **P1:** External peer review — paste prompts from Peer_Review_Gate_Logic_Day66.md to Perplexity/ChatGPT/Gemini
-3. **P2:** expected_move_check gate — strike vs 1-SD expected move → WARN (Marcus MISSING gate #1)
-4. **P3:** Frontend redesign — warnings-only gate display, one trade per screen
-5. **P4:** DTE-event routing — surface expiry-vs-FOMC at DTE gate level
+## Day 68 Priorities
+1. **P0:** Live end-to-end test with blended /chartreview (ibkr-scan → /chartreview with screenshot + SCAN CONTEXT → paste 3 blocks into OptionsIQ)
+2. **P1:** IVR 35→40 + WARN band 35–40% (constants.py + gate_engine.py, ~15 lines)
+3. **P2:** Expected move distance ratio gate (analyze_service.py, ~20 lines, fix "POP <50%" framing)
+4. **P3:** TQQQ separate thresholds in _tqqq_satellite_gate() — IVR>50, VRP>1.15, skew heavy 8pts (CRITICAL per peer review)
+5. **P4:** GLD IV/HV tenor audit — verify gate_engine.py uses 30d IV / 20d HV
 
 ## TradingView Pine Script
 - File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)
