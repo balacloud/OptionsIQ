@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 65 (Jun 4, 2026)
-> **Current Version:** v0.35.7
-> **Project Phase:** Three-input context (SCAN+CHART+CATALYST) complete — parsers, gate wiring, frontend, tests all shipped. KI-110 fixed. 93 tests. 0 CRITICAL/HIGH/MEDIUM. Rule 24 added (Opus for design, Sonnet for execution). Skills moved to `skills/` folder.
+> **Last Updated:** Day 66 (Jun 5, 2026)
+> **Current Version:** v0.35.8
+> **Project Phase:** Gate philosophy session — skew_flow gate added (institutional flow), Marcus Webb adversarial review completed (sell_put hard blocks 9→6), GATE_REFERENCE + QUANT_PERSONA docs created, Pine Script v6 fixed + direction-aware verdicts. 100 tests. 0 CRITICAL/HIGH/MEDIUM.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY65_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY65.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY66_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY66.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -235,7 +235,7 @@ yfinance SPY: computed in backend → spy_above_200sma, spy_5day_return
 
 ## Known Issues
 
-Full list: `docs/versioned/KNOWN_ISSUES_DAY61.md`
+Full list: `docs/versioned/KNOWN_ISSUES_DAY66.md`
 
 Open (HIGH): None.
 Open (MEDIUM): None.
@@ -243,11 +243,10 @@ Open (MEDIUM): None.
 Open (LOW):
 1. **KI-059:** single-stock bear untested — DEFERRED. Stocks return 400. ETF-only going forward.
 2. **KI-099:** buy_call direction for Leading/Improving ETFs — deferred, single-leg only.
-3. **KI-110:** _rank_buy_call returns "itm_call"/"atm_call"/"otm_call" instead of "buy_call" — inconsistent naming (functional, not broken). P4 Day 65.
 
+Resolved (Day 66): No KI resolutions — gate philosophy + new feature session.
 Resolved (Day 65): KI-110 buy_call/buy_put unified type names ✅.
 Resolved (Day 64): R3 magic number (SELL_PUT_OTM_PASS_PCT constant) ✅. fomc_gate GATE_KB entry ✅. ivr_seller 35% threshold in GATE_KB ✅.
-Resolved (Day 63): No bug fixes — tooling/workflow session.
 Resolved (Day 62): Dead ETF Signal Scanner ✅ (removed from App.jsx). Over-blocking gates ✅ (5 gates → non-blocking warn).
 Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_context_parser + trend_ema_gate).
 
@@ -286,6 +285,7 @@ Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 66 | Jun 5, 2026 | **Gate philosophy + skew gate + Marcus Webb review (v0.35.8).** skew_flow gate added to sell_put + sell_call (WARN only — institutional IV skew signal). Marcus Webb adversarial review: ivr_seller + market_regime_seller downgraded to WARN (Rule 23 — double-gatekeeping). sell_put hard blocks: 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Peer review prompts ready (Perplexity/ChatGPT/Gemini). Pine Script upgraded to v6, pure ASCII, direction-aware gate verdicts. /chartreview live-tested on QQQ. 100 tests. |
 | Day 65 | Jun 4, 2026 | **Three-input context complete + housekeeping (v0.35.7).** chart_context_parser.py + catalyst_context_parser.py shipped (existed uncommitted from Day 63 planning). gate_engine: _append_fomc_catalyst_note + _append_holdings_catalyst_note wired (additive-only, Rule 23). 93 tests (was 52, +41 new). KI-110 fixed: buy_call/buy_put unified type names. Skills moved to skills/ folder (symlinked from .claude/commands/). Opus removed from skill invocations (Rule 24: Opus for design, Sonnet for execution). API_CONTRACTS.md updated for 3 new request fields + 5 new response fields. |
 | Day 64 | Jun 3, 2026 | **Master audit Day 64 — MASTER_AUDIT_FRAMEWORK v1.6 (v0.35.6).** Updated framework: Rule 23 principles, scan_context/trend_ema claims, GLD/TQQQ gate language corrected, Day 59-63 audit log gap filled. Full audit: 0C/0H/3M/2L. M1 fixed: SELL_PUT_OTM_PASS_PCT constant in constants.py + gate_engine (R3 violation). M2 fixed: fomc_gate + ivr_seller 35% threshold in GateExplainer GATE_KB. M3 fixed: trend_ema gate desc corrected (direction-aware, all 4 dirs). 52 tests pass. |
 | Day 63 | Jun 2, 2026 | **MCP integration + three-input architecture (v0.35.5).** /ibkr-scan rewritten — 12 MCP calls replace screenshot. All 6 ETF contract IDs confirmed. /catalyst-check dual-mode (reads constants.py or web search). P0 live test confirmed: XLF PEMA200=-0.25% hard blocks, trend gate working end-to-end. Workflow split: browser skills (flat rate) vs Claude Code (dev). Opus designed three-input CHART+CATALYST context architecture. 52 tests. |
@@ -323,23 +323,30 @@ Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_
 
 ---
 
-## Next Session Priorities (Day 66)
+## Next Session Priorities (Day 67)
 
 ### P0 — Live end-to-end test with all 3 contexts
-Run a real morning scan: `/ibkr-scan` → `/chartreview` → `/catalyst-check` → paste all 3 into OptionsIQ → verify `strike_vs_support` and `catalyst_overlay` display correctly in TopThreeCards.
+Run a real morning scan: `/ibkr-scan` → `/chartreview` (paste screenshot) → `/catalyst-check` → paste all 3 contexts into OptionsIQ → verify `strike_vs_support` and `catalyst_overlay` display correctly in TopThreeCards.
 
-### P1 — Frontend redesign
-- Warnings-only gate display (hide PASS gates by default — reduce visual noise)
-- One trade per screen / cleaner aesthetic
+### P1 — External peer review (bring back results)
+Paste prompts from `docs/Research/Peer_Review_Gate_Logic_Day66.md` to Perplexity (Q1 thresholds), ChatGPT (Q3 missing gates), Gemini (Q2 expected move gate). Synthesize into action items.
 
-### P2 — DTE-event routing (from quant review Day 65)
-- The DTE gate is currently event-blind: it warns on 14-29 DTE regardless of whether that expiry avoids a key event
-- Surface "14 DTE expiry exits before FOMC ✅" vs "30 DTE holds through FOMC ⚠️" at the DTE gate level, not just in catalyst_overlay per-strategy
+### P2 — Add expected_move_check gate (Marcus MISSING gate #1)
+Strike vs 1-SD expected move → WARN if short strike is inside expected move. ~20 lines in gate_engine. Already have `expected_move_1sd` in analyze response.
+
+### P3 — Frontend redesign
+Warnings-only gate display (hide PASS gates by default), one trade per screen, cleaner aesthetic.
+
+### P4 — DTE-event routing
+Surface "expiry exits before FOMC ✅" vs "expiry holds through FOMC ⚠️" at DTE gate level, not just in catalyst_overlay per-strategy.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY65.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY65_SHORT.md` — Day 65 summary
-- `docs/Research/Three_Input_Context_Architecture_Day63.md` — original Opus three-input plan
+- `docs/versioned/KNOWN_ISSUES_DAY66.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY66_SHORT.md` — Day 66 summary
+- `docs/stable/GATE_REFERENCE.md` — complete gate inventory (updated Day 66)
+- `docs/stable/QUANT_PERSONA.md` — Marcus Webb persona for gate review
+- `docs/Research/Marcus_Webb_Gate_Review_Day66.md` — gate verdicts
+- `docs/Research/Peer_Review_Gate_Logic_Day66.md` — peer review prompts
 - `skills/ibkr-scan.md` — MCP-powered morning scan
-- `skills/chartreview.md` — chart review
+- `skills/chartreview.md` — chart review (Pine Script v6, direction-aware)
 - `skills/catalyst-check.md` — catalyst risk check

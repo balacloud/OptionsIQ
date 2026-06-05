@@ -878,6 +878,15 @@ def analyze_etf(payload: dict, ticker: str, *,
     _selected_dte = int(selected.get("dte", 21)) if selected else 21
     _event_count, _event_score = _count_macro_events_in_window(_selected_dte)
 
+    # 30-delta skew: put_iv_30d - call_iv_30d — computed before gate_payload so skew_flow gate can use it.
+    # Non-blocking. Returns None if Tradier unavailable or no valid expiry in range.
+    skew_data: dict | None = None
+    if tradier_provider is not None:
+        try:
+            skew_data = tradier_provider.compute_skew(ticker, underlying)
+        except Exception as _se:
+            logger.debug("Skew computation skipped for %s: %s", ticker, _se)
+
     # MarketData.app OI/volume supplement — fills the IBKR platform gap (OI always 0 via reqMktData).
     # McMillan Stress Check — worst 21-day move from OHLCV history
     _stress = iv_store.compute_max_21d_move(ticker) if iv_store else {"max_drawdown_pct": None, "max_rally_pct": None, "bars_available": 0}
@@ -961,6 +970,7 @@ def analyze_etf(payload: dict, ticker: str, *,
         "put_call_volume": payload.get("put_call_volume"),
         "trend_pema200": None,
         "trend_pema50": None,
+        "skew_value": skew_data.get("skew") if skew_data else None,
     }
 
     # Merge /ibkr-scan context: overrides stale IVR, fills P/C ratio, enables trend gate.
@@ -975,14 +985,6 @@ def analyze_etf(payload: dict, ticker: str, *,
 
     if is_etf:
         apply_etf_gate_adjustments(gates, direction, account_size, gate_payload, strategies_preview, data_source)
-
-    # 30-delta skew: put_iv_30d - call_iv_30d (non-blocking — Tradier only, separate expiry fetch)
-    skew_data: dict | None = None
-    if tradier_provider is not None:
-        try:
-            skew_data = tradier_provider.compute_skew(ticker, underlying)
-        except Exception as _se:
-            logger.debug("Skew computation skipped for %s: %s", ticker, _se)
 
     verdict = engine.build_verdict(gates)
     recommended_dte = gate_payload.get("recommended_dte")

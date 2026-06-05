@@ -67,6 +67,9 @@ from constants import (
     FOMC_WARN_DAYS_NEAR,
     PUT_CALL_RATIO_BEAR_WARN,
     PUT_CALL_RATIO_BULL_WARN,
+    SKEW_PUT_WARN_PTS,
+    SKEW_PUT_STRONG_PTS,
+    SKEW_CALL_WARN_PTS,
     TQQQ_MAX_DELTA,
 )
 
@@ -1134,6 +1137,53 @@ class GateEngine:
                      f"<{PUT_CALL_RATIO_BULL_WARN} warn, {PUT_CALL_RATIO_BULL_WARN}–{PUT_CALL_RATIO_BEAR_WARN} pass, >{PUT_CALL_RATIO_BEAR_WARN} warn",
                      r, False)
 
+    def _skew_flow_gate(self, p: dict, direction: str) -> dict:
+        """30-delta IV skew gate — institutional flow signal (Day 66).
+        sell_put: high put skew = institutions hedging downside = selling puts into headwind.
+        sell_call: low/inverted skew = call momentum = selling calls into upside squeeze.
+        Non-blocking advisory WARN only — Rule 23 (pre-filter /ibkr-scan owns flow checks).
+        """
+        skew = p.get("skew_value")
+        threshold_str = (
+            f"<{SKEW_PUT_WARN_PTS} pass, {SKEW_PUT_WARN_PTS}–{SKEW_PUT_STRONG_PTS} warn, >{SKEW_PUT_STRONG_PTS} strong warn"
+            if direction == "sell_put"
+            else f">{SKEW_CALL_WARN_PTS} pass, <={SKEW_CALL_WARN_PTS} warn"
+        )
+        if skew is None:
+            return _gate("skew_flow", "IV Skew (Flow)", "pass", "no data",
+                         threshold_str, "No skew data — Tradier unavailable", False)
+
+        skew = float(skew)
+
+        if direction == "sell_put":
+            if skew >= SKEW_PUT_STRONG_PTS:
+                r = (f"Heavy institutional put hedging (skew {skew:.1f} pts) — "
+                     "institutions buying downside protection aggressively. "
+                     "Premium is rich but flow is bearish. Size conservatively.")
+                return _gate("skew_flow", "IV Skew (Flow)", "warn",
+                             f"skew {skew:.1f} pts", threshold_str, r, False)
+            elif skew >= SKEW_PUT_WARN_PTS:
+                r = (f"Elevated put skew ({skew:.1f} pts) — institutions paying up for "
+                     "downside protection. Check chart support before selling puts.")
+                return _gate("skew_flow", "IV Skew (Flow)", "warn",
+                             f"skew {skew:.1f} pts", threshold_str, r, False)
+            return _gate("skew_flow", "IV Skew (Flow)", "pass",
+                         f"skew {skew:.1f} pts", threshold_str,
+                         f"Put skew normal ({skew:.1f} pts) — no unusual institutional hedging.", False)
+
+        if direction == "sell_call":
+            if skew <= SKEW_CALL_WARN_PTS:
+                r = (f"Low put skew ({skew:.1f} pts) — call premium elevated relative to puts. "
+                     "Upside momentum or squeeze risk. Verify trend before selling calls.")
+                return _gate("skew_flow", "IV Skew (Flow)", "warn",
+                             f"skew {skew:.1f} pts", threshold_str, r, False)
+            return _gate("skew_flow", "IV Skew (Flow)", "pass",
+                         f"skew {skew:.1f} pts", threshold_str,
+                         f"Put skew normal ({skew:.1f} pts) — no unusual call-side momentum.", False)
+
+        return _gate("skew_flow", "IV Skew (Flow)", "pass", f"skew {skew:.1f} pts",
+                     threshold_str, "N/A for this direction", False)
+
     def _run_etf_buy_call(self, p: dict) -> list[dict]:
         """
         ETF buy_call gate track.
@@ -1293,7 +1343,7 @@ class GateEngine:
             else:
                 s, r = "fail", "IV too cheap — insufficient premium to sell puts"
             out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.1f}%",
-                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, False))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -1360,13 +1410,16 @@ class GateEngine:
                 s, r = "fail", "Downside regime too risky for put selling"
             out.append(_gate("market_regime_seller", "Market Regime (Seller)", s,
                              f"200SMA {'above' if spy_above else 'below'}, 5d {spy_5d:.2%}",
-                             f"above 200SMA and 5d>{SPY_SELLPUT_5D_WARN:.0%}", r, s == "fail"))
+                             f"above 200SMA and 5d>{SPY_SELLPUT_5D_WARN:.0%}", r, False))
 
         # Gate 7: McMillan Historical Stress Check
         out.append(self._historical_stress_gate(p, "sell_put"))
 
         # Gate 7b: Put/Call sentiment (non-blocking — advisory signal from scanner)
         out.append(self._put_call_sentiment_gate(p))
+
+        # Gate 7c: IV Skew flow (non-blocking — institutional hedging signal)
+        out.append(self._skew_flow_gate(p, "sell_put"))
 
         # Gate 8: Max loss check
         premium = float(p.get("premium", 0.0) or 0.0)
@@ -1417,7 +1470,7 @@ class GateEngine:
             else:
                 s, r = "fail", "IV too cheap — insufficient premium for call selling"
             out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
-                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, False))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -1480,7 +1533,7 @@ class GateEngine:
                 s, r = "fail", "Strong bull market — elevated call assignment risk — sector RS/momentum weakness"
             out.append(_gate("market_regime_seller", "Market Regime (Seller)", s,
                              f"200SMA {spy_above}, 5d {spy_5d:.2%}",
-                             f"flat/weak (5d<{SPY_SELLCALL_5D_PASS:.0%}) pass; strong bull (5d>={SPY_SELLCALL_5D_WARN:.0%}) fail", r, s == "fail"))
+                             f"flat/weak (5d<{SPY_SELLCALL_5D_PASS:.0%}) pass; strong bull (5d>={SPY_SELLCALL_5D_WARN:.0%}) fail", r, False))
 
         # Gate 9: McMillan Historical Stress Check
         out.append(self._historical_stress_gate(p, "sell_call"))
@@ -1502,6 +1555,9 @@ class GateEngine:
 
         # Gate 11b: Put/Call sentiment (non-blocking — advisory signal from scanner)
         out.append(self._put_call_sentiment_gate(p))
+
+        # Gate 11c: IV Skew flow (non-blocking — institutional flow signal)
+        out.append(self._skew_flow_gate(p, "sell_call"))
 
         # Gate 12: Trend gate (from /ibkr-scan P/EMA200 + P/EMA50 — pass-through if no scan data)
         out.append(self._trend_ema_gate(p, "sell_call"))

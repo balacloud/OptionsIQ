@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 65 — v0.35.7)
-Three-input context complete. SCAN+CHART+CATALYST context parsers + gate wiring + frontend all shipped. KI-110 fixed. 93 tests. 0 CRITICAL/HIGH/MEDIUM open. Rule 24 added (Opus for design, Sonnet for execution). Skills moved to `skills/` folder (symlinked from `.claude/commands/`).
+## Current Phase (Day 66 — v0.35.8)
+Gate philosophy session. skew_flow gate added (institutional IV skew, WARN only). Marcus Webb adversarial review: ivr_seller + market_regime_seller downgraded to WARN. sell_put hard blocks: 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Pine Script v6 fixed + direction-aware gate verdicts. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY64_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY64.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY66_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY66.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -52,10 +52,11 @@ backend/
                       during ib.sleep() — insufficient for streaming. reqHistoricalData is request-response.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      UPDATED (Day 57+58+59+60) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
+  gate_engine.py      UPDATED (Day 57+58+59+60+66) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
                       Day 59: _tqqq_satellite_gate() + GLD IV/HV >= 1.10 gate + sell_call FOMC tier logic.
-                      Day 60: _trend_ema_gate() added — wired into all 4 ETF tracks (sell_put/sell_call/buy_call/buy_put).
-                      HARD BLOCK sell_put when P/EMA200 < 0. Reads trend_pema200/trend_pema50 from gate_payload.
+                      Day 60: _trend_ema_gate() added — wired into all 4 ETF tracks.
+                      Day 66: _skew_flow_gate() added (sell_put + sell_call, WARN only).
+                      Day 66: ivr_seller + market_regime_seller → blocking=False (WARN only). sell_put hard blocks: 9→6.
   scan_context_parser.py  NEW (Day 60) — parse_scan_context(text) KEY=VALUE regex.
                       apply_scan_context_to_gate_payload() merges live IVR, P/C ratio, trend EMA into gate_payload.
                       Bridges /ibkr-scan skill output to analyze backend via copy-paste.
@@ -95,12 +96,12 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 65 Priorities
-1. **P0:** Three-input context parsers — `chart_context_parser.py` + `catalyst_context_parser.py` + tests (see docs/Research/Three_Input_Context_Architecture_Day63.md)
-2. **P1:** Gate engine + analyze_service wiring for CHART+CATALYST contexts
-3. **P2:** chartreview.md + catalyst-check.md machine block additions (30 min)
-4. **P3:** App.jsx + TopThreeCards.jsx frontend wiring
-5. **P4:** KI-110 fix — _rank_buy_call/_rank_buy_put stale type names (~8 lines)
+## Day 67 Priorities
+1. **P0:** Live end-to-end test — /ibkr-scan + /chartreview + /catalyst-check → paste all 3 into OptionsIQ
+2. **P1:** External peer review — paste prompts from Peer_Review_Gate_Logic_Day66.md to Perplexity/ChatGPT/Gemini
+3. **P2:** expected_move_check gate — strike vs 1-SD expected move → WARN (Marcus MISSING gate #1)
+4. **P3:** Frontend redesign — warnings-only gate display, one trade per screen
+5. **P4:** DTE-event routing — surface expiry-vs-FOMC at DTE gate level
 
 ## TradingView Pine Script
 - File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)
@@ -118,6 +119,8 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/GOLDEN_RULES.md`
 - `docs/stable/ROADMAP.md`
 - `docs/stable/API_CONTRACTS.md`
+- `docs/stable/GATE_REFERENCE.md` — **complete gate inventory** (all 4 directions, hard blocks vs warn, thresholds, Rule 23 review candidates) — added Day 66
+- `docs/stable/QUANT_PERSONA.md` — Marcus Webb persona (30-year ETF options trader) for adversarial gate review — added Day 66
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger). v1.6 (Day 64).
 - `docs/versioned/KNOWN_ISSUES_DAY64.md`
 - `docs/status/PROJECT_STATUS_DAY64_SHORT.md`

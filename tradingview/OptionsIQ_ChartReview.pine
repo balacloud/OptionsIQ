@@ -1,26 +1,29 @@
-// OptionsIQ — Chart Review Panel
-// Paste into TradingView Pine Script editor → Add to chart
-// Apply to any of: QQQ, IWM, XLF, GLD, TQQQ (1D timeframe recommended)
-// Screenshot the chart and paste to: opus /chartreview [ETF] [direction from ibkr-scan]
+// OptionsIQ - Chart Review Panel
+// Paste into TradingView Pine Script editor -> Add to chart
+// Apply to any of: QQQ, IWM, XLF, GLD, TQQQ - use D (Daily) timeframe
+// Screenshot the chart and paste to: /chartreview [ETF] [direction from ibkr-scan]
 //
 // What this adds:
 //   - EMA 20 (yellow), EMA 50 (blue), EMA 200 (red) lines
 //   - Dashboard table top-right: all key numbers Claude needs to read
+//   - Direction-aware gate verdicts: sell_put / sell_call / buy_call / buy_put
 //   - Pivot high/low markers (resistance = red triangles, support = green triangles)
 //   - Dashed horizontal lines for nearest S1/S2 and R1/R2 levels
 
-//@version=5
-indicator("OptionsIQ — Chart Review", overlay=true, max_lines_count=10, max_labels_count=20)
+//@version=6
+indicator("OptionsIQ - Chart Review", overlay=true, max_lines_count=10, max_labels_count=20)
 
-// ─────────────────────────────────────────────────────────────────────────────
 // INPUTS
-// ─────────────────────────────────────────────────────────────────────────────
 pivot_lb = input.int(10, "Pivot Lookback (bars)", minval=5, maxval=20, group="Settings",
-     tooltip="How many bars on each side to qualify a swing high/low as a key level. 10 = standard for daily.")
+     tooltip="How many bars on each side to qualify a swing high/low. 10 = standard for daily.")
 
-// ─────────────────────────────────────────────────────────────────────────────
+// HELPER FUNCTIONS - defined first so they can be used anywhere below
+p(v, d)    => str.tostring(math.round(v, d))
+fp(v)      => na(v) ? "--" : "$" + p(v, 2)
+sgn(v)     => v >= 0 ? "+" : ""
+pct_str(v) => sgn(v) + p(v, 1) + "%"
+
 // EMAs
-// ─────────────────────────────────────────────────────────────────────────────
 ema20  = ta.ema(close, 20)
 ema50  = ta.ema(close, 50)
 ema200 = ta.ema(close, 200)
@@ -29,48 +32,53 @@ plot(ema20,  "EMA 20",  color=color.new(color.yellow, 0), linewidth=1)
 plot(ema50,  "EMA 50",  color=color.new(color.blue,   0), linewidth=2)
 plot(ema200, "EMA 200", color=color.new(color.red,    0), linewidth=3)
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DERIVED METRICS
-// ─────────────────────────────────────────────────────────────────────────────
 pct200 = (close - ema200) / ema200 * 100
 pct50  = (close - ema50)  / ema50  * 100
 pct20  = (close - ema20)  / ema20  * 100
 
-sl200 = ema200 > ema200[5] ? "▲" : ema200 < ema200[5] ? "▼" : "→"
-sl50  = ema50  > ema50[5]  ? "▲" : ema50  < ema50[5]  ? "▼" : "→"
-sl20  = ema20  > ema20[3]  ? "▲" : ema20  < ema20[3]  ? "▼" : "→"
+sl200 = ema200 > ema200[5] ? "^" : ema200 < ema200[5] ? "v" : "-"
+sl50  = ema50  > ema50[5]  ? "^" : ema50  < ema50[5]  ? "v" : "-"
+sl20  = ema20  > ema20[3]  ? "^" : ema20  < ema20[3]  ? "v" : "-"
 
-// Trend verdict — drives GO/WAIT/BLOCK in /chartreview
-trend_str = close > ema200 and close > ema50 ? "UPTREND  ✅" :
-            close > ema200 and close < ema50  ? "PULLBACK ⚠" :
-            "DOWNTREND ✗"
+// Trend verdict
+trend_str = close > ema200 and close > ema50 ? "UPTREND   [GO]" : close > ema200 and close < ema50 ? "PULLBACK  [WARN]" : "DOWNTREND [BLOCK]"
+trend_col = close > ema200 and close > ema50 ? color.green : close > ema200 and close < ema50 ? color.orange : color.red
 
-trend_col = close > ema200 and close > ema50 ? color.green :
-            close > ema200 and close < ema50  ? color.orange :
-            color.red
+// Direction-aware gate verdicts (mirrors trend_ema gate in gate_engine.py)
+// sell_put / buy_call: HARD BLOCK when below 200 EMA
+// sell_call: WARN when above 200 EMA (uptrend is advisory only, not a block)
+// buy_put: HARD BLOCK when above 200 EMA
+gate_sell_put  = close > ema200 ? (close > ema50 ? "[GO]"    : "[WARN]") : "[BLOCK]"
+gate_sell_call = close > ema200 ? "[WARN]"                                : "[GO]"
+gate_buy_call  = close > ema200 ? (close > ema50 ? "[GO]"    : "[WARN]") : "[BLOCK]"
+gate_buy_put   = close > ema200 ? "[BLOCK]"                               : "[GO]"
 
-// ATR(14) — expected daily price range
-atr14   = ta.atr(14)
-atr_pct = atr14 / close * 100
+gate_sell_put_col  = close > ema200 ? (close > ema50 ? color.green : color.orange) : color.red
+gate_sell_call_col = close > ema200 ? color.orange : color.green
+gate_buy_call_col  = close > ema200 ? (close > ema50 ? color.green : color.orange) : color.red
+gate_buy_put_col   = close > ema200 ? color.red : color.green
 
-// RSI(14) — momentum / overbought-oversold
+// ATR and RSI
+atr14    = ta.atr(14)
+atr_pct  = atr14 / close * 100
 rsi14    = ta.rsi(close, 14)
 rsi_note = rsi14 >= 70 ? "OVERBOUGHT" : rsi14 <= 30 ? "OVERSOLD" : "NEUTRAL"
 rsi_col  = rsi14 >= 70 ? color.red : rsi14 <= 30 ? color.green : color.white
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PIVOT HIGHS / LOWS  →  KEY S/R LEVELS
-// ─────────────────────────────────────────────────────────────────────────────
+// Volume vs 20-day average
+vol_avg20 = ta.sma(volume, 20)
+vol_ratio = volume / vol_avg20
+vol_str   = p(vol_ratio, 2) + "x avg"
+vol_col   = vol_ratio >= 1.5 ? color.green : vol_ratio <= 0.5 ? color.rgb(150, 150, 150) : color.white
+
+// PIVOT S/R LEVELS
 ph = ta.pivothigh(high, pivot_lb, pivot_lb)
 pl = ta.pivotlow (low,  pivot_lb, pivot_lb)
 
-// Small markers at each confirmed pivot
-plotshape(ph, "Resistance Pivot", shape.triangledown, location.abovebar,
-     color.new(color.red, 20), size=size.tiny)
-plotshape(pl, "Support Pivot",    shape.triangleup,   location.belowbar,
-     color.new(color.green, 20), size=size.tiny)
+plotshape(ph, "Resistance Pivot", shape.triangledown, location.abovebar, color.new(color.red,   20), size=size.tiny)
+plotshape(pl, "Support Pivot",    shape.triangleup,   location.belowbar, color.new(color.green, 20), size=size.tiny)
 
-// Track last 3 resistance and support pivot prices
 var float r1 = na, var float r2 = na, var float r3 = na
 var float s1 = na, var float s2 = na, var float s3 = na
 
@@ -84,7 +92,6 @@ if not na(pl)
     s2 := s1
     s1 := pl
 
-// Horizontal dashed lines for nearest two S/R levels
 var line lr1 = na, var line lr2 = na
 var line ls1 = na, var line ls2 = na
 
@@ -94,35 +101,16 @@ if barstate.islast
     line.delete(ls1)
     line.delete(ls2)
     if not na(r1)
-        lr1 := line.new(bar_index - 60, r1, bar_index, r1,
-             color=color.new(color.red, 40), style=line.style_dashed, width=1)
+        lr1 := line.new(bar_index - 60, r1, bar_index, r1, color=color.new(color.red,   40), style=line.style_dashed, width=1)
     if not na(r2)
-        lr2 := line.new(bar_index - 60, r2, bar_index, r2,
-             color=color.new(color.red, 65), style=line.style_dotted, width=1)
+        lr2 := line.new(bar_index - 60, r2, bar_index, r2, color=color.new(color.red,   65), style=line.style_dotted, width=1)
     if not na(s1)
-        ls1 := line.new(bar_index - 60, s1, bar_index, s1,
-             color=color.new(color.green, 40), style=line.style_dashed, width=1)
+        ls1 := line.new(bar_index - 60, s1, bar_index, s1, color=color.new(color.green, 40), style=line.style_dashed, width=1)
     if not na(s2)
-        ls2 := line.new(bar_index - 60, s2, bar_index, s2,
-             color=color.new(color.green, 65), style=line.style_dotted, width=1)
+        ls2 := line.new(bar_index - 60, s2, bar_index, s2, color=color.new(color.green, 65), style=line.style_dotted, width=1)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DASHBOARD TABLE  (top-right — Claude reads this directly from screenshot)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Helper functions
-p(v, d)  => str.tostring(math.round(v, d))
-fp(v)    => na(v) ? "—" : "$" + p(v, 2)
-sgn(v)   => v >= 0 ? "+" : ""
-pct_str(v) => sgn(v) + p(v, 1) + "%"
-
-var table t = table.new(
-     position.top_right, 2, 16,
-     bgcolor      = color.rgb(8, 10, 20, 5),
-     border_color = color.rgb(50, 55, 85),
-     border_width = 1,
-     frame_color  = color.rgb(70, 90, 170),
-     frame_width  = 2)
+// DASHBOARD TABLE
+var table t = table.new(position.top_right, 2, 23, bgcolor=color.rgb(8, 10, 20, 5), border_color=color.rgb(50, 55, 85), border_width=1, frame_color=color.rgb(70, 90, 170), frame_width=2)
 
 if barstate.islast
     bg_hdr = color.rgb(15, 22, 65)
@@ -130,69 +118,47 @@ if barstate.islast
     c_lbl  = color.rgb(130, 140, 185)
     c_sep  = color.rgb(45, 50, 80)
 
-    // ── Header ──────────────────────────────────────────────────────────────
-    table.cell(t, 0, 0, "OptionsIQ  CHART REVIEW",
-         text_color=color.white, bgcolor=bg_hdr, text_size=size.small)
-    table.cell(t, 1, 0, syminfo.ticker + "  " + timeframe.period + "D",
-         text_color=color.rgb(180, 195, 255), bgcolor=bg_hdr, text_size=size.small)
-
-    // ── Price + Trend ────────────────────────────────────────────────────────
-    table.cell(t, 0, 1, "Price",      text_color=c_lbl, text_size=size.small)
+    table.cell(t, 0, 0, "OptionsIQ  CHART REVIEW", text_color=color.white, bgcolor=bg_hdr, text_size=size.small)
+    table.cell(t, 1, 0, syminfo.ticker + "  " + timeframe.period + "D", text_color=color.rgb(180, 195, 255), bgcolor=bg_hdr, text_size=size.small)
+    table.cell(t, 0, 1, "Price",           text_color=c_lbl, text_size=size.small)
     table.cell(t, 1, 1, "$" + p(close, 2), text_color=color.white, text_size=size.small)
-
-    table.cell(t, 0, 2, "Trend",      text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 2, trend_str,    text_color=trend_col, text_size=size.small)
-
-    // ── Separator ────────────────────────────────────────────────────────────
-    table.cell(t, 0, 3, "── EMAs ──────────────────────", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
-    table.cell(t, 1, 3, "",                               text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
-
-    // ── EMA 200 ──────────────────────────────────────────────────────────────
+    table.cell(t, 0, 2, "Trend",   text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 2, trend_str, text_color=trend_col, text_size=size.small)
+    table.cell(t, 0, 3, "-- EMAs -----------------------", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
+    table.cell(t, 1, 3, "", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
     table.cell(t, 0, 4, "EMA 200  " + sl200, text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 4, fp(ema200) + "   " + pct_str(pct200),
-         text_color=close > ema200 ? color.green : color.red, text_size=size.small)
-
-    // ── EMA 50 ───────────────────────────────────────────────────────────────
-    table.cell(t, 0, 5, "EMA 50   " + sl50,  text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 5, fp(ema50)  + "   " + pct_str(pct50),
-         text_color=close > ema50 ? color.green : color.red, text_size=size.small)
-
-    // ── EMA 20 ───────────────────────────────────────────────────────────────
-    table.cell(t, 0, 6, "EMA 20   " + sl20,  text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 6, fp(ema20)  + "   " + pct_str(pct20),
-         text_color=close > ema20 ? color.green : color.orange, text_size=size.small)
-
-    // ── Separator ────────────────────────────────────────────────────────────
-    table.cell(t, 0, 7, "── Momentum ──────────────────", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
-    table.cell(t, 1, 7, "",                               text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
-
-    // ── ATR ──────────────────────────────────────────────────────────────────
+    table.cell(t, 1, 4, fp(ema200) + "   " + pct_str(pct200), text_color=close > ema200 ? color.green : color.red, text_size=size.small)
+    table.cell(t, 0, 5, "EMA 50   " + sl50, text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 5, fp(ema50) + "   " + pct_str(pct50), text_color=close > ema50 ? color.green : color.red, text_size=size.small)
+    table.cell(t, 0, 6, "EMA 20   " + sl20, text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 6, fp(ema20) + "   " + pct_str(pct20), text_color=close > ema20 ? color.green : color.orange, text_size=size.small)
+    table.cell(t, 0, 7, "-- Momentum -------------------", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
+    table.cell(t, 1, 7, "", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
     table.cell(t, 0, 8, "ATR(14)", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 8, fp(atr14) + "   (" + p(atr_pct, 1) + "% daily)",
-         text_color=color.white, text_size=size.small)
-
-    // ── RSI ───────────────────────────────────────────────────────────────────
+    table.cell(t, 1, 8, fp(atr14) + "   (" + p(atr_pct, 1) + "% daily)", text_color=color.white, text_size=size.small)
     table.cell(t, 0, 9, "RSI(14)", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 9, p(rsi14, 1) + "  " + rsi_note,
-         text_color=rsi_col, text_size=size.small)
-
-    // ── Separator ────────────────────────────────────────────────────────────
-    table.cell(t, 0, 10, "── Key Levels ────────────────", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
-    table.cell(t, 1, 10, "",                               text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
-
-    // ── Resistance ───────────────────────────────────────────────────────────
-    table.cell(t, 0, 11, "R1  nearest above", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 11, fp(r1), text_color=color.red, text_size=size.small)
-
-    table.cell(t, 0, 12, "R2", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 12, fp(r2), text_color=color.rgb(220, 110, 110), text_size=size.small)
-
-    // ── Support ──────────────────────────────────────────────────────────────
-    table.cell(t, 0, 13, "S1  nearest below", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 13, fp(s1), text_color=color.green, text_size=size.small)
-
-    table.cell(t, 0, 14, "S2", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 14, fp(s2), text_color=color.rgb(110, 220, 110), text_size=size.small)
-
-    table.cell(t, 0, 15, "S3", text_color=c_lbl, text_size=size.small)
-    table.cell(t, 1, 15, fp(s3), text_color=color.rgb(110, 190, 110), text_size=size.small)
+    table.cell(t, 1, 9, p(rsi14, 1) + "  " + rsi_note, text_color=rsi_col, text_size=size.small)
+    table.cell(t, 0, 10, "Vol / 20d avg", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 10, vol_str, text_color=vol_col, text_size=size.small)
+    table.cell(t, 0, 11, "-- Gate: trend_ema ------------", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
+    table.cell(t, 1, 11, "", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
+    table.cell(t, 0, 12, "sell_put",  text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 12, gate_sell_put, text_color=gate_sell_put_col, text_size=size.small)
+    table.cell(t, 0, 13, "sell_call", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 13, gate_sell_call, text_color=gate_sell_call_col, text_size=size.small)
+    table.cell(t, 0, 14, "buy_call",  text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 14, gate_buy_call, text_color=gate_buy_call_col, text_size=size.small)
+    table.cell(t, 0, 15, "buy_put",   text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 15, gate_buy_put, text_color=gate_buy_put_col, text_size=size.small)
+    table.cell(t, 0, 16, "-- Key Levels -----------------", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
+    table.cell(t, 1, 16, "", text_color=c_sep, bgcolor=bg_sep, text_size=size.tiny)
+    table.cell(t, 0, 17, "R1  nearest above", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 17, fp(r1), text_color=color.red, text_size=size.small)
+    table.cell(t, 0, 18, "R2", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 18, fp(r2), text_color=color.rgb(220, 110, 110), text_size=size.small)
+    table.cell(t, 0, 19, "S1  nearest below", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 19, fp(s1), text_color=color.green, text_size=size.small)
+    table.cell(t, 0, 20, "S2", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 20, fp(s2), text_color=color.rgb(110, 220, 110), text_size=size.small)
+    table.cell(t, 0, 21, "S3", text_color=c_lbl, text_size=size.small)
+    table.cell(t, 1, 21, fp(s3), text_color=color.rgb(110, 190, 110), text_size=size.small)

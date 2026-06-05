@@ -2,7 +2,8 @@
 
 > **Purpose:** Stable reference document for all session rules
 > **Location:** `docs/stable/GOLDEN_RULES.md` (rarely changes)
-> **Last Updated:** Day 65 (Jun 3, 2026)
+> **Last Updated:** Day 66 (Jun 5, 2026)
+> **See also:** [GATE_REFERENCE.md](GATE_REFERENCE.md) — complete gate inventory, thresholds, block vs warn per direction
 
 ---
 
@@ -218,6 +219,8 @@ If a pre-filter tool (e.g. `/ibkr-scan`) has already validated a condition befor
 | GLD IV/HV < 1.10 | Backend only | Backend hard blocks (too subtle for watchlist scan) |
 
 **How to apply:** Before adding a hard block to gate_engine, ask: "Does `/ibkr-scan` already evaluate this?" If yes → warn, not block.
+
+**Full gate inventory:** → [GATE_REFERENCE.md](GATE_REFERENCE.md)
 
 ### Rule 24: Opus for Design. Sonnet for Execution.
 

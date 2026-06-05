@@ -46,7 +46,7 @@ def make_etf_swing_data(ivr_pct=None):
 
 def make_gate_payload(underlying=450.0, dte=30, strike=452.0, premium=1.5,
                       ivr_pct=25.0, hv_20=18.0, spy_above=True, spy_5d=-0.005,
-                      ivr_confidence=None):
+                      ivr_confidence=None, skew_value=None):
     """Minimal gate_payload for ETF gate tests."""
     if ivr_confidence is None:
         ivr_confidence = "known" if ivr_pct is not None else "unknown"
@@ -83,4 +83,5 @@ def make_gate_payload(underlying=450.0, dte=30, strike=452.0, premium=1.5,
         "earnings_days_away": None, "pattern": None,
         "source": "etf_regime", "swing_data_quality": "etf",
         "synthesized_fields": [],
+        "skew_value": skew_value,
     }

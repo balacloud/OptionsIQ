@@ -1,6 +1,7 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 64 (Jun 3, 2026)
-> **Current Version:** v0.35.6
+> **Last Updated:** Day 66 (Jun 5, 2026)
+> **Current Version:** v0.35.7
+> **See also:** [GATE_REFERENCE.md](GATE_REFERENCE.md) — complete gate inventory across all 4 directions
 
 ---
 
@@ -255,8 +256,16 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] SELL_PUT_OTM_PASS_PCT constant — R3 violation fixed, gate_engine.py magic 3.0 → constant ✅ Day 64
 - [x] fomc_gate GATE_KB entry — GateExplainer now shows 3-tier explanation when gate fires ✅ Day 64
 - [x] ivr_seller 35% threshold — GATE_KB pass answer now cites explicit IVR threshold ✅ Day 64
-- [ ] KI-110: Fix _rank_buy_call + _rank_buy_put stale type names (itm_call/atm_call/otm_call → buy_call/buy_put) — LOW, ~8 lines (P4 Day 65)
-- [ ] Frontend redesign: warnings-only gate display, one trade per screen, clean aesthetic
+- [x] KI-110: Fix _rank_buy_call + _rank_buy_put stale type names → buy_call/buy_put unified ✅ Day 65
+- [x] `skew_flow` gate — `_skew_flow_gate()` in gate_engine; WARN only; sell_put + sell_call; 30-delta put/call IV spread signal ✅ Day 66
+- [x] Marcus Webb gate review — `ivr_seller` + `market_regime_seller` downgraded to WARN. sell_put hard blocks: 9→6. ✅ Day 66
+- [x] `docs/stable/GATE_REFERENCE.md` — complete gate inventory all 4 directions ✅ Day 66
+- [x] `docs/stable/QUANT_PERSONA.md` — Marcus Webb adversarial review persona ✅ Day 66
+- [x] Pine Script v6 — pure ASCII, direction-aware gate verdicts, volume indicator ✅ Day 66
+- [x] `/chartreview` live-tested on QQQ daily — dashboard read, CHART CONTEXT generated ✅ Day 66
+- [ ] External peer review — paste prompts to Perplexity/ChatGPT/Gemini, synthesize findings (P1 Day 67)
+- [ ] `expected_move_check` gate — strike vs 1-SD expected move → WARN (Marcus MISSING gate #1) (P2 Day 67)
+- [ ] Frontend redesign: warnings-only gate display, one trade per screen, clean aesthetic (P3 Day 67)
 
 ## Phase 10 — Order Execution (Day 23, deferred)
 Place spread orders directly into TWS via IB Gateway — analysis → execution in one UI.
@@ -302,6 +311,8 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.35.8 | Day 66 | **Gate philosophy + skew gate + Marcus Webb review.** `skew_flow` gate added (30-delta IV skew, institutional flow signal, WARN only). Marcus Webb adversarial review: `ivr_seller` + `market_regime_seller` downgraded to WARN — sell_put hard blocks 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Peer review prompts ready. Pine Script v6: pure ASCII, direction-aware gate verdicts, volume indicator. /chartreview live-tested on QQQ. 100 tests. |
+| v0.35.7 | Day 65 | **Three-input context complete + KI-110 fix.** chart_context_parser.py + catalyst_context_parser.py shipped. gate_engine: FOMC/holdings catalyst notes wired. 93 tests (+41 new). KI-110 fixed: buy_call/buy_put unified type names. Skills to skills/ folder. Rule 24 added. |
 | v0.35.5 | Day 63 | **MCP integration + three-input architecture.** /ibkr-scan rewritten — 12 MCP calls replace screenshot. All 6 ETF contract IDs confirmed (SPY/QQQ/IWM/XLF/TQQQ/GLD). /catalyst-check dual-mode. P0 live test confirmed (XLF hard block, QQQ PAUSE verdict). Workflow split: browser skills vs Claude Code dev. Opus-designed three-input CHART+CATALYST context architecture planned and saved. 52 tests. |
 | v0.35.4 | Day 62 | **Gate recalibration + dead scanner removal.** 5 gates changed from hard-block to advisory warn (ivr buyer, hv_iv buyer, market_regime all dirs, max_loss, VRP non-GLD). GLD IV/HV < 1.10 hard block kept. ETF Signal Scanner deleted from App.jsx (was calling 410 endpoint). Rule 23 added: pre-filter tools own their checks. Scan context integration confirmed live (IVR override, P/C, IV_HV all flowing). 52 tests. |
 | v0.35.3 | Day 60 | **Scan context integration — /ibkr-scan → analyze backend data pass.** scan_context_parser.py: parse_scan_context() KEY=VALUE regex + apply_scan_context_to_gate_payload(). gate_engine: _trend_ema_gate() wired into all 4 ETF tracks (HARD BLOCK sell_put when P/EMA200 < 0; WARN on pullback; direction-aware for all 4 strategies). App.jsx: scanContext state + textarea in AnalysisPanel; scan_context included in analyze payload. ibkr-scan.md: SCAN CONTEXT output block + decimal conversion notes. test_scan_context.py: 15 new tests. 52 tests total. |
