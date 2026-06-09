@@ -309,6 +309,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 - [ ] Request deduplication for simultaneous analyze calls (P4 from concurrency arch)
 - [ ] MCP server: expose gate_engine, sector_scan, paper_trade as MCP tools for conversational analysis
 - [ ] audit_quick.sh: automate mechanical grep-based audit checks (Category 2, 4, 5, 8 partials)
+- [ ] **Canadian TSX expansion (non-urgent):** Bull Call Spread + Calendar Spread on RY/TD/MFC/ENB. Requires: IBKR as TSX data source, spread builder reinstatement, CAD account size, direct earnings gate. See `docs/Research/Canadian_TSX_Options_Day67.md`. Revisit after 30+ US paper trades logged.
 
 ---
 
