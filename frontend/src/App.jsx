@@ -5,6 +5,7 @@
  */
 import { useState, useCallback } from 'react';
 import RegimeBar from './components/RegimeBar';
+import PlaybookTab from './components/PlaybookTab';
 import MasterVerdict from './components/MasterVerdict';
 import GateExplainer from './components/GateExplainer';
 import TradeExplainer from './components/TradeExplainer';
@@ -296,6 +297,12 @@ export default function App() {
         >
           Learn
         </button>
+        <button
+          className={`app-tab-btn ${activeTab === 'playbook' ? 'app-tab-active' : ''}`}
+          onClick={() => setActiveTab('playbook')}
+        >
+          Playbook
+        </button>
         {/* ⚙ overflow — maintenance/debug tools */}
         <button
           className={`app-tab-btn ${activeTab === 'data' ? 'app-tab-active' : ''}`}
@@ -310,6 +317,9 @@ export default function App() {
       {/* Always-mounted tabs — display:none preserves state across switches */}
       <div style={{ display: activeTab === 'learn' ? 'block' : 'none' }}>
         <LearnTab ticker={selectedETF?.etf} direction={direction} data={data} />
+      </div>
+      <div style={{ display: activeTab === 'playbook' ? 'block' : 'none' }}>
+        <PlaybookTab />
       </div>
       <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}><PaperTradeDashboard refreshTick={dashRefreshTick} /></div>
       <div style={{ display: activeTab === 'setups' ? 'block' : 'none' }}><BestSetups onSelect={handleSelectFromSetups} /></div>
