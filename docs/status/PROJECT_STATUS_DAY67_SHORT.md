@@ -54,6 +54,22 @@ Catalyst-check.md remains unchanged as standalone skill.
 - Backend receives same combined text for both `chart_context` and `catalyst_context` — each parser extracts its own line via regex (no backend change needed)
 - Build clean — one pre-existing unused-var warning in LearnTab.jsx (unrelated)
 
+### Playbook Tab — New Frontend Tab
+`frontend/src/components/PlaybookTab.jsx` + `index.css` + `App.jsx`:
+- New "Playbook" tab in the top nav (alongside Today's Trade, Signal Board, Paper Trades, Learn)
+- 7 cyclical macro patterns across 3 tiers, each as a visual card
+- **Tier 1 (gold border):** Yield Curve→Banks, Fed Pivot→Tech, VIX Spike→Premium, Real Rates→Gold
+- **Tier 2 (cyan border):** Oil>$75→Energy, China Stimulus→Copper, Mortgage Drop→Housing
+- Each card: mechanism, watch signal, trigger, target ETF, options structure badge, DTE, caution note
+- **Interactive toggle:** click card to cycle IDLE → WATCH → ACTIVE. Active strip shows current market thesis.
+- **Regime Stacking:** 4 highest-conviction signal combos (VIX>35 + SPY above 200 EMA = maximum edge)
+- **Decision Matrix:** trigger type → options structure mapping table
+- Fully static — no backend calls. Pure reference tool.
+
+### Research Docs Added
+- `docs/Research/Macro_Regime_Options_Playbook_Day67.md` — full written playbook (7 patterns, decision matrix, regime stacking, OptionsIQ gap table)
+- `docs/Research/Canadian_TSX_Options_Day67.md` — Bull Call Spread + Calendar Spread on RY/TD/MFC/ENB, constraints vs current architecture
+
 ---
 
 ## Test Count

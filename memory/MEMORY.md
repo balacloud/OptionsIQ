@@ -11,7 +11,7 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
 ## Current Phase (Day 67 — v0.35.9)
-Peer review synthesis + blended skill + UI merge. 3-model gate review complete (Perplexity/Gemini/ChatGPT). chartreview.md rewritten as 3-in-1 blended skill. UI context boxes merged 3→2: chart+catalyst is now one paste box. Morning workflow: 2 skill calls, 2 pastes. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
+Peer review + blended skill + Playbook tab. 3-model gate review complete. chartreview.md → 3-in-1. UI boxes 3→2. Playbook tab: 7 macro regime patterns with IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro regime + Canadian TSX research docs saved. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities

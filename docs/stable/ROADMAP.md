@@ -266,6 +266,7 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] External peer review — Perplexity (Q1 thresholds), Gemini (Q2 expected move), ChatGPT (Q2+Q3). Findings saved to Peer_Review_Gate_Logic_Day66.md ✅ Day 67
 - [x] chartreview + catalyst-check blended into single skill with direction verdict scoring (all 4 directions 0–6, winner selected, 3 machine blocks) ✅ Day 67
 - [x] UI context input boxes 3→2: chart+catalyst merged into single paste box (App.jsx + index.css) ✅ Day 67
+- [x] Playbook tab: 7 macro regime patterns (Tier 1/2/3), IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix ✅ Day 67
 - [ ] IVR 35→40 + WARN band 35–40% — constants.py + gate_engine.py (P1 Day 68)
 - [ ] `expected_move_check` gate — distance ratio (not log-normal), STRONG WARN <0.50x EM, WARN <0.75x EM (P2 Day 68)
 - [ ] TQQQ separate thresholds in `_tqqq_satellite_gate()` — IVR>50, VRP>1.15, skew heavy 8pts (P3 Day 68 — CRITICAL per peer review)
@@ -317,7 +318,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
-| v0.35.9 | Day 67 | **Peer review synthesis + blended chartreview skill.** 3-model gate review complete (Perplexity/Gemini/ChatGPT). Findings: IVR→40, TQQQ CRITICAL separate thresholds, expected move distance ratio gate, GLD skew inverted. chartreview.md rewritten as 3-in-1 blended skill: chart review + catalyst check + direction verdict (all 4 directions scored 0–6, DIRECTION_WINNER machine block). Morning workflow: 2 steps. 100 tests. |
+| v0.35.9 | Day 67 | **Peer review + blended skill + Playbook tab.** 3-model gate review (Perplexity/Gemini/ChatGPT). chartreview.md → 3-in-1 blended skill (chart + catalyst + direction verdict). UI context boxes 3→2. Playbook tab: 7 macro regime patterns with IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro regime + Canadian TSX research docs. 100 tests. |
 | v0.35.8 | Day 66 | **Gate philosophy + skew gate + Marcus Webb review.** `skew_flow` gate added (30-delta IV skew, institutional flow signal, WARN only). Marcus Webb adversarial review: `ivr_seller` + `market_regime_seller` downgraded to WARN — sell_put hard blocks 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Peer review prompts ready. Pine Script v6: pure ASCII, direction-aware gate verdicts, volume indicator. /chartreview live-tested on QQQ. 100 tests. |
 | v0.35.7 | Day 65 | **Three-input context complete + KI-110 fix.** chart_context_parser.py + catalyst_context_parser.py shipped. gate_engine: FOMC/holdings catalyst notes wired. 93 tests (+41 new). KI-110 fixed: buy_call/buy_put unified type names. Skills to skills/ folder. Rule 24 added. |
 | v0.35.5 | Day 63 | **MCP integration + three-input architecture.** /ibkr-scan rewritten — 12 MCP calls replace screenshot. All 6 ETF contract IDs confirmed (SPY/QQQ/IWM/XLF/TQQQ/GLD). /catalyst-check dual-mode. P0 live test confirmed (XLF hard block, QQQ PAUSE verdict). Workflow split: browser skills vs Claude Code dev. Opus-designed three-input CHART+CATALYST context architecture planned and saved. 52 tests. |
