@@ -12,11 +12,12 @@ Last updated: Day 3 (March 5, 2026)
 # ---------------------------------------------------------------------------
 IVR_BUYER_PASS_PCT      = 30.0   # IVR < 30 = cheap IV, good time to buy
 IVR_BUYER_WARN_PCT      = 50.0   # IVR 30–50 = moderate (warn buyers)
-IVR_SELLER_PASS_PCT     = 35.0   # IVR >= 35 = rich premium, good time to sell
-                                  # Lowered from 50: tastylive data shows IVR>50 sacrifices 60-70%
-                                  # of trade frequency for negligible benefit over IVR>35
-                                  # Source: Perplexity synthesis 2026-04-27
-IVR_SELLER_MIN_PCT      = 25.0   # IVR 25–35 = minimum viable for selling (was 30)
+IVR_SELLER_PASS_PCT     = 40.0   # IVR >= 40 = rich premium, good time to sell
+                                  # Raised from 35: peer review Day 68 (Perplexity/Gemini/ChatGPT)
+                                  # consensus — 35 was too low, misses meaningful frequency of bad fills.
+IVR_SELLER_WARN_MIN     = 35.0   # IVR 35–40 = borderline warn band (new Day 68)
+                                  # Tradeable but limited premium edge; size down.
+IVR_SELLER_MIN_PCT      = 25.0   # IVR 25–35 = minimum viable floor (below this → fail)
 HV_LOW_REGIME_PCT       = 15.0   # HV < 15% = special low-vol exception
 HV_IV_PASS_RATIO        = 1.20   # HV/IV < 1.20 = not overpaying for IV (buyers)
 HV_IV_WARN_RATIO        = 1.30   # HV/IV 1.20–1.30 = borderline (buyers)
@@ -385,6 +386,11 @@ TQQQ_MAX_DTE            = 35     # 21-35 DTE only — longer = too much theta ex
 TQQQ_MIN_DTE            = 21     # Tighter exit window to avoid volatility decay
 TQQQ_EXIT_PROFIT_PCT    = 25     # Close at 25% profit (vs 50% for standard ETFs)
 TQQQ_EXIT_DTE           = 14     # Close at 14 DTE regardless of profit
+TQQQ_IVR_PASS_MIN       = 50.0   # IVR ≥ 50 required for TQQQ selling (higher bar — 3x leverage)
+TQQQ_IVR_WARN_MIN       = 40.0   # IVR 40–50 = borderline warn for TQQQ
+TQQQ_VRP_PASS_MIN       = 1.15   # IV/HV ≥ 1.15 required (stronger VRP needed for 3x ETF)
+TQQQ_VRP_WARN_MIN       = 1.05   # IV/HV 1.05–1.15 = borderline VRP for TQQQ
+TQQQ_SKEW_WARN_PTS      = 8.0    # Put skew ≥ 8 pts = elevated hedging (lower than std 10pt)
 
 # DTE by IVR (VERIFIED: tastylive "How IV Impacts the Selection of DTE", Aug 2024)
 ETF_DTE_LOW_IVR         = 60     # IVR < 30 → 60 DTE
@@ -460,6 +466,14 @@ PUT_CALL_RATIO_BULL_WARN = 0.6   # <0.6 = aggressive call buying → complacency
 
 # 30-delta IV skew thresholds (put_iv_30d − call_iv_30d, Day 66)
 # Non-blocking advisory WARN only — institutional flow signal, not a hard gate.
+# ---------------------------------------------------------------------------
+# Expected move distance ratio thresholds (peer review Day 68 — Gemini/Perplexity)
+# distance_ratio = (underlying − strike) / expected_move_1sd (dimensionless, not log-normal sigma)
+# "High gamma risk" language preferred over "POP <50%" (POP is statistically imprecise at these DTE).
+# ---------------------------------------------------------------------------
+EM_WARN             = 0.75   # strike < 0.75x EM away → WARN (elevated gamma risk)
+EM_WARN_STRONG      = 0.50   # strike < 0.50x EM away → STRONG WARN (inside core EM zone)
+
 SKEW_PUT_WARN_PTS   = 7.0   # Elevated put skew — institutions paying for downside protection (WARN sell_put)
 SKEW_PUT_STRONG_PTS = 10.0  # Heavy institutional hedging — premium rich but flow is bearish (strong WARN sell_put)
 SKEW_CALL_WARN_PTS  = 2.0   # Abnormally low put skew — call momentum / squeeze risk (WARN sell_call)

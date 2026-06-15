@@ -1,6 +1,6 @@
 # OptionsIQ — Roadmap
-> **Last Updated:** Day 66 (Jun 5, 2026)
-> **Current Version:** v0.35.7
+> **Last Updated:** Day 68 (Jun 15, 2026)
+> **Current Version:** v0.36.0
 > **See also:** [GATE_REFERENCE.md](GATE_REFERENCE.md) — complete gate inventory across all 4 directions
 
 ---
@@ -267,10 +267,11 @@ See: `docs/Research/UX_Research_Synthesis_Day25.md`
 - [x] chartreview + catalyst-check blended into single skill with direction verdict scoring (all 4 directions 0–6, winner selected, 3 machine blocks) ✅ Day 67
 - [x] UI context input boxes 3→2: chart+catalyst merged into single paste box (App.jsx + index.css) ✅ Day 67
 - [x] Playbook tab: 7 macro regime patterns (Tier 1/2/3), IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix ✅ Day 67
-- [ ] IVR 35→40 + WARN band 35–40% — constants.py + gate_engine.py (P1 Day 68)
-- [ ] `expected_move_check` gate — distance ratio (not log-normal), STRONG WARN <0.50x EM, WARN <0.75x EM (P2 Day 68)
-- [ ] TQQQ separate thresholds in `_tqqq_satellite_gate()` — IVR>50, VRP>1.15, skew heavy 8pts (P3 Day 68 — CRITICAL per peer review)
-- [ ] GLD IV/HV tenor audit — verify 30d IV vs 20d HV in gate_engine.py (P4 Day 68)
+- [x] IVR 35→40 + WARN band 35–40% — `IVR_SELLER_PASS_PCT=40`, `IVR_SELLER_WARN_MIN=35`, 4 gates updated ✅ Day 68
+- [x] EM distance ratio labels — `EM_WARN=0.75`, `EM_WARN_STRONG=0.50`, "x EM" not "σ OTM" language, `_enrich_strategies()` updated ✅ Day 68
+- [x] TQQQ satellite gate rewrite — 4 conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts), returns PASS when all met ✅ Day 68
+- [x] GLD IV/HV tenor audit — ATM contract IV vs 20d HV confirmed correct per Sinclair; documented in GATE_REFERENCE.md ✅ Day 68
+- [ ] GLD skew inversion — `_skew_flow_gate()` sell_call branch for GLD (calls bid above puts during rallies) ~10 lines (P2 Day 69)
 - [ ] Frontend redesign: warnings-only gate display, one trade per screen, clean aesthetic
 
 ## Phase 10 — Order Execution (Day 23, deferred)
@@ -318,6 +319,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.36.0 | Day 68 | **Peer review calibration.** IVR seller raised 35→40 + warn band 35–40% (`IVR_SELLER_WARN_MIN=35`). EM labels fixed: thresholds 0.75/0.50, "x EM" not "σ OTM". TQQQ gate rewritten: 4 conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts), returns PASS when met. GLD tenor audit: ATM IV vs 20d HV confirmed correct. GATE_REFERENCE.md updated. 110 tests (+10). |
 | v0.35.9 | Day 67 | **Peer review + blended skill + Playbook tab.** 3-model gate review (Perplexity/Gemini/ChatGPT). chartreview.md → 3-in-1 blended skill (chart + catalyst + direction verdict). UI context boxes 3→2. Playbook tab: 7 macro regime patterns with IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro regime + Canadian TSX research docs. 100 tests. |
 | v0.35.8 | Day 66 | **Gate philosophy + skew gate + Marcus Webb review.** `skew_flow` gate added (30-delta IV skew, institutional flow signal, WARN only). Marcus Webb adversarial review: `ivr_seller` + `market_regime_seller` downgraded to WARN — sell_put hard blocks 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Peer review prompts ready. Pine Script v6: pure ASCII, direction-aware gate verdicts, volume indicator. /chartreview live-tested on QQQ. 100 tests. |
 | v0.35.7 | Day 65 | **Three-input context complete + KI-110 fix.** chart_context_parser.py + catalyst_context_parser.py shipped. gate_engine: FOMC/holdings catalyst notes wired. 93 tests (+41 new). KI-110 fixed: buy_call/buy_put unified type names. Skills to skills/ folder. Rule 24 added. |

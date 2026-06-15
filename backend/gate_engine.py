@@ -30,6 +30,7 @@ from constants import (
     IVR_BUYER_WARN_PCT,
     IVR_SELLER_MIN_PCT,
     IVR_SELLER_PASS_PCT,
+    IVR_SELLER_WARN_MIN,
     MAX_LOSS_FAIL_PCT,
     MAX_LOSS_WARN_PCT,
     MIN_OPEN_INTEREST,
@@ -71,6 +72,11 @@ from constants import (
     SKEW_PUT_STRONG_PTS,
     SKEW_CALL_WARN_PTS,
     TQQQ_MAX_DELTA,
+    TQQQ_IVR_PASS_MIN,
+    TQQQ_IVR_WARN_MIN,
+    TQQQ_VRP_PASS_MIN,
+    TQQQ_VRP_WARN_MIN,
+    TQQQ_SKEW_WARN_PTS,
 )
 
 
@@ -332,12 +338,16 @@ class GateEngine:
         else:
             ivr = float(p.get("ivr_pct", 0.0) or 0.0)
             if ivr >= IVR_SELLER_PASS_PCT:
-                s, r = "pass", "Premium expensive — ideal for selling"
+                s, r = "pass", "Premium elevated (IVR≥40%) — ideal for selling"
+            elif ivr >= IVR_SELLER_WARN_MIN:
+                s, r = "warn", "IVR borderline 35–40% — tradeable but limited premium edge; size down"
             elif ivr >= IVR_SELLER_MIN_PCT:
-                s, r = "warn", "Minimum viable IV for put selling"
+                s, r = "warn", "Minimum viable IV — reduced edge, size down"
             else:
                 s, r = "fail", "IV too cheap — insufficient premium"
-            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
+                             f"≥{IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_WARN_MIN}–{IVR_SELLER_PASS_PCT} warn, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_WARN_MIN} warn, <{IVR_SELLER_MIN_PCT} fail",
+                             r, s == "fail"))
 
         strike = float(p.get("strike", 0.0) or 0.0)
         s1 = float(p.get("s1_support", 0.0) or 0.0)
@@ -421,12 +431,16 @@ class GateEngine:
         else:
             ivr = float(p.get("ivr_pct", 0.0) or 0.0)
             if ivr >= IVR_SELLER_PASS_PCT:
-                s, r = "pass", "Premium expensive — ideal for selling calls"
+                s, r = "pass", "Premium elevated (IVR≥40%) — ideal for selling calls"
+            elif ivr >= IVR_SELLER_WARN_MIN:
+                s, r = "warn", "IVR borderline 35–40% — tradeable but limited premium edge; size down"
             elif ivr >= IVR_SELLER_MIN_PCT:
-                s, r = "warn", "Minimum viable IV for call selling"
+                s, r = "warn", "Minimum viable IV — reduced edge, size down"
             else:
                 s, r = "fail", "IV too cheap — insufficient premium for call selling"
-            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}", f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, s == "fail"))
+            out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
+                             f"≥{IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_WARN_MIN}–{IVR_SELLER_PASS_PCT} warn, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_WARN_MIN} warn, <{IVR_SELLER_MIN_PCT} fail",
+                             r, s == "fail"))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -1297,27 +1311,54 @@ class GateEngine:
         return _gate("trend_ema", "Trend (EMA)", "pass", val_str, "—", "Trend check OK.", False)
 
     def _tqqq_satellite_gate(self, p: dict) -> dict:
-        """TQQQ satellite rules gate (KI-107). Informs user that strategies were filtered
-        to TQQQ_MAX_DELTA. Also checks: VIX < 18 required for TQQQ (3x leverage + crisis = catastrophic).
-        Never a hard block — user must verify QQQ regime and VIX themselves via /ibkr-scan.
+        """TQQQ satellite rules gate (KI-107, enhanced Day 68 peer review).
+        Checks 4 separate conditions specific to 3x leveraged ETF selling:
+          VIX < 18, IVR ≥ 50, IV/HV ≥ 1.15, skew < 8 pts.
+        Any condition outside range → WARN. All conditions met → PASS (with delta cap reminder).
+        Never a hard block — user must verify QQQ regime via /ibkr-scan.
         """
         ticker = p.get("ticker", "").upper()
         if ticker != "TQQQ":
             return _gate("tqqq_satellite", "TQQQ Rules", "pass", "N/A",
                          "TQQQ only", "Not TQQQ — no satellite constraints", False)
+
         vix = p.get("vix")
-        vix_ok = vix is None or float(vix) < 18
-        vix_str = f"VIX {float(vix):.1f}" if vix is not None else "VIX unknown"
+        ivr = float(p.get("ivr_pct", 0.0) or 0.0)
+        vrp = float(p.get("hv_iv_ratio", 0.0) or 0.0)  # IV/HV ratio
+        skew = p.get("skew_value")
+        ivr_confidence = p.get("ivr_confidence", "unknown")
+
+        issues = []
+
         if vix is not None and float(vix) >= 18:
-            return _gate("tqqq_satellite", "TQQQ Rules", "warn",
-                         f"delta ≤ {TQQQ_MAX_DELTA} · {vix_str}",
-                         f"delta ≤ {TQQQ_MAX_DELTA}, VIX < 18, QQQ above 200+50 EMA",
-                         f"TQQQ: {vix_str} ≥ 18 — 3x leverage amplifies vol-crash risk. Consider skipping. Strategies capped at delta {TQQQ_MAX_DELTA}.",
-                         False)
-        return _gate("tqqq_satellite", "TQQQ Rules", "warn",
-                     f"delta ≤ {TQQQ_MAX_DELTA} · {vix_str}",
-                     f"delta ≤ {TQQQ_MAX_DELTA}, VIX < 18, QQQ above 200+50 EMA",
-                     f"TQQQ satellite mode. All strategies capped at delta {TQQQ_MAX_DELTA}. Verify via /ibkr-scan: QQQ above 200+50 EMA, VIX < 18, 1-2% account risk only.",
+            issues.append(f"VIX {float(vix):.1f} ≥ 18 — 3x leverage amplifies vol-crash risk")
+
+        if ivr_confidence != "unknown":
+            if ivr < TQQQ_IVR_WARN_MIN:
+                issues.append(f"IVR {ivr:.1f}% < {TQQQ_IVR_WARN_MIN:.0f} — premium too thin for 3x ETF selling")
+            elif ivr < TQQQ_IVR_PASS_MIN:
+                issues.append(f"IVR {ivr:.1f}% borderline {TQQQ_IVR_WARN_MIN:.0f}–{TQQQ_IVR_PASS_MIN:.0f}% — prefer IVR ≥ {TQQQ_IVR_PASS_MIN:.0f} for TQQQ")
+
+        if vrp > 0:
+            if vrp < TQQQ_VRP_WARN_MIN:
+                issues.append(f"IV/HV {vrp:.2f} < {TQQQ_VRP_WARN_MIN} — minimal VRP, HV may exceed IV")
+            elif vrp < TQQQ_VRP_PASS_MIN:
+                issues.append(f"IV/HV {vrp:.2f} < {TQQQ_VRP_PASS_MIN} — VRP borderline for 3x leveraged ETF selling")
+
+        if skew is not None and float(skew) >= TQQQ_SKEW_WARN_PTS:
+            issues.append(f"Put skew {float(skew):.1f} pts ≥ {TQQQ_SKEW_WARN_PTS:.0f} — elevated institutional hedging on leveraged ETF")
+
+        vix_str = f"VIX {float(vix):.1f}" if vix is not None else "VIX unknown"
+        ivr_str = f"IVR {ivr:.0f}%" if ivr_confidence != "unknown" else "IVR unknown"
+        computed_str = f"delta ≤ {TQQQ_MAX_DELTA} · {ivr_str} · IV/HV {vrp:.2f} · {vix_str}"
+        threshold_str = f"delta ≤ {TQQQ_MAX_DELTA}, IVR ≥ {TQQQ_IVR_PASS_MIN:.0f}, IV/HV ≥ {TQQQ_VRP_PASS_MIN}, VIX < 18, skew < {TQQQ_SKEW_WARN_PTS:.0f} pts"
+
+        if issues:
+            reason = f"TQQQ: {'; '.join(issues)}. Strategies capped at delta {TQQQ_MAX_DELTA}. 1-2% account risk only."
+            return _gate("tqqq_satellite", "TQQQ Rules", "warn", computed_str, threshold_str, reason, False)
+
+        return _gate("tqqq_satellite", "TQQQ Rules", "pass", computed_str, threshold_str,
+                     f"TQQQ conditions met. Delta capped at {TQQQ_MAX_DELTA}. Verify QQQ above 200+50 EMA via /ibkr-scan. 1-2% account risk only.",
                      False)
 
     def _run_etf_sell_put(self, p: dict) -> list[dict]:
@@ -1337,13 +1378,16 @@ class GateEngine:
         else:
             ivr = float(p.get("ivr_pct", 0.0) or 0.0)
             if ivr >= IVR_SELLER_PASS_PCT:
-                s, r = "pass", "Premium expensive — ideal for put selling"
+                s, r = "pass", "Premium elevated (IVR≥40%) — ideal for put selling"
+            elif ivr >= IVR_SELLER_WARN_MIN:
+                s, r = "warn", "IVR borderline 35–40% — tradeable but limited premium edge; size down"
             elif ivr >= IVR_SELLER_MIN_PCT:
-                s, r = "warn", "Minimum viable IV for put selling"
+                s, r = "warn", "Minimum viable IV — reduced edge, size down"
             else:
                 s, r = "fail", "IV too cheap — insufficient premium to sell puts"
             out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.1f}%",
-                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, False))
+                             f"≥{IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_WARN_MIN}–{IVR_SELLER_PASS_PCT} warn, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_WARN_MIN} warn, <{IVR_SELLER_MIN_PCT} fail",
+                             r, False))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))
@@ -1464,13 +1508,16 @@ class GateEngine:
         else:
             ivr = float(p.get("ivr_pct", 0.0) or 0.0)
             if ivr >= IVR_SELLER_PASS_PCT:
-                s, r = "pass", "Premium expensive — ideal for selling calls"
+                s, r = "pass", "Premium elevated (IVR≥40%) — ideal for selling calls"
+            elif ivr >= IVR_SELLER_WARN_MIN:
+                s, r = "warn", "IVR borderline 35–40% — tradeable but limited premium edge; size down"
             elif ivr >= IVR_SELLER_MIN_PCT:
-                s, r = "warn", "Minimum viable IV for call selling"
+                s, r = "warn", "Minimum viable IV — reduced edge, size down"
             else:
                 s, r = "fail", "IV too cheap — insufficient premium for call selling"
             out.append(_gate("ivr_seller", "IV Rank (Seller)", s, f"IVR {ivr:.2f}",
-                             f">={IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_MIN_PCT}-{IVR_SELLER_PASS_PCT-1} warn, <{IVR_SELLER_MIN_PCT} fail", r, False))
+                             f"≥{IVR_SELLER_PASS_PCT} pass, {IVR_SELLER_WARN_MIN}–{IVR_SELLER_PASS_PCT} warn, {IVR_SELLER_MIN_PCT}–{IVR_SELLER_WARN_MIN} warn, <{IVR_SELLER_MIN_PCT} fail",
+                             r, False))
 
         # Gate 2: Vol Risk Premium (Sinclair) — sell only when IV > HV
         out.append(self._etf_hv_iv_seller_gate(p))

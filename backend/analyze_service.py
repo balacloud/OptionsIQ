@@ -37,6 +37,8 @@ from constants import (
     MAX_LOSS_WARN_PCT,
     SPREAD_DATA_FAIL_PCT,
     SPREAD_FAIL_PCT,
+    EM_WARN,
+    EM_WARN_STRONG,
 )
 from gate_engine import GateEngine
 from scan_context_parser import apply_scan_context_to_gate_payload
@@ -765,13 +767,15 @@ def _enrich_strategies(strategies: list[dict], underlying: float,
             em = round(em, 2)
             if em_top is None:
                 em_top = em  # use rank-1 strategy's EM as top-level value
-            sigma = round((underlying - strike) / em, 2) if is_put_side else round((strike - underlying) / em, 2)
+            # distance_ratio: how many expected moves the strike is away from current price.
+            # ≥ 0.75x EM = safe cushion; < 0.50x EM = inside core move zone, high gamma risk.
+            distance_ratio = round((underlying - strike) / em, 2) if is_put_side else round((strike - underlying) / em, 2)
             s["expected_move"] = em
-            s["strike_vs_expected_move"] = sigma
+            s["strike_vs_expected_move"] = distance_ratio
             s["strike_vs_em_label"] = (
-                f"{sigma:.2f}σ OTM ✅" if sigma >= 1.0 else
-                f"{sigma:.2f}σ OTM ⚠️ near 1σ" if sigma >= 0.8 else
-                f"{sigma:.2f}σ — INSIDE expected move ❌"
+                f"{distance_ratio:.2f}x EM ✅" if distance_ratio >= EM_WARN else
+                f"{distance_ratio:.2f}x EM ⚠️ high gamma risk" if distance_ratio >= EM_WARN_STRONG else
+                f"{distance_ratio:.2f}x EM ❌ inside expected move — very high gamma risk"
             )
         else:
             s["expected_move"] = None

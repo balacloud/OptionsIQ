@@ -1,5 +1,5 @@
 # OptionsIQ — Gate Reference
-> **Last Updated:** Day 66 (Jun 5, 2026)
+> **Last Updated:** Day 68 (Jun 14, 2026)
 > **Purpose:** Complete gate inventory — all 4 directions, all thresholds, block vs warn classification.
 > **Source of truth:** `backend/gate_engine.py` + `backend/constants.py`
 
@@ -131,10 +131,10 @@ Seller tracks share most gates. Key differences noted per gate.
 
 ### `ivr_seller` — IV Rank (Seller)
 - **What it checks:** Is premium elevated enough to make selling worthwhile?
-- **Thresholds:** IVR ≥ 35% → pass; 25–35% → warn; < 25% → **BLOCK**
-- **Blocking:** YES — selling into thin IV is negative-expectancy (Sinclair / tastylive research)
-- **Constant:** `IVR_SELLER_PASS_PCT=35`, `IVR_SELLER_MIN_PCT=25`
-- **Rule 23 note:** `/ibkr-scan` also checks IVR. Consider whether this should be WARN only.
+- **Thresholds (Day 68):** IVR ≥ 40% → pass; 35–40% → warn (borderline, size down); 25–35% → warn (minimum viable); < 25% → fail (non-blocking for ETFs)
+- **Blocking:** WARN only for ETFs (Rule 23 — `/ibkr-scan` owns IVR check). Hard fail only in stock track (deprecated).
+- **Constant:** `IVR_SELLER_PASS_PCT=40` *(raised from 35, Day 68)*, `IVR_SELLER_WARN_MIN=35` *(new)*, `IVR_SELLER_MIN_PCT=25`
+- **Peer review source:** Perplexity/Gemini/ChatGPT consensus Day 68 — 35% was too low, conflates "adequate" with "good edge".
 
 ### `hv_iv_vrp` — Volatility Risk Premium (Sinclair)
 - **What it checks:** Is IV > HV (i.e., are you actually collecting a premium edge)?
@@ -142,6 +142,7 @@ Seller tracks share most gates. Key differences noted per gate.
 - **Thresholds (GLD):** IV/HV ≥ 1.10 → pass; < 1.10 → **HARD BLOCK**
 - **Blocking:** YES for GLD only. Gold options have unique correlation dynamics — GLD IV/HV < 1.10 means insufficient premium for the underlying correlation risk.
 - **Constant:** `HV_IV_SELL_PASS_RATIO=1.05`
+- **P4 Day 68 — GLD tenor audit:** Verified. `current_iv` = ATM contract IV from Tradier chain (reflects the selected expiry's implied vol, typically 30–45 DTE). `hv_20` = 20-day close-to-close HV from OHLCV. These are different tenor instruments (forward implied vs trailing realized) — this is standard Sinclair VRP methodology. No code change needed. The 1.10 threshold for GLD is correct: GLD's options skew means spot-correlation risk is higher than a simple IV>HV comparison suggests.
 
 ### `vix_regime` — VIX Regime (Seller)
 - **What it checks:** Is market fear at a level where short-premium has positive expectancy?
@@ -229,12 +230,16 @@ Seller tracks share most gates. Key differences noted per gate.
 - **Blocking:** HARD BLOCK for sell_put only. sell_call never blocks on trend.
 - **Note:** Inactive (pass-through) if no `/ibkr-scan` context pasted.
 
-### `tqqq_satellite` — TQQQ Rules (KI-107, sell tracks only)
-- **What it checks:** TQQQ-specific constraints (3x leverage rules)
-  - Strategies filtered to delta ≤ 0.10
-  - VIX ≥ 18 → warn (3x leverage amplifies vol-crash risk)
-- **Blocking:** WARN only — user verified QQQ regime via `/ibkr-scan`
-- **Constant:** `TQQQ_MAX_DELTA=0.10`
+### `tqqq_satellite` — TQQQ Rules (KI-107, Day 68 enhanced, sell tracks only)
+- **What it checks:** 4 TQQQ-specific conditions (3x leverage requires stricter standards than standard ETFs):
+  1. VIX < 18 (≥ 18 → warn: 3x leverage amplifies vol-crash risk)
+  2. IVR ≥ 50% (40–50% → warn: borderline; < 40% → warn: premium too thin)
+  3. IV/HV ≥ 1.15 (1.05–1.15 → warn: borderline VRP; < 1.05 → warn: no edge)
+  4. Put skew < 8 pts (≥ 8 → warn: elevated institutional hedging on leveraged ETF)
+- **Pass condition:** All 4 conditions met → pass (with delta cap reminder)
+- **Blocking:** WARN only — user must verify QQQ regime via `/ibkr-scan`
+- **Constant:** `TQQQ_MAX_DELTA=0.10`, `TQQQ_IVR_PASS_MIN=50`, `TQQQ_IVR_WARN_MIN=40`, `TQQQ_VRP_PASS_MIN=1.15`, `TQQQ_VRP_WARN_MIN=1.05`, `TQQQ_SKEW_WARN_PTS=8`
+- **Peer review source:** Day 68 consensus — TQQQ structural incompatibility requires separate, stricter thresholds.
 
 ---
 

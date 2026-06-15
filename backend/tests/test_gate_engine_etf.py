@@ -118,3 +118,139 @@ def test_verdict_fail_when_blocking_gate_fails():
     gates.append({"id": "test_block", "name": "Test Block", "status": "fail", "blocking": True, "reason": "test"})
     verdict = engine.build_verdict(gates)
     assert verdict["status"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# P1 Day 68: IVR seller threshold raised 35→40 + warn band 35–40%
+# ---------------------------------------------------------------------------
+def test_seller_ivr_40_passes():
+    """IVR >= 40 should now PASS (was 35 before Day 68)."""
+    payload = make_gate_payload(ivr_pct=40.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    payload["hv_iv_ratio"] = 1.1
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    ivr_gate = _find_gate(gates, "ivr_seller")
+    assert ivr_gate is not None
+    assert ivr_gate["status"] == "pass"
+
+
+def test_seller_ivr_borderline_35_warns():
+    """IVR 35–40 should be WARN (new band, non-blocking) — Day 68."""
+    payload = make_gate_payload(ivr_pct=37.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    payload["hv_iv_ratio"] = 1.1
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    ivr_gate = _find_gate(gates, "ivr_seller")
+    assert ivr_gate is not None
+    assert ivr_gate["status"] == "warn"
+    assert ivr_gate["blocking"] is False
+    assert "35" in ivr_gate["reason"] or "borderline" in ivr_gate["reason"]
+
+
+def test_seller_ivr_below_35_still_warns():
+    """IVR 25–35 (minimum viable floor) should still WARN."""
+    payload = make_gate_payload(ivr_pct=28.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    payload["hv_iv_ratio"] = 1.1
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    ivr_gate = _find_gate(gates, "ivr_seller")
+    assert ivr_gate is not None
+    assert ivr_gate["status"] == "warn"
+
+
+def test_seller_ivr_below_25_fails():
+    """IVR < 25 should FAIL (insufficient premium floor unchanged)."""
+    payload = make_gate_payload(ivr_pct=15.0, hv_20=18.0, dte=35,
+                                strike=440.0, ivr_confidence="known")
+    engine = GateEngine()
+    gates = engine.run("sell_put", payload, etf_mode=True)
+    ivr_gate = _find_gate(gates, "ivr_seller")
+    assert ivr_gate is not None
+    assert ivr_gate["status"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# P3 Day 68: TQQQ satellite gate — separate IVR/VRP/skew thresholds
+# ---------------------------------------------------------------------------
+def test_tqqq_gate_skips_non_tqqq():
+    """Non-TQQQ ticker should produce a pass gate with N/A."""
+    payload = make_gate_payload(ivr_pct=45.0, hv_20=18.0, dte=30)
+    payload["ticker"] = "QQQ"
+    engine = GateEngine()
+    gate = engine._tqqq_satellite_gate(payload)
+    assert gate["status"] == "pass"
+    assert "N/A" in gate["computed_value"]
+
+
+def test_tqqq_gate_all_conditions_good_passes():
+    """TQQQ with IVR≥50, IV/HV≥1.15, VIX<18, skew<8 → PASS."""
+    payload = make_gate_payload(ivr_pct=55.0, hv_20=18.0, dte=30,
+                                ivr_confidence="known")
+    payload["ticker"] = "TQQQ"
+    payload["hv_iv_ratio"] = 1.20   # IV/HV = 1.20 >= 1.15
+    payload["vix"] = 15.0
+    payload["skew_value"] = 5.0     # < 8
+    engine = GateEngine()
+    gate = engine._tqqq_satellite_gate(payload)
+    assert gate["status"] == "pass"
+    assert gate["blocking"] is False
+
+
+def test_tqqq_gate_high_vix_warns():
+    """TQQQ with VIX >= 18 should WARN."""
+    payload = make_gate_payload(ivr_pct=55.0, hv_20=18.0, dte=30,
+                                ivr_confidence="known")
+    payload["ticker"] = "TQQQ"
+    payload["hv_iv_ratio"] = 1.20
+    payload["vix"] = 20.0
+    payload["skew_value"] = 5.0
+    engine = GateEngine()
+    gate = engine._tqqq_satellite_gate(payload)
+    assert gate["status"] == "warn"
+    assert gate["blocking"] is False
+    assert "VIX" in gate["reason"]
+
+
+def test_tqqq_gate_low_ivr_warns():
+    """TQQQ with IVR < 40 should WARN about thin premium."""
+    payload = make_gate_payload(ivr_pct=32.0, hv_20=18.0, dte=30,
+                                ivr_confidence="known")
+    payload["ticker"] = "TQQQ"
+    payload["hv_iv_ratio"] = 1.20
+    payload["vix"] = 15.0
+    payload["skew_value"] = 5.0
+    engine = GateEngine()
+    gate = engine._tqqq_satellite_gate(payload)
+    assert gate["status"] == "warn"
+    assert "IVR" in gate["reason"]
+
+
+def test_tqqq_gate_borderline_ivr_warns():
+    """TQQQ with IVR 40–50 should WARN (prefer IVR ≥ 50)."""
+    payload = make_gate_payload(ivr_pct=45.0, hv_20=18.0, dte=30,
+                                ivr_confidence="known")
+    payload["ticker"] = "TQQQ"
+    payload["hv_iv_ratio"] = 1.20
+    payload["vix"] = 15.0
+    payload["skew_value"] = 5.0
+    engine = GateEngine()
+    gate = engine._tqqq_satellite_gate(payload)
+    assert gate["status"] == "warn"
+    assert "borderline" in gate["reason"].lower() or "40" in gate["reason"]
+
+
+def test_tqqq_gate_elevated_skew_warns():
+    """TQQQ with skew >= 8 pts should WARN."""
+    payload = make_gate_payload(ivr_pct=55.0, hv_20=18.0, dte=30,
+                                ivr_confidence="known")
+    payload["ticker"] = "TQQQ"
+    payload["hv_iv_ratio"] = 1.20
+    payload["vix"] = 15.0
+    payload["skew_value"] = 9.5   # >= 8
+    engine = GateEngine()
+    gate = engine._tqqq_satellite_gate(payload)
+    assert gate["status"] == "warn"
+    assert "skew" in gate["reason"].lower() or "9.5" in gate["reason"]

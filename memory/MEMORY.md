@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 67 — v0.35.9)
-Peer review + blended skill + Playbook tab. 3-model gate review complete. chartreview.md → 3-in-1. UI boxes 3→2. Playbook tab: 7 macro regime patterns with IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro regime + Canadian TSX research docs saved. 100 tests. 0 CRITICAL/HIGH/MEDIUM open.
+## Current Phase (Day 68 — v0.36.0)
+Peer review calibration complete. IVR seller raised 35→40 + warn band 35–40% (IVR_SELLER_WARN_MIN=35). EM distance ratio labels fixed: "x EM" not "σ OTM", thresholds 0.75/0.50. TQQQ gate rewritten with 4 conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts). GLD tenor audit confirmed. 110 tests. 0 CRITICAL/HIGH/MEDIUM open.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY67_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY67.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY68_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY68.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -36,10 +36,12 @@ backend/
                       Day 43: _extract_iv_data() ATM IV, _days_until_next_macro(), fomc_days_away fix.
                       Day 47: ETF_OPTIONS_LIQUID_TIER1 imported, _is_early_market_session() helper,
                       "ticker" in gate_payload, actionable liquidity gate messages in apply_etf_gate_adjustments.
-  constants.py        DONE (Day 19+27+28+29+32+43+47+64) — ETF_OPTIONS_LIQUID_TIER1 (Day 47).
-                      ETF_DTE_SELLER_PASS_MIN=30 (Day 46, tastylive 200k+ trade research).
-                      MIN_CREDIT_WIDTH_RATIO=0.33, IVR_SELLER_PASS_PCT=35, HV_IV_SELL_PASS_RATIO=1.05.
-                      Day 64: SELL_PUT_OTM_PASS_PCT=3.0 added (R3 fix — was magic number in gate_engine).
+  constants.py        UPDATED (Day 19+27+28+29+32+43+47+64+68) — IVR_SELLER_PASS_PCT=40 (raised from 35, Day 68).
+                      IVR_SELLER_WARN_MIN=35 (new warn band Day 68). EM_WARN=0.75, EM_WARN_STRONG=0.50 (Day 68).
+                      TQQQ_IVR_PASS_MIN=50, TQQQ_IVR_WARN_MIN=40, TQQQ_VRP_PASS_MIN=1.15, TQQQ_VRP_WARN_MIN=1.05, TQQQ_SKEW_WARN_PTS=8 (Day 68).
+                      ETF_OPTIONS_LIQUID_TIER1 (Day 47). ETF_DTE_SELLER_PASS_MIN=30 (Day 46).
+                      MIN_CREDIT_WIDTH_RATIO=0.33, HV_IV_SELL_PASS_RATIO=1.05.
+                      Day 64: SELL_PUT_OTM_PASS_PCT=3.0 added (R3 fix).
   marketdata_provider.py  DONE (Day 27+35+36) — 114 lines. OI/volume + IV+greeks supplement. Non-blocking.
                           Credit tracking Day 35. IV/delta/gamma/theta/vega surfaced Day 36.
   bs_calculator.py    DONE — Black-Scholes greeks + price (scipy)
@@ -52,11 +54,13 @@ backend/
                       during ib.sleep() — insufficient for streaming. reqHistoricalData is request-response.
   alpaca_provider.py  DONE (Day 10) — REST fallback, greeks ✅, NO OI/volume (model limitation)
   mock_provider.py    LOW PRIORITY — partially hardcoded
-  gate_engine.py      UPDATED (Day 57+58+59+60+66) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
+  gate_engine.py      UPDATED (Day 57+58+59+60+66+68) — FOMC 3-tier gate (XLF/XLRE/TQQQ hard block <14d, QQQ/IWM/GLD warn-only).
                       Day 59: _tqqq_satellite_gate() + GLD IV/HV >= 1.10 gate + sell_call FOMC tier logic.
                       Day 60: _trend_ema_gate() added — wired into all 4 ETF tracks.
                       Day 66: _skew_flow_gate() added (sell_put + sell_call, WARN only).
                       Day 66: ivr_seller + market_regime_seller → blocking=False (WARN only). sell_put hard blocks: 9→6.
+                      Day 68: All 4 IVR seller gates updated (4-tier: ≥40 pass / 35-40 warn / 25-35 warn / <25 fail).
+                      Day 68: _tqqq_satellite_gate() rewritten — 4 conditions, can return PASS when all met.
   scan_context_parser.py  NEW (Day 60) — parse_scan_context(text) KEY=VALUE regex.
                       apply_scan_context_to_gate_payload() merges live IVR, P/C ratio, trend EMA into gate_payload.
                       Bridges /ibkr-scan skill output to analyze backend via copy-paste.
@@ -65,7 +69,7 @@ backend/
   pnl_calculator.py   UPDATED (Day 58+65) — otm_call/otm_put P&L fixed. buy_call/buy_put unified types added. All types covered.
   chart_context_parser.py   NEW (Day 65) — parse_chart_context(), compute_strike_vs_support(), apply_chart_context_to_response()
   catalyst_context_parser.py NEW (Day 65) — parse_catalyst_context(), apply_catalyst_context_to_gate_payload(), _strategy_catalyst_overlay()
-  tests/              93 tests (pytest). 9 files. (52→93 Day 65: test_chart_context.py + test_catalyst_context.py, 41 new tests).
+  tests/              110 tests (pytest). 9 files. (100→110 Day 68: 4 IVR tier tests + 6 TQQQ gate tests).
 
 frontend/
   components/GateExplainer.jsx   UPDATED (Day 64) — fomc_gate entry added to GATE_KB (3-tier logic explanation). ivr_seller updated with explicit 35% threshold + tastylive citation.
@@ -96,12 +100,11 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 68 Priorities
-1. **P0:** Live end-to-end test with blended /chartreview (ibkr-scan → /chartreview with screenshot + SCAN CONTEXT → paste 3 blocks into OptionsIQ)
-2. **P1:** IVR 35→40 + WARN band 35–40% (constants.py + gate_engine.py, ~15 lines)
-3. **P2:** Expected move distance ratio gate (analyze_service.py, ~20 lines, fix "POP <50%" framing)
-4. **P3:** TQQQ separate thresholds in _tqqq_satellite_gate() — IVR>50, VRP>1.15, skew heavy 8pts (CRITICAL per peer review)
-5. **P4:** GLD IV/HV tenor audit — verify gate_engine.py uses 30d IV / 20d HV
+## Day 69 Priorities
+1. **P0:** Live end-to-end test with blended /chartreview (ibkr-scan → /chartreview with screenshot + SCAN CONTEXT → paste both blocks into OptionsIQ)
+2. **P1:** Verify IVR calibration live — run analysis on ETF with IVR in 35–40 range, confirm WARN shown
+3. **P2:** GLD skew inversion flag — _skew_flow_gate() sell_call branch for GLD, ~10 lines
+4. **P3:** Frontend redesign (backlog, low priority)
 
 ## TradingView Pine Script
 - File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)
@@ -122,8 +125,8 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/GATE_REFERENCE.md` — **complete gate inventory** (all 4 directions, hard blocks vs warn, thresholds, Rule 23 review candidates) — added Day 66
 - `docs/stable/QUANT_PERSONA.md` — Marcus Webb persona (30-year ETF options trader) for adversarial gate review — added Day 66
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger). v1.6 (Day 64).
-- `docs/versioned/KNOWN_ISSUES_DAY64.md`
-- `docs/status/PROJECT_STATUS_DAY64_SHORT.md`
+- `docs/versioned/KNOWN_ISSUES_DAY68.md`
+- `docs/status/PROJECT_STATUS_DAY68_SHORT.md`
 - `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source
