@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 69 (Jun 16, 2026)
-> **Current Version:** v0.36.1
-> **Project Phase:** Audit + Tradier OHLCV fix + dead IBKR code removed. ib_worker.py + ibkr_provider.py deleted. HV now computed from Tradier price history. 110 tests. 0 CRITICAL/HIGH/MEDIUM.
+> **Last Updated:** Day 70 (Jun 16, 2026)
+> **Current Version:** v0.36.2
+> **Project Phase:** Quick Reference card added to Learn tab (6th panel). Strategy comparison table, call buying ranking R1/R2/R3, key thresholds, 100% loss warning. 110 tests. 0 CRITICAL/HIGH/MEDIUM.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY69_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY69.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY70_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY70.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -287,6 +287,7 @@ Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 70 | Jun 16, 2026 | **Quick Reference card in Learn tab (v0.36.2).** New 6th panel "Quick Ref" — strategy comparison table, call buying R1/R2/R3 ranking (δ0.68/0.50/0.30), key thresholds (DTE/IVR/GLD/TQQQ/exit rule), 100% loss warning box. Build clean. 110 tests. |
 | Day 69 | Jun 16, 2026 | **Audit + Tradier OHLCV + dead code removal + live test (v0.36.1).** Audit 0C/1H/1M/1L fixed. Tradier OHLCV primary for HV. ib_worker.py + ibkr_provider.py deleted. IBWorker stripped from 8 files. Live test passed: data_source=tradier, hv_20=28.68 from Tradier. Syntax bug caught+fixed. 110 tests. |
 | Day 68 | Jun 15, 2026 | **Peer review calibration (v0.36.0).** IVR seller threshold raised 35→40 + warn band 35–40% added (IVR_SELLER_WARN_MIN=35). EM distance ratio labels fixed: thresholds 0.75/0.50, "x EM" not "σ OTM". TQQQ satellite gate rewritten: 4 separate conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts), can now return PASS. GLD tenor audit confirmed correct. GATE_REFERENCE.md updated. 110 tests (+10). |
 | Day 67 | Jun 6–10, 2026 | **Peer review + blended skill + Playbook tab (v0.35.9).** 3-model gate review complete (Perplexity/Gemini/ChatGPT). chartreview.md rewritten as 3-in-1 blended skill. UI context boxes 3→2. Playbook tab added: 7 macro regime patterns (Tier 1/2/3), IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro research docs saved. 100 tests. |
@@ -330,8 +331,12 @@ Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_
 
 ## Next Session Priorities (Day 70)
 
-### P0 — ~~Test the cleanup live~~ ✅ DONE (Day 69 post-commit)
-Import OK, health OK, data_source=tradier, hv_20=28.68 from Tradier OHLCV. Syntax bug found+fixed (stray `)` in data_service.py).
+### P0 — ~~Test the cleanup live~~ ✅ DONE (Day 69)
+### P0 — GLD skew inversion flag
+`gate_engine._skew_flow_gate()`: sell_call branch for GLD (calls bid above puts during rallies). ~10 lines.
+
+### P1 — XLF post-FOMC re-entry + first paper trade
+Run `/ibkr-scan` Jun 17. If IV/HV > 1.10 and IVR toward 50% → XLF sell_put candidate → log paper trade #1.
 
 ### P1 — GLD skew inversion flag
 `gate_engine._skew_flow_gate()`: GLD skew inverts during gold rallies. Add GLD-specific branch for sell_call skew signal. ~10 lines.

@@ -320,6 +320,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 
 | Version | Day | Notes |
 |---------|-----|-------|
+| v0.36.2 | Day 70 | **Quick Reference card in Learn tab.** New 6th panel — strategy comparison table, call buying R1/R2/R3 ranking (δ0.68/0.50/0.30), key thresholds (DTE/IVR/GLD/TQQQ/exit rule), 100% loss warning box. Build clean. 110 tests. |
 | v0.36.1 | Day 69 | **Audit + Tradier OHLCV + dead code removal.** Targeted audit 0C/1H/1M/1L (GateExplainer IVR text, framework stale refs, debug label). Tradier OHLCV wired as primary HV source in `_extract_iv_data()` + `seed_iv_for_ticker()`. `ib_worker.py` + `ibkr_provider.py` deleted. IBWorker stripped from 8 service files. scanner_service IBWorker functions removed. 110 tests. |
 | v0.36.0 | Day 68 | **Peer review calibration.** IVR seller raised 35→40 + warn band 35–40% (`IVR_SELLER_WARN_MIN=35`). EM labels fixed: thresholds 0.75/0.50, "x EM" not "σ OTM". TQQQ gate rewritten: 4 conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts), returns PASS when met. GLD tenor audit: ATM IV vs 20d HV confirmed correct. GATE_REFERENCE.md updated. 110 tests (+10). |
 | v0.35.9 | Day 67 | **Peer review + blended skill + Playbook tab.** 3-model gate review (Perplexity/Gemini/ChatGPT). chartreview.md → 3-in-1 blended skill (chart + catalyst + direction verdict). UI context boxes 3→2. Playbook tab: 7 macro regime patterns with IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro regime + Canadian TSX research docs. 100 tests. |

@@ -3814,3 +3814,86 @@ tr:last-child td { border-bottom: none; }
   .pb-grid-3 { grid-template-columns: 1fr; }
   .pb-stack-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── Quick Ref Panel ─────────────────────────────────────────────────────── */
+.qr-wrap { display: flex; flex-direction: column; gap: 20px; }
+.qr-section { }
+.qr-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7280;
+  margin-bottom: 10px;
+}
+.qr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.qr-table th {
+  text-align: left;
+  padding: 6px 10px;
+  background: #1f2937;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 11px;
+  border-bottom: 1px solid #374151;
+}
+.qr-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #1f2937;
+  color: #d1d5db;
+}
+.qr-row-highlight td { background: rgba(0,200,150,0.06); color: #e5e7eb; }
+.qr-row-highlight td:first-child { color: #00C896; }
+
+.qr-rank-grid { display: flex; flex-direction: column; gap: 6px; }
+.qr-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #1a1f2e;
+  font-size: 12px;
+}
+.qr-rank-best { border-left: 3px solid #00C896; }
+.qr-rank-avoid { border-left: 3px solid #FF4444; opacity: 0.7; }
+.qr-rank-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  width: 22px;
+  flex-shrink: 0;
+}
+.qr-rank-label { color: #e5e7eb; font-weight: 600; min-width: 180px; }
+.qr-rank-note { color: #6b7280; font-size: 11px; }
+
+.qr-rules { display: flex; flex-direction: column; gap: 6px; }
+.qr-rule {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: #d1d5db;
+  padding: 5px 0;
+  border-bottom: 1px solid #1f2937;
+}
+.qr-rule-key {
+  font-weight: 600;
+  color: #9ca3af;
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.qr-warning {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 8px;
+  font-size: 12px;
+  color: #e5e7eb;
+}
+.qr-warn-icon { font-size: 18px; flex-shrink: 0; }

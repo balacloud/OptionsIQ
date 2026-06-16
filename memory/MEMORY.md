@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 69 — v0.36.1)
+## Current Phase (Day 70 — v0.36.2)
 Dead IBKR code removed. ib_worker.py + ibkr_provider.py deleted. IBWorker stripped from 8 service files. Tradier OHLCV now primary source for HV computation. Targeted audit clean. P0 live /chartreview test passed (NO_TRADE on FOMC day). 110 tests. 0 CRITICAL/HIGH/MEDIUM.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY69_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY69.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY70_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY70.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -100,11 +100,10 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 70 Priorities
-1. **P0:** ~~Test cleanup live~~ ✅ DONE — import OK, data_source=tradier, hv_20=28.68 from Tradier OHLCV. Syntax bug caught+fixed.
-2. **P1:** GLD skew inversion flag — _skew_flow_gate() sell_call branch for GLD, ~10 lines
-3. **P2:** XLF post-FOMC re-entry check — run /ibkr-scan Jun 17, compare IV/HV to Jun 16 NO_TRADE
-4. **P3:** Frontend redesign (backlog)
+## Day 71 Priorities
+1. **P0:** GLD skew inversion — _skew_flow_gate() sell_call branch for GLD ~10 lines
+2. **P1:** XLF post-FOMC — run /ibkr-scan Jun 17, if IV/HV > 1.10 + IVR toward 50% → first paper trade
+3. **P2:** Frontend redesign (backlog)
 
 ## TradingView Pine Script
 - File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)

@@ -634,6 +634,110 @@ const DEFAULT_GATES = [
   { num:7, name:'Risk Defined', status:'pass', statusColor:'#00C896', meter:100, reason:'Bear call spread — max loss $79 capped', id:'liquidity' },
 ].map(g => ({ ...g, kb: GATE_KB[g.id] || DEFAULT_GATE_KB, displayStatus: g.status.toUpperCase() }));
 
+// ── Quick Reference panel ──────────────────────────────────────────────────
+function PanelQuickRef() {
+  return (
+    <div className="lt-panel-body qr-wrap">
+
+      {/* Strategy comparison */}
+      <div className="qr-section">
+        <div className="qr-section-title">Strategy comparison</div>
+        <table className="qr-table">
+          <thead>
+            <tr><th>Strategy</th><th>Downside</th><th>Upside</th><th>Best when</th></tr>
+          </thead>
+          <tbody>
+            <tr className="qr-row-highlight">
+              <td><strong>Buy Call</strong></td>
+              <td>Premium paid only</td>
+              <td>Unlimited above B/E</td>
+              <td>Strong bullish move</td>
+            </tr>
+            <tr>
+              <td>Buy Call Spread</td>
+              <td>Premium paid only</td>
+              <td>Capped at spread</td>
+              <td>Mild bullish</td>
+            </tr>
+            <tr>
+              <td>Sell Put</td>
+              <td>Large (strike × 100)</td>
+              <td>Premium collected</td>
+              <td>Neutral / bullish</td>
+            </tr>
+            <tr>
+              <td>Buy Stock</td>
+              <td>Full price to zero</td>
+              <td>Unlimited</td>
+              <td>Long-term bullish</td>
+            </tr>
+            <tr>
+              <td>Sell Call (naked)</td>
+              <td>Unlimited</td>
+              <td>Premium only</td>
+              <td>Neutral / bearish</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Call buying ranking */}
+      <div className="qr-section">
+        <div className="qr-section-title">Call buying strike ranking (OptionsIQ)</div>
+        <div className="qr-rank-grid">
+          <div className="qr-rank-row qr-rank-best">
+            <span className="qr-rank-num">R1</span>
+            <span className="qr-rank-label">Slightly ITM — delta ~0.68</span>
+            <span className="qr-rank-note">Best balance · less lottery, strong upside</span>
+          </div>
+          <div className="qr-rank-row">
+            <span className="qr-rank-num">R2</span>
+            <span className="qr-rank-label">ATM — delta ~0.50</span>
+            <span className="qr-rank-note">Good if breakout is just starting</span>
+          </div>
+          <div className="qr-rank-row">
+            <span className="qr-rank-num">R3</span>
+            <span className="qr-rank-label">Slightly OTM — delta ~0.30</span>
+            <span className="qr-rank-note">Higher % gain possible, lower probability</span>
+          </div>
+          <div className="qr-rank-row qr-rank-avoid">
+            <span className="qr-rank-num">✗</span>
+            <span className="qr-rank-label">Far OTM — delta &lt; 0.15</span>
+            <span className="qr-rank-note">Lottery ticket · system blocks these</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Key rules */}
+      <div className="qr-section">
+        <div className="qr-section-title">Key rules</div>
+        <div className="qr-rules">
+          <div className="qr-rule"><span className="qr-rule-key">DTE (buyers)</span><span>45–90 days · time for move to develop</span></div>
+          <div className="qr-rule"><span className="qr-rule-key">DTE (sellers)</span><span>21–45 days · theta accelerates here</span></div>
+          <div className="qr-rule"><span className="qr-rule-key">IVR sellers</span><span>≥ 40% to sell premium with edge · 35–40% = warn, size down</span></div>
+          <div className="qr-rule"><span className="qr-rule-key">GLD sellers</span><span>IV/HV ≥ 1.10 required · gold has unique skew dynamics</span></div>
+          <div className="qr-rule"><span className="qr-rule-key">TQQQ delta</span><span>max 0.10 · 3× leverage means 3× the move</span></div>
+          <div className="qr-rule"><span className="qr-rule-key">Exit rule</span><span>Close at 50% profit or 21 DTE · whichever comes first</span></div>
+        </div>
+      </div>
+
+      {/* Warning box */}
+      <div className="qr-warning">
+        <span className="qr-warn-icon">⚠️</span>
+        <div>
+          <strong>"Capped downside" does not mean low risk.</strong>
+          <div style={{ marginTop: 4, color: '#ccc' }}>
+            You can still lose 100% of the premium paid. A weekly QQQ call for $500 can lose
+            $300–$400 in a single session if the move doesn't come. Use 45–90 DTE and ITM strikes
+            to reduce this — the system picks R1 first for this reason.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 const PANELS = [
   { label: 'Risk' },
@@ -641,6 +745,7 @@ const PANELS = [
   { label: 'B/E' },
   { label: 'Timing' },
   { label: 'Gates' },
+  { label: 'Quick Ref' },
 ];
 
 export default function LearnTab({ ticker, direction, data }) {
@@ -655,6 +760,7 @@ export default function LearnTab({ ticker, direction, data }) {
     2: `BE = $${ctx.breakeven}`,
     3: ctx.dte <= 45 && ctx.dte >= 21 ? 'DTE ✓ IN RANGE' : `DTE ${ctx.dte}d`,
     4: gatesCount > 0 ? `${passCount}/${gatesCount} PASS` : '7 GATES',
+    5: 'R1=δ0.68 · 45-90 DTE',
   };
   const badgeColor = {
     0: 'lt-badge-pass',
@@ -662,6 +768,7 @@ export default function LearnTab({ ticker, direction, data }) {
     2: 'lt-badge-warn',
     3: (ctx.dte >= 21 && ctx.dte <= 45) ? 'lt-badge-pass' : 'lt-badge-warn',
     4: gatesCount > 0 && passCount < gatesCount ? 'lt-badge-fail' : 'lt-badge-pass',
+    5: 'lt-badge-pass',
   };
 
   return (
@@ -697,7 +804,7 @@ export default function LearnTab({ ticker, direction, data }) {
         <div className="lt-panel-head">
           <div>
             <div className="lt-panel-title">
-              {['Max Profit vs Max Loss', 'Strike Zone Visualization', 'Breakeven Point', 'Timing: DTE & Events', '7 Safety Gates'][activePanel]}
+              {['Max Profit vs Max Loss', 'Strike Zone Visualization', 'Breakeven Point', 'Timing: DTE & Events', '7 Safety Gates', 'Options Quick Reference'][activePanel]}
             </div>
             <div className="lt-panel-sub">
               {[
@@ -706,6 +813,7 @@ export default function LearnTab({ ticker, direction, data }) {
                 'The exact price where you neither profit nor lose at expiry',
                 'Days to expiry and what scheduled events could move the stock',
                 'All gates must pass before placing the trade',
+                'Strategy comparison · strike ranking · key rules at a glance',
               ][activePanel]}
             </div>
           </div>
@@ -717,6 +825,7 @@ export default function LearnTab({ ticker, direction, data }) {
         {activePanel === 2 && <PanelBreakeven ctx={ctx} />}
         {activePanel === 3 && <PanelTiming ctx={ctx} data={data} />}
         {activePanel === 4 && <PanelGates data={data} />}
+        {activePanel === 5 && <PanelQuickRef />}
       </div>
 
       {/* Progress dots */}
