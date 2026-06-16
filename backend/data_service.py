@@ -178,7 +178,6 @@ class DataService:
             return cur.rowcount
 
     # ─── Public API ───────────────────────────────────────────────────────────
-        )
 
     def get_cache_stats(self, tickers: list[str]) -> dict:
         """Return chain cache age/freshness per ticker for data provenance."""
