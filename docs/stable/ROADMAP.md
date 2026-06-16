@@ -312,6 +312,7 @@ Explicitly researched and deferred. Rationale documented here to avoid re-asking
 - [ ] MCP server: expose gate_engine, sector_scan, paper_trade as MCP tools for conversational analysis
 - [ ] audit_quick.sh: automate mechanical grep-based audit checks (Category 2, 4, 5, 8 partials)
 - [ ] **Canadian TSX expansion (non-urgent):** Bull Call Spread + Calendar Spread on RY/TD/MFC/ENB. Requires: IBKR as TSX data source, spread builder reinstatement, CAD account size, direct earnings gate. See `docs/Research/Canadian_TSX_Options_Day67.md`. Revisit after 30+ US paper trades logged.
+- [ ] **TradingView screen capture MCP (low priority):** macOS MCP server that auto-captures the TradingView desktop window and feeds it to `/chartreview` — eliminates the manual screenshot step. Only worth building if morning workflow frequency increases significantly. One screenshot per day = not worth it. Inspired by Humbled Trader Claude Code video.
 
 ---
 
