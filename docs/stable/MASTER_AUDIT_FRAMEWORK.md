@@ -1,6 +1,6 @@
 # OptionsIQ — Master Audit Framework
-> **Last Updated:** Day 64 (Jun 3, 2026)
-> **Version:** v1.6
+> **Last Updated:** Day 69 (Jun 16, 2026)
+> **Version:** v1.7
 > **When to run:** Weekly (Monday before market open) OR triggered by: "run audit", "audit now", major feature completion
 > **Time estimate:** 30-45 mins for Categories 1-9. Category 10 (effectiveness) runs monthly or when setups are dry.
 
@@ -44,7 +44,7 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 - **Historical IV is uniquely IBKR** — no other affordable provider has it. During market hours, IBKR watchlist `52wk IV Rank` is authoritative and real-time. iv_history.db EOD batch is now redundant for daily decisions but kept for paper trade audit trail.
 - **IVR = percentile** (what % of past year was lower than today), not count-rank
 - **High IVR → sell premium, not buy** — IVR 100% on buy_call is a critical block, not a warning
-- **IVR seller threshold = 35%** (tastylive empirical, Day 29) — not 50%. Higher threshold sacrifices 60-70% of trade frequency.
+- **IVR seller threshold = 40%** (raised from 35% Day 68 peer review — Perplexity/Gemini/ChatGPT consensus). Warn band 35–40% added. IVR_SELLER_WARN_MIN=35 is the new floor for the warn tier.
 - **Multi-LLM consensus before implementing financial logic** — one model can hallucinate options theory
 - **Sector quadrant interpretation requires research** — Weakening ≠ ANALYZE (it means WAIT)
 - **Lagging ≠ bearish opportunity without further conditions** — mean-reversion timing matters
@@ -166,9 +166,10 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 [ ] "SPY regime gates use STA (not IB Gateway or yfinance)"
     → Read: sector_scan_service._spy_regime() — STA_BASE_URL still used?
 
-[ ] "IVR seller threshold is 35% (not 50%)"
-    → Read: constants.py IVR_SELLER_PASS_PCT — should be 35, not 50
-    → Read: gate_engine seller gate — does it use IVR_SELLER_PASS_PCT?
+[ ] "IVR seller threshold is 40% with warn band 35–40% (not 50%, not 35%)"
+    → Read: constants.py IVR_SELLER_PASS_PCT — should be 40 (raised from 35 Day 68)
+    → Read: constants.py IVR_SELLER_WARN_MIN — should be 35 (new warn band floor Day 68)
+    → Read: gate_engine seller gate — does it use 4-tier logic (≥40 pass / 35-40 warn / 25-35 warn / <25 fail)?
 
 [ ] "TQQQ_MAX_DELTA = 0.10 in constants.py"
     → Read: constants.py — TQQQ_MAX_DELTA value. Must be 0.10 (not 0.15).
@@ -227,7 +228,7 @@ Every finding gets verdict: **VERIFIED / PLAUSIBLE / MISLEADING / BROKEN / FALSE
 
 [ ] IVR threshold interpretation (updated Day 29):
     buy_call gate → IVR < 30% = PASS (cheap IV, good time to buy)
-    sell_put gate → IVR > 35% = PASS (tastylive empirical; was 50% pre-Day 29 — verify constants.py)
+    sell_put gate → IVR ≥ 40% = PASS, 35–40% = WARN, 25–35% = WARN (floor), <25% = FAIL (raised from 35% Day 68 peer review)
     Are these thresholds in constants.py (IVR_BUYER_PASS_PCT, IVR_SELLER_PASS_PCT) and applied correctly?
 
 [ ] Direction-DTE mapping:
@@ -531,6 +532,7 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
 | Day 62 Gate Recalibration | Jun 1, 2026 | 2,3 | 5 gates advisory-only per Rule 23 | 0 | 0 (intentional design change) | ivr_buyer, hv_iv_buyer, market_regime, max_loss, VRP (non-GLD) changed hard-block → advisory warn. GLD IV/HV exception kept. Rule 23 added to GOLDEN_RULES. ETF Signal Scanner removed from App.jsx. 52 tests pass. |
 | Day 63 MCP Integration | Jun 2, 2026 | 1 | /ibkr-scan rewritten — MCP replaces screenshot | 0 | 0 | ibkr-scan.md: 12 MCP calls for all 6 ETFs. Three-input architecture (CHART+CATALYST+SCAN) designed. chart_context_parser.py + catalyst_context_parser.py created (not yet wired). Workflow split: browser (flat rate) vs Claude Code (dev). |
 | Day 64 Full Audit | Jun 3, 2026 | 1-9 | 0 CRITICAL · 0 HIGH · 3 MEDIUM · 2 LOW | 0 | 0 HIGH fixed (none found) | MEDIUM: R3 magic 3.0 in gate_engine → SELL_PUT_OTM_PASS_PCT constant added; fomc_gate missing from GATE_KB → added; trend_ema gate description too narrow → corrected (blocks all 4 dirs direction-aware). LOW: KI-110 (buy_call stale type names), R4 app.py 360 lines. All MEDIUM fixed same session. |
+| Day 69 Targeted Audit | Jun 16, 2026 | 1,2,3,7,9 | 0 CRITICAL · 1 HIGH · 1 MEDIUM · 1 LOW | 0 | 1 HIGH fixed same session | HIGH: GateExplainer.jsx ivr_seller GATE_KB showed "IVR ≥ 35%" — contradicts backend gate (40% after Day 68) → fixed to 40% + warn band explanation. MEDIUM: MASTER_AUDIT_FRAMEWORK 5 stale IVR=35% references → updated to 40%. LOW: app.py debug endpoint "ibkr_cache" label → replaced with "bod_cache". All 3 fixed same session. Framework updated to v1.7. 110 tests pass. |
 
 ---
 
@@ -576,7 +578,7 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
 
 [ ] GateExplainer GATE_KB accuracy:
     Open GateExplainer.jsx — GATE_KB object
-    ivr_seller → PASS answer should say "IV is expensive" (IVR > 35% for sellers — NOT 50%)
+    ivr_seller → PASS answer should say "IVR ≥ 40% = PASS" (raised from 35% Day 68); WARN band 35–40% should appear for borderline IVR
     ivr        → PASS answer should say "IV is cheap" (IVR < 30% for buyers)
     market_regime_seller → different from market_regime (seller bias = up OR flat = pass)
     fomc_gate (new Day 57) → is this gate ID in GATE_KB? Or does it render as raw gate.id?
@@ -644,7 +646,7 @@ Checks 10.3 (DTE calibration), 10.4 (unbiased evaluation), 10.5 (expected value)
       > 8 setups surfaced   → gates are UNDER-TUNED. Standards are too loose.
 
     If blocked: identify the gate blocking the most ETFs.
-    Is it: FOMC (XLF/TQQQ sell blocked?)? IVR (< 35% for sellers)? DTE? IV/HV?
+    Is it: FOMC (XLF/TQQQ sell blocked?)? IVR (< 40% for sellers — raised from 35% Day 68)? DTE? IV/HV?
     One gate causing >50% of blocks = recalibration candidate.
 ```
 

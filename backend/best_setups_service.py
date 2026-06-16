@@ -18,7 +18,6 @@ def run_one_setup(
     s: dict,
     *,
     data_svc,
-    ib_worker,
     yf_provider,
     mock_provider,
     strategy_ranker,
@@ -49,7 +48,7 @@ def run_one_setup(
 
         result = analyze_etf(
             payload, ticker,
-            data_svc=data_svc, ib_worker=ib_worker,
+            data_svc=data_svc,
             yf_provider=yf_provider, mock_provider=mock_provider,
             strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
             iv_store=iv_store, spy_regime_fn=spy_regime_fn,

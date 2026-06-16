@@ -366,14 +366,10 @@ def scan_sectors(iv_store=None):
 # ---------------------------------------------------------------------------
 # Level 2: Standard Analysis (single ETF — adds IV/OI/spread from IBKR)
 # ---------------------------------------------------------------------------
-def analyze_sector_etf(ticker, data_service=None, ib_worker=None, iv_store=None):
+def analyze_sector_etf(ticker, data_service=None, iv_store=None):
     """
     Level 2 analysis for a single sector ETF.
     Adds IV overlay, bid-ask spread, suggested DTE, catalyst warnings.
-
-    data_service: DataService instance (for chain fetch)
-    ib_worker: IBWorker instance (for IVR/HV — currently reserved for future IV history seeding)
-    iv_store: IVStore instance (for IVR percentile + HV20 computation)
     """
     ticker = ticker.upper().strip()
     if ticker not in ETF_TICKERS:

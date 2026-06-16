@@ -10,15 +10,15 @@ Personal options analysis tool. NOT a broker. Analysis only.
 - MarketData.app: **FREE tier** (100 credits/day, ~33/day used). NOT on Starter $12/mo. Upgrade only if credits saturate.
 - Tradier: LIVE (free brokerage account, no subscription needed). Primary chain source since Day 39.
 
-## Current Phase (Day 68 — v0.36.0)
-Peer review calibration complete. IVR seller raised 35→40 + warn band 35–40% (IVR_SELLER_WARN_MIN=35). EM distance ratio labels fixed: "x EM" not "σ OTM", thresholds 0.75/0.50. TQQQ gate rewritten with 4 conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts). GLD tenor audit confirmed. 110 tests. 0 CRITICAL/HIGH/MEDIUM open.
+## Current Phase (Day 69 — v0.36.1)
+Dead IBKR code removed. ib_worker.py + ibkr_provider.py deleted. IBWorker stripped from 8 service files. Tradier OHLCV now primary source for HV computation. Targeted audit clean. P0 live /chartreview test passed (NO_TRADE on FOMC day). 110 tests. 0 CRITICAL/HIGH/MEDIUM.
 
 ## Session Protocol (REQUIRED at start of every session — read ALL 6 files IN ORDER)
 1. Read `CLAUDE_CONTEXT.md` — current state, known issues, next priorities
 2. Read `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. Read `docs/stable/ROADMAP.md` — phase status, done vs pending ← DO NOT SKIP
-4. Read `docs/status/PROJECT_STATUS_DAY68_SHORT.md` — latest day status snapshot
-5. Read `docs/versioned/KNOWN_ISSUES_DAY68.md` — open bugs and severity
+4. Read `docs/status/PROJECT_STATUS_DAY69_SHORT.md` — latest day status snapshot
+5. Read `docs/versioned/KNOWN_ISSUES_DAY69.md` — open bugs and severity
 6. Read `docs/stable/API_CONTRACTS.md` — ONLY if touching API endpoints
 After reading: state current version, top priority, any blockers. Ask "What would you like to focus on today?"
 
@@ -100,11 +100,11 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - Non-ETF tickers → HTTP 400 with `etf_universe` list
 - Gate engine called with `etf_mode=True` → routes to ETF-specific gate tracks
 
-## Day 69 Priorities
-1. **P0:** Live end-to-end test with blended /chartreview (ibkr-scan → /chartreview with screenshot + SCAN CONTEXT → paste both blocks into OptionsIQ)
-2. **P1:** Verify IVR calibration live — run analysis on ETF with IVR in 35–40 range, confirm WARN shown
-3. **P2:** GLD skew inversion flag — _skew_flow_gate() sell_call branch for GLD, ~10 lines
-4. **P3:** Frontend redesign (backlog, low priority)
+## Day 70 Priorities
+1. **P0:** Test cleanup live — restart backend, confirm no ImportError, hit /api/health, run analyze QQQ sell_put, verify data_source=tradier + hv_20 populated
+2. **P1:** GLD skew inversion flag — _skew_flow_gate() sell_call branch for GLD, ~10 lines
+3. **P2:** XLF post-FOMC re-entry check — run /ibkr-scan Jun 17, compare IV/HV to Jun 16 NO_TRADE
+4. **P3:** Frontend redesign (backlog)
 
 ## TradingView Pine Script
 - File: `tradingview/OptionsIQ_ChartReview.pine` — **Indicator** type (not Strategy/Library)
@@ -125,8 +125,8 @@ STA is user's own system — always running. Rule 6 (STA optional) preserved via
 - `docs/stable/GATE_REFERENCE.md` — **complete gate inventory** (all 4 directions, hard blocks vs warn, thresholds, Rule 23 review candidates) — added Day 66
 - `docs/stable/QUANT_PERSONA.md` — Marcus Webb persona (30-year ETF options trader) for adversarial gate review — added Day 66
 - `docs/stable/MASTER_AUDIT_FRAMEWORK.md` — consolidated audit (10 categories, weekly trigger). v1.6 (Day 64).
-- `docs/versioned/KNOWN_ISSUES_DAY68.md`
-- `docs/status/PROJECT_STATUS_DAY68_SHORT.md`
+- `docs/versioned/KNOWN_ISSUES_DAY69.md`
+- `docs/status/PROJECT_STATUS_DAY69_SHORT.md`
 - `docs/Research/Phase7c_Research.md` — Phase 7c research: live scan findings, fixes, adversarial prompts, roadmap
 - `docs/Research/Daily_Trade_Prompts.md` — 7 pre-trade research prompts (daily use, stays at root)
 - `docs/Research/data-providers/DATA_PROVIDERS_SYNTHESIS.md` — **CANONICAL** provider decisions: stack locked, all provider verdicts, why IBKR is sole historical IV source

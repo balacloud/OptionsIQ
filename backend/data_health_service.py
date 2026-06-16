@@ -20,7 +20,6 @@ def build_data_health(
     *,
     iv_store,
     data_svc,
-    ib_worker,
     md_provider,
     alpaca_provider,
 ) -> dict:

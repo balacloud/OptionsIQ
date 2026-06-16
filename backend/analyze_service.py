@@ -411,7 +411,7 @@ def _merge_swing(payload: dict, underlying: float, spy_regime_fn) -> dict:
 
 
 def _extract_iv_data(ticker: str, chain: dict, provider, *,
-                     ib_worker=None, mock_provider=None, iv_store=None) -> dict:
+                     ohlcv_provider=None, mock_provider=None, iv_store=None) -> dict:
     contracts = chain.get("contracts", [])
     # Use ATM contract IV to match L2 and align with the historical IV baseline
     # (IBKR reqHistoricalData OPTION_IMPLIED_VOLATILITY is ATM-weighted, not a chain average).
@@ -428,36 +428,35 @@ def _extract_iv_data(ticker: str, chain: dict, provider, *,
         ivs = [float(c.get("impliedVol", 0.0)) * 100 for c in contracts if c.get("impliedVol") is not None]
         current_iv = round(sum(ivs) / len(ivs), 2) if ivs else None
 
-    def _call_provider(fn, *args):
-        if ib_worker is not None and provider is ib_worker.provider:
-            try:
-                return ib_worker.submit(fn, *args, timeout=20.0)
-            except (TimeoutError, Exception) as exc:
-                logger.warning("IBWorker IV call timed out/failed: %s", exc)
-                return None if fn.__name__ == "get_historical_iv" else []
-        return fn(*args)
-
     history = iv_store.get_iv_history(ticker, 252)
-    if len(history) < 30:
-        hist_source = _call_provider(provider.get_historical_iv, ticker, 365)
-        if hist_source:
-            source_label = "mock" if provider is mock_provider else "ibkr"
-            for h in hist_source:
-                iv_store.store_iv(ticker, h["date"], h["iv"], source=source_label)
-            history = iv_store.get_iv_history(ticker, 252)
+    if len(history) < 30 and hasattr(provider, "get_historical_iv"):
+        try:
+            hist_source = provider.get_historical_iv(ticker, 365)
+            if hist_source:
+                source_label = "mock" if provider is mock_provider else "yfinance"
+                for h in hist_source:
+                    iv_store.store_iv(ticker, h["date"], h["iv"], source=source_label)
+                history = iv_store.get_iv_history(ticker, 252)
+        except Exception as exc:
+            logger.debug("IV history fetch failed for %s: %s", ticker, exc)
 
     ivr_pct = iv_store.compute_ivr_pct(ticker, current_iv) if current_iv is not None else None
-    # Only fetch OHLCV via IBWorker (reqHistoricalData) if our SQLite data is stale (>2 days old).
-    # Fetching on every call saturates IBWorker with historical data requests during parallel
-    # Best Setups scans, causing chain fetch timeouts and circuit breaker trips.
+    # OHLCV: only refresh when SQLite data is stale (>2 days old) to avoid hammering the API
+    # on every analyze call. ohlcv_provider (Tradier) is preferred over the chain provider
+    # because Tradier has a dedicated history endpoint and is already authenticated.
     _ohlcv_stats = iv_store.get_ohlcv_stats(ticker) if iv_store else {}
     _ohlcv_last = _ohlcv_stats.get("last_date")
     from datetime import date as _date
     _ohlcv_stale = (_ohlcv_last is None) or (
         (_date.today() - _date.fromisoformat(_ohlcv_last)).days > 2
     )
-    if _ohlcv_stale and hasattr(provider, "get_ohlcv_daily"):
-        bars = _call_provider(provider.get_ohlcv_daily, ticker, 60)
+    _ohlcv_target = ohlcv_provider or provider
+    if _ohlcv_stale and hasattr(_ohlcv_target, "get_ohlcv_daily"):
+        try:
+            bars = _ohlcv_target.get_ohlcv_daily(ticker, 60)
+        except Exception as _oe:
+            logger.warning("OHLCV fetch failed for %s via %s: %s", ticker, type(_ohlcv_target).__name__, _oe)
+            bars = []
         if bars:
             iv_store.store_ohlcv(ticker, bars)
     hv_20 = iv_store.compute_hv(ticker, 20)
@@ -790,22 +789,17 @@ def _enrich_strategies(strategies: list[dict], underlying: float,
 # ─── Main orchestrator ────────────────────────────────────────────────────────
 
 
-def get_live_price(ticker: str, *, ib_worker, yf_provider) -> float:
-    """Get underlying price via IBWorker (if connected) or yfinance fallback."""
-    if ib_worker.is_connected() and ib_worker.provider:
-        try:
-            return ib_worker.submit(ib_worker.provider.get_underlying_price, ticker, timeout=10.0)
-        except Exception as exc:
-            logger.warning("IBWorker get_underlying_price failed for %s: %s", ticker, exc)
+def get_live_price(ticker: str, *, yf_provider) -> float:
+    """Get underlying price via yfinance. STA/Tradier preferred paths in _resolve_underlying_hint."""
     try:
         return yf_provider.get_underlying_price(ticker)
     except Exception as exc:
-        logger.warning("yfinance get_underlying_price failed for %s: %s", ticker, exc)
+        logger.warning("get_live_price failed for %s: %s", ticker, exc)
         return 0.0
 
 
 def analyze_etf(payload: dict, ticker: str, *,
-                data_svc, ib_worker, yf_provider, mock_provider,
+                data_svc, yf_provider, mock_provider,
                 strategy_ranker, pnl_calculator, iv_store,
                 spy_regime_fn, md_provider=None, tradier_provider=None) -> dict:
     """
@@ -844,15 +838,14 @@ def analyze_etf(payload: dict, ticker: str, *,
     connected = data_source not in {"mock"}
     quality = data_svc.quality_label(data_source, chain)
 
-    iv_provider = mock_provider
-    if data_source in {"ibkr_live", "ibkr_closed", "bod_cache", "ibkr_stale"} and ib_worker.provider is not None:
-        iv_provider = ib_worker.provider
-    elif data_source in {"yfinance", "tradier", "alpaca"}:
-        iv_provider = yf_provider
+    # IV history provider: yfinance for all live sources (IBKR removed Day 68).
+    # OHLCV is handled separately via ohlcv_provider=tradier_provider below.
+    iv_provider = yf_provider if data_source != "mock" else mock_provider
 
     is_etf = ticker in ETF_TICKERS
     ivr_data = _extract_iv_data(ticker, chain, iv_provider,
-                                ib_worker=ib_worker, mock_provider=mock_provider, iv_store=iv_store)
+                                ohlcv_provider=tradier_provider,
+                                mock_provider=mock_provider, iv_store=iv_store)
 
     _fomc_days = _i(payload.get("fomc_days_away"), None) or _days_until_next_fomc()
     _macro_days, _macro_name = _days_until_next_macro()

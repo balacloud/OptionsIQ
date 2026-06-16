@@ -23,42 +23,27 @@ _EOD_TIME = dtime(16, 5)
 logger = logging.getLogger(__name__)
 
 
-def seed_iv_for_ticker(symbol: str, *, ib_worker, yf_provider, iv_store) -> dict:
-    """Seed IV history + OHLCV for one ticker.
+def seed_iv_for_ticker(symbol: str, *, yf_provider, iv_store, tradier_provider=None) -> dict:
+    """Seed OHLCV for one ticker (used for HV computation).
 
-    IV history: IBKR only (OPTION_IMPLIED_VOLATILITY bars). No yfinance fallback —
-    HV computed from prices is not implied volatility and contaminates IVR percentiles.
-    If IBKR is offline, IV seeding is skipped for this ticker.
+    IV history via IBKR removed (IB Gateway dead since Day 56). IV is now accumulated
+    per-analyze-call via MarketData.app. Do not use yfinance HV as IV proxy —
+    HV ≠ IV and contaminates IVR percentiles.
 
-    OHLCV: IBKR primary, yfinance fallback. Price data is correct from both sources.
+    OHLCV: Tradier primary (markets/history) → yfinance fallback.
     """
-    connected = ib_worker.is_connected() and ib_worker.provider is not None
-    hist = []
-    source = "none"
-
-    if connected:
-        try:
-            hist = ib_worker.submit(ib_worker.provider.get_historical_iv, symbol, 365, timeout=30.0)
-            source = "ibkr"
-        except Exception as exc:
-            logger.warning("seed-iv IBKR failed for %s: %s", symbol, exc)
-    else:
-        logger.info("seed-iv %s: IBKR offline — IV seeding skipped (no HV proxy)", symbol)
-
-    for row in hist:
-        iv_store.store_iv(symbol, row["date"], row["iv"], source=source)
-
     ohlcv_rows = 0
     ohlcv_source = "none"
-    if connected:
+
+    if ohlcv_rows == 0 and tradier_provider is not None:
         try:
-            bars = ib_worker.submit(ib_worker.provider.get_ohlcv_daily, symbol, 90, timeout=30.0)
+            bars = tradier_provider.get_ohlcv_daily(symbol, 90)
             if bars:
                 iv_store.store_ohlcv(symbol, bars)
                 ohlcv_rows = len(bars)
-                ohlcv_source = "ibkr"
+                ohlcv_source = "tradier"
         except Exception as exc:
-            logger.warning("seed-iv OHLCV IBKR failed for %s: %s", symbol, exc)
+            logger.warning("seed-iv OHLCV Tradier failed for %s: %s", symbol, exc)
 
     if ohlcv_rows == 0:
         try:
@@ -72,17 +57,15 @@ def seed_iv_for_ticker(symbol: str, *, ib_worker, yf_provider, iv_store) -> dict
 
     return {
         "ticker": symbol,
-        "seeded_days": len(hist),
-        "source": source,
-        "earliest_date": hist[0]["date"] if hist else None,
-        "latest_date": hist[-1]["date"] if hist else None,
+        "seeded_days": 0,
+        "source": "marketdata_app",
         "ohlcv_rows": ohlcv_rows,
         "ohlcv_source": ohlcv_source,
     }
 
 
-def run_eod_batch(*, ib_worker, yf_provider, iv_store) -> dict:
-    """EOD: seed IV + OHLCV for all 16 ETFs. Logs result to batch_run_log."""
+def run_eod_batch(*, yf_provider, iv_store, tradier_provider=None) -> dict:
+    """EOD: seed IV + OHLCV for all ETFs. Logs result to batch_run_log."""
     t0 = time.monotonic()
     tickers = sorted(ETF_TICKERS)
     results = []
@@ -92,14 +75,15 @@ def run_eod_batch(*, ib_worker, yf_provider, iv_store) -> dict:
 
     for i, ticker in enumerate(tickers):
         try:
-            r = seed_iv_for_ticker(ticker, ib_worker=ib_worker, yf_provider=yf_provider, iv_store=iv_store)
+            r = seed_iv_for_ticker(ticker, yf_provider=yf_provider,
+                                   iv_store=iv_store, tradier_provider=tradier_provider)
             results.append(r)
-            logger.info("EOD %s — %d IV days, %d OHLCV rows", ticker, r["seeded_days"], r["ohlcv_rows"])
+            logger.info("EOD %s — %d IV days, %d OHLCV rows (%s)", ticker, r["seeded_days"], r["ohlcv_rows"], r["ohlcv_source"])
         except Exception as exc:
             logger.error("EOD batch: %s failed — %s", ticker, exc)
             errors.append({"ticker": ticker, "error": str(exc)})
         if i < len(tickers) - 1:
-            time.sleep(2)  # IBKR pacing: max ~60 historical requests per 10 min
+            time.sleep(1)  # Tradier rate limit: 200 req/min — 1s gap is sufficient
 
     duration = time.monotonic() - t0
     status = "ok" if not errors else ("partial" if results else "failed")
@@ -120,7 +104,7 @@ def run_eod_batch(*, ib_worker, yf_provider, iv_store) -> dict:
     }
 
 
-def run_bod_batch(*, ib_worker, data_svc, iv_store) -> dict:
+def run_bod_batch(*, data_svc, iv_store) -> dict:
     """BOD: pre-fetch all 16 ETF chains into SQLite cache. Warms cache for day's analysis."""
     t0 = time.monotonic()
     tickers = sorted(ETF_TICKERS)
@@ -179,7 +163,7 @@ def _ran_on(runs: list, batch_type: str, date_str: str, min_duration: float = 1.
     )
 
 
-def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
+def run_startup_catchup(*, data_svc, yf_provider, iv_store, tradier_provider=None) -> None:
     """
     Called once at app startup in a background thread. Fires any BOD/EOD jobs
     that were missed because the backend wasn't running at scheduled time.
@@ -189,7 +173,7 @@ def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
       2. Today's BOD missing + past 9:31 AM → pre-warm chain cache
       3. Today's EOD missing + past 4:05 PM → seed today's closing IV
 
-    Waits 30s first to give IBWorker time to establish its IBKR connection.
+    Waits 30s on startup before firing any missed jobs.
     IB Gateway auth can take 20-30s, so 10s was insufficient.
     Note: the APScheduler BOD/EOD jobs fire unconditionally at their scheduled
     times — this function only fills gaps when the app wasn't running.
@@ -211,8 +195,9 @@ def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
         if not _ran_on(runs, "eod", prev_str):
             logger.info("Startup catch-up: EOD missing for %s — seeding IV history now", prev_str)
             try:
-                run_eod_batch(ib_worker=ib_worker, yf_provider=yf_provider, iv_store=iv_store)
-                runs = iv_store.get_batch_runs(limit=30)  # refresh for subsequent checks
+                run_eod_batch(yf_provider=yf_provider,
+                              iv_store=iv_store, tradier_provider=tradier_provider)
+                runs = iv_store.get_batch_runs(limit=30)
             except Exception as exc:
                 logger.error("Startup catch-up prev-day EOD failed: %s", exc)
 
@@ -220,7 +205,7 @@ def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
         if current_time >= _BOD_TIME and not _ran_on(runs, "bod", today_str):
             logger.info("Startup catch-up: BOD missed today — firing now")
             try:
-                run_bod_batch(ib_worker=ib_worker, data_svc=data_svc, iv_store=iv_store)
+                run_bod_batch(data_svc=data_svc, iv_store=iv_store)
                 runs = iv_store.get_batch_runs(limit=30)
             except Exception as exc:
                 logger.error("Startup catch-up BOD failed: %s", exc)
@@ -229,7 +214,8 @@ def run_startup_catchup(*, ib_worker, data_svc, yf_provider, iv_store) -> None:
         if current_time >= _EOD_TIME and not _ran_on(runs, "eod", today_str):
             logger.info("Startup catch-up: EOD missed today — firing now")
             try:
-                run_eod_batch(ib_worker=ib_worker, yf_provider=yf_provider, iv_store=iv_store)
+                run_eod_batch(yf_provider=yf_provider,
+                              iv_store=iv_store, tradier_provider=tradier_provider)
             except Exception as exc:
                 logger.error("Startup catch-up today EOD failed: %s", exc)
 

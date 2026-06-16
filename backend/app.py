@@ -18,7 +18,6 @@ from constants import STA_BASE_URL, ETF_TICKERS, ETF_OPTIONS_LIQUID_TIER1
 from sector_scan_service import _spy_regime
 from data_service import DataService
 from gate_engine import GateEngine
-from ib_worker import IBWorker
 from iv_store import IVStore
 from alpaca_provider import AlpacaNotAvailableError, AlpacaProvider
 from tradier_provider import TradierProvider, TradierNotAvailableError
@@ -52,8 +51,6 @@ gate_engine = GateEngine()
 strategy_ranker = StrategyRanker()
 pnl_calculator = PnLCalculator()
 
-# Phase 2+: IBWorker (single IB() thread) + DataService (cascade + SQLite cache + CB)
-_ib_worker = IBWorker()
 _yf_provider = YFinanceProvider()
 try:
     _alpaca_provider = AlpacaProvider()
@@ -81,7 +78,6 @@ else:
     logger.warning("TradierProvider: TRADIER_KEY not set — Tradier fallback disabled")
 
 data_svc = DataService(
-    ib_worker=_ib_worker,
     yf_provider=_yf_provider,
     mock_provider=mock_provider,
     alpaca_provider=_alpaca_provider,
@@ -99,12 +95,13 @@ from apscheduler.triggers.cron import CronTrigger
 
 _scheduler = BackgroundScheduler(timezone="America/New_York")
 _scheduler.add_job(
-    lambda: run_bod_batch(ib_worker=_ib_worker, data_svc=data_svc, iv_store=iv_store),
+    lambda: run_bod_batch(data_svc=data_svc, iv_store=iv_store),
     CronTrigger(day_of_week="mon-fri", hour=9, minute=31),
     id="bod_batch", replace_existing=True,
 )
 _scheduler.add_job(
-    lambda: run_eod_batch(ib_worker=_ib_worker, yf_provider=_yf_provider, iv_store=iv_store),
+    lambda: run_eod_batch(yf_provider=_yf_provider,
+                          iv_store=iv_store, tradier_provider=_tradier_provider),
     CronTrigger(day_of_week="mon-fri", hour=16, minute=5),
     id="eod_batch", replace_existing=True,
 )
@@ -112,8 +109,9 @@ _scheduler.start()
 logger.info("Scheduler started — BOD 09:31 ET, EOD 16:05 ET (Mon-Fri)")
 
 run_startup_catchup(
-    ib_worker=_ib_worker, data_svc=data_svc,
+    data_svc=data_svc,
     yf_provider=_yf_provider, iv_store=iv_store,
+    tradier_provider=_tradier_provider,
 )
 
 
@@ -121,19 +119,15 @@ run_startup_catchup(
 
 @app.get("/api/health")
 def health():
-    ib_status = data_svc.ibkr_status()
-    return jsonify(
-        {
-            "status": "ok",
-            "ibkr_connected": ib_status["connected"],
-            "ibkr_error": ib_status.get("error"),
-            "circuit_breaker": ib_status.get("circuit_breaker"),
-            "mock_mode": not ib_status["connected"],
-            "tradier_ok": _tradier_ok,
-            "tradier_error": _tradier_error,
-            "version": VERSION,
-        }
-    )
+    return jsonify({
+        "status": "ok",
+        "ibkr_connected": False,
+        "ibkr_error": "IB Gateway removed — Tradier is primary source",
+        "mock_mode": False,
+        "tradier_ok": _tradier_ok,
+        "tradier_error": _tradier_error,
+        "version": VERSION,
+    })
 
 
 @app.post("/api/options/analyze")
@@ -153,7 +147,7 @@ def analyze_options():
     try:
         result = analyze_etf(
             payload, ticker,
-            data_svc=data_svc, ib_worker=_ib_worker,
+            data_svc=data_svc,
             yf_provider=_yf_provider, mock_provider=mock_provider,
             strategy_ranker=strategy_ranker, pnl_calculator=pnl_calculator,
             iv_store=iv_store, spy_regime_fn=_spy_regime,
@@ -192,14 +186,10 @@ def chain_debug(ticker: str):
 def ivr_debug(ticker: str):
     """Debug endpoint — returns IV/HV data via DataService."""
     symbol = ticker.upper()
-    chain, data_source = data_svc.get_chain(symbol, profile="full")
-    iv_provider = (
-        _ib_worker.provider
-        if data_source in {"ibkr_live", "ibkr_cache", "ibkr_stale"} and _ib_worker.provider
-        else _yf_provider
-    )
-    data = _extract_iv_data(symbol, chain, iv_provider,
-                            ib_worker=_ib_worker, mock_provider=mock_provider, iv_store=iv_store)
+    chain, _ = data_svc.get_chain(symbol, profile="full")
+    data = _extract_iv_data(symbol, chain, _yf_provider,
+                            ohlcv_provider=_tradier_provider,
+                            mock_provider=mock_provider, iv_store=iv_store)
     return jsonify(data)
 
 
@@ -242,7 +232,7 @@ def list_paper_trades():
     trades = iv_store.list_paper_trades()
     out = []
     for t in trades:
-        underlying = get_live_price(t["ticker"], ib_worker=_ib_worker, yf_provider=_yf_provider)
+        underlying = get_live_price(t["ticker"], yf_provider=_yf_provider)
         if t["direction"] == "sell_put":
             pnl = (float(t["premium"]) - max(0.0, float(t["strike"]) - underlying)) * 100 * float(t["lots"])
         else:
@@ -255,21 +245,23 @@ def list_paper_trades():
 def seed_iv(ticker: str):
     """Seeds IV history for a single ticker."""
     return jsonify(seed_iv_for_ticker(
-        ticker.upper(), ib_worker=_ib_worker, yf_provider=_yf_provider, iv_store=iv_store
+        ticker.upper(), yf_provider=_yf_provider, iv_store=iv_store,
+        tradier_provider=_tradier_provider,
     ))
 
 
 @app.post("/api/admin/seed-iv/all")
 def seed_iv_all():
     """EOD job — seeds IV history + OHLCV for all 16 ETFs. Delegates to batch_service."""
-    result = run_eod_batch(ib_worker=_ib_worker, yf_provider=_yf_provider, iv_store=iv_store)
+    result = run_eod_batch(yf_provider=_yf_provider,
+                           iv_store=iv_store, tradier_provider=_tradier_provider)
     return jsonify(result)
 
 
 @app.post("/api/admin/warm-cache")
 def warm_cache():
     """BOD job — pre-fetches all 16 ETF chains into SQLite cache."""
-    result = run_bod_batch(ib_worker=_ib_worker, data_svc=data_svc, iv_store=iv_store)
+    result = run_bod_batch(data_svc=data_svc, iv_store=iv_store)
     return jsonify(result)
 
 
@@ -352,7 +344,7 @@ def data_health():
     """Data provenance — live status of every data source. No IBKR calls; reads cached state."""
     return jsonify(build_data_health(
         iv_store=iv_store, data_svc=data_svc,
-        ib_worker=_ib_worker, md_provider=_md_provider, alpaca_provider=_alpaca_provider,
+        md_provider=_md_provider, alpaca_provider=_alpaca_provider,
     ))
 
 

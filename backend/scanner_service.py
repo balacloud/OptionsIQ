@@ -1,17 +1,15 @@
 """
-scanner_service.py — Reads IBKR scanner data written by the /etf-scan Claude command.
+scanner_service.py — Reads scanner cache written by the /etf-scan Claude command (archived).
 
-The /etf-scan command parses an IBKR Market Screener screenshot and writes
-backend/data/scanner_cache.json with live IV rank, IV/HV ratio, and option
-volume data for all 15 ETFs. This module reads that cache and provides it to
-best_setups_service.py to fill data gaps (KI-101: IV/HV null when chain IV missing).
+The /etf-scan command (archived Day 68) wrote backend/data/scanner_cache.json with
+IV rank, IV/HV ratio, and option volume. This module reads that cache for
+best_setups_service.py fallback (KI-101). Returns {} gracefully when cache absent.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
-import socket
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -53,62 +51,6 @@ def get_scanner_data(ticker: str) -> dict:
     except (KeyError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("scanner_cache read error: %s", exc)
         return {}
-
-
-def fetch_live_iv_hv_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
-    """
-    Fetch IV + HV for ETFs via IBKR reqHistoricalData (Historical Data Farm).
-
-    Uses OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY bar data — request-response,
-    no streaming subscription required. Returns last daily bar close.
-    Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
-    Returns {} gracefully when IB Gateway is offline or unavailable.
-    """
-    if ib_worker is None or ib_worker.provider is None:
-        return {}
-    if not tickers:
-        return {}
-    # Quick port check — avoid 12s of client-ID scan when IB Gateway is offline
-    _host = os.getenv("IBKR_HOST", "127.0.0.1")
-    _port = int(os.getenv("IBKR_PORT", "4001"))
-    try:
-        with socket.create_connection((_host, _port), timeout=0.5):
-            pass
-    except OSError:
-        logger.debug("fetch_live_iv_hv_batch: IB Gateway not reachable — skipping")
-        return {}
-    logger.debug("fetch_live_iv_hv_batch: attempting IBKR histData batch for %d tickers", len(tickers))
-    try:
-        result = ib_worker.submit(
-            ib_worker.provider.get_iv_hv_batch,
-            tickers,
-            timeout=90.0,  # reqHistoricalData: ~2s/ticker × 7 tickers × 2 calls + buffer
-        )
-        populated = {k: v for k, v in result.items() if v.get("iv") is not None}
-        if populated:
-            logger.info("fetch_live_iv_hv_batch: got IV for %d/%d tickers: %s",
-                        len(populated), len(result), list(populated.keys()))
-        else:
-            logger.debug("fetch_live_iv_hv_batch: 0/%d tickers returned IV", len(result))
-        return result
-    except Exception as exc:
-        logger.warning("fetch_live_iv_hv_batch failed: %s", exc)
-        return {}
-
-
-def fetch_scanner_subscription_batch(tickers: list[str], ib_worker) -> dict[str, dict]:
-    """
-    Fetch IV/HV for Best Setups scan via IBKR reqHistoricalData.
-
-    reqScannerSubscription was tested live (Day 54) and found unsuitable: market-wide
-    scanners stream the top-50 of ~12,000 US stocks; sector ETFs with moderate IV never
-    rank in the top 50. reqHistoricalData (OPTION_IMPLIED_VOLATILITY + HISTORICAL_VOLATILITY)
-    is request-response, reliable, and ~2s/ticker — the correct path for targeted ETF data.
-
-    Returns dict[ticker → {iv, hv, iv_hv_pct, iv_hv_ratio, opt_volume}].
-    put_call_volume is not available via this path (always None in live_scanner).
-    """
-    return fetch_live_iv_hv_batch(tickers, ib_worker)
 
 
 def scanner_cache_age_hours() -> float | None:

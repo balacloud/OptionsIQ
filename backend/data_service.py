@@ -1,19 +1,15 @@
 """
 OptionsIQ — Data Service
 
-Provider selection: BOD cache → Tradier (real-time REST) → stale cache → Alpaca → yfinance → Mock
-IBKR live removed from real-time path (Day 39). IBKR only called by batch jobs in batch_service.py.
-See docs/stable/ARCH_DECISION_TRADIER_PRIMARY.md for full rationale and revert instructions.
-Persistent SQLite chain cache survives Flask restarts (TTL per constants.py).
-Circuit breaker: 2 consecutive IBKR failures → 45s cooldown.
+Provider cascade: BOD cache → Tradier (real-time REST) → stale cache → Alpaca → yfinance → Mock
+IB Gateway permanently removed (Day 68 cleanup). Tradier is the sole live chain source.
 
-Provider quality labels returned:
-  "bod_cache"   — served from BOD pre-warm cache (Tradier-sourced at 9:31 AM)
-  "tradier"     — Tradier REST real-time (primary live source — no IB Gateway needed)
-  "ibkr_stale"  — beyond TTL but Tradier also failed
-  "alpaca"      — Alpaca REST fallback (15-min delayed, real greeks + OI)
-  "yfinance"    — yfinance fallback
-  NOTE: "ibkr_live" / "ibkr_closed" no longer emitted — IBKR removed from live path.
+Provider quality labels:
+  "bod_cache"   — BOD pre-warm cache (Tradier-sourced at 9:31 AM)
+  "tradier"     — Tradier REST real-time (primary live source)
+  "ibkr_stale"  — stale BOD cache (Tradier also failed)
+  "alpaca"      — Alpaca REST fallback (15-min delayed)
+  "yfinance"    — yfinance emergency fallback
   "mock"        — dev/CI only
 """
 from __future__ import annotations
@@ -31,8 +27,6 @@ from constants import (
     DEFAULT_MIN_DTE,
     IB_CB_COOLDOWN_SEC,
     IB_CB_FAILURE_THRESHOLD,
-    IB_WORKER_TIMEOUT_FULL,
-    IB_WORKER_TIMEOUT_SMART,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,19 +35,17 @@ logger = logging.getLogger(__name__)
 class DataService:
     """
     Central data access layer. All Flask routes should use this class —
-    never call IBWorker or providers directly.
+    never call providers directly — all chain fetches go through get_chain().
     """
 
     def __init__(
         self,
-        ib_worker=None,
         yf_provider=None,
         mock_provider=None,
         alpaca_provider=None,
         tradier_provider=None,
         db_path: str | None = None,
     ) -> None:
-        self.ib_worker = ib_worker
         self.yf_provider = yf_provider
         self.mock_provider = mock_provider
         self.alpaca_provider = alpaca_provider
@@ -68,10 +60,6 @@ class DataService:
         self._cb_failures = 0
         self._cb_open_until = 0.0
         self._cb_lock = threading.Lock()
-
-        # Background refresh dedup
-        self._refresh_lock = threading.Lock()
-        self._refreshing: set[str] = set()
 
     # ─── DB init ─────────────────────────────────────────────────────────────
 
@@ -189,59 +177,8 @@ class DataService:
             )
             return cur.rowcount
 
-    # ─── Timeout helper ───────────────────────────────────────────────────────
-
-    @staticmethod
-    def _timeout(profile: str) -> float:
-        return float(
-            IB_WORKER_TIMEOUT_FULL
-            if (profile or "smart").lower() == "full"
-            else IB_WORKER_TIMEOUT_SMART
+    # ─── Public API ───────────────────────────────────────────────────────────
         )
-
-    # ─── Background refresh ───────────────────────────────────────────────────
-
-    def _refresh_async(
-        self,
-        ticker: str,
-        profile: str,
-        direction: str | None,
-        underlying_hint: float | None,
-        target_price: float | None,
-        min_dte: int,
-    ) -> None:
-        key = self._cache_key(ticker, profile, direction)
-        with self._refresh_lock:
-            if key in self._refreshing:
-                return
-            self._refreshing.add(key)
-
-        def _run() -> None:
-            try:
-                if self.ib_worker is None or self.ib_worker.provider is None:
-                    return
-                if not self._cb_allowed():
-                    return
-                chain = self.ib_worker.submit(
-                    self.ib_worker.provider.get_options_chain,
-                    ticker,
-                    underlying_hint,
-                    direction,
-                    target_price,
-                    profile,
-                    min_dte,
-                    timeout=self._timeout(profile),
-                )
-                self._cache_set(ticker, chain, profile, direction)
-                self._cb_record(success=True)
-                logger.debug("Background chain refresh done for %s", key)
-            except Exception as exc:
-                logger.debug("Background chain refresh skipped for %s: %s", key, exc)
-            finally:
-                with self._refresh_lock:
-                    self._refreshing.discard(key)
-
-        threading.Thread(target=_run, daemon=True).start()
 
     def get_cache_stats(self, tickers: list[str]) -> dict:
         """Return chain cache age/freshness per ticker for data provenance."""
@@ -356,27 +293,11 @@ class DataService:
         raise RuntimeError(f"No chain data available for {ticker}")
 
     def get_underlying_price(self, ticker: str, hint: float | None = None) -> float:
-        """Returns underlying price from best available source."""
+        """Returns underlying price. Tradier/STA preferred paths are in _resolve_underlying_hint."""
         ticker = ticker.upper()
         if hint and float(hint) > 0:
             return float(hint)
 
-        # IBKR
-        if (
-            self.ib_worker is not None
-            and self.ib_worker.provider is not None
-            and self._cb_allowed()
-        ):
-            try:
-                return self.ib_worker.submit(
-                    self.ib_worker.provider.get_underlying_price,
-                    ticker,
-                    timeout=10.0,
-                )
-            except Exception as exc:
-                logger.warning("IBKR price error for %s: %s", ticker, exc)
-
-        # yfinance
         if self.yf_provider is not None:
             try:
                 return self.yf_provider.get_underlying_price(ticker)
@@ -417,13 +338,5 @@ class DataService:
         return "partial"
 
     def ibkr_status(self) -> dict:
-        """Returns IBKR connection status for /api/health."""
-        if self.ib_worker is None:
-            return {"connected": False, "error": "IBWorker not initialised"}
-        error = self.ib_worker.init_error
-        connected = self.ib_worker.is_connected()
-        return {
-            "connected": connected,
-            "error": error,
-            "circuit_breaker": self.cb_status(),
-        }
+        """IB Gateway removed Day 68 — always returns disconnected."""
+        return {"connected": False, "error": "IB Gateway removed — Tradier is primary source"}

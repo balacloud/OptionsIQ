@@ -12,9 +12,9 @@ const GATE_KB = {
   ivr_seller: {
     category: 'pricing',
     question: 'Is premium expensive enough to sell?',
-    passAnswer: 'YES — IVR ≥ 35%: IV is elevated enough to collect meaningful premium for selling.',
-    failAnswer: 'NO — IVR < 35%: IV is too low, meaning you\'re selling options cheaply for the risk you\'re taking.',
-    why: 'When you sell options, high IV means you get paid more. The 35% IVR threshold (tastylive empirical) balances trade frequency vs premium quality. One bad move can wipe out several wins if premium is thin.',
+    passAnswer: 'YES — IVR ≥ 40%: IV is elevated — you are getting paid well to take on this risk.',
+    failAnswer: 'NO or WARN — IVR 35–40%: borderline premium edge, size down. IVR < 35%: too thin to sell.',
+    why: 'When you sell options, high IV means you collect more credit. The 40% IVR threshold (peer review consensus Day 68) ensures meaningful edge. IVR 35–40% is tradeable but warrants smaller size — one bad fill at thin premium can erase multiple wins.',
   },
   hv_iv: {
     category: 'pricing',

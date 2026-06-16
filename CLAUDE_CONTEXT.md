@@ -1,7 +1,7 @@
 # OptionsIQ — Claude Context
-> **Last Updated:** Day 68 (Jun 15, 2026)
-> **Current Version:** v0.36.0
-> **Project Phase:** Peer review calibration complete — IVR seller raised 35→40 + warn band 35–40%, EM distance ratio labels fixed (x EM not σ), TQQQ gate rewritten with 4 separate conditions (IVR/VRP/skew/VIX), GLD tenor audit confirmed. 110 tests. 0 CRITICAL/HIGH/MEDIUM.
+> **Last Updated:** Day 69 (Jun 16, 2026)
+> **Current Version:** v0.36.1
+> **Project Phase:** Audit + Tradier OHLCV fix + dead IBKR code removed. ib_worker.py + ibkr_provider.py deleted. HV now computed from Tradier price history. 110 tests. 0 CRITICAL/HIGH/MEDIUM.
 
 ---
 
@@ -11,8 +11,8 @@
 1. `CLAUDE_CONTEXT.md` ← this file — current state, known issues, next priorities
 2. `docs/stable/GOLDEN_RULES.md` — constraints and process rules
 3. `docs/stable/ROADMAP.md` — phase status, done vs pending
-4. `docs/status/PROJECT_STATUS_DAY68_SHORT.md` — latest day status (update filename each day)
-5. `docs/versioned/KNOWN_ISSUES_DAY68.md` — open bugs and severity (update filename each day)
+4. `docs/status/PROJECT_STATUS_DAY69_SHORT.md` — latest day status (update filename each day)
+5. `docs/versioned/KNOWN_ISSUES_DAY69.md` — open bugs and severity (update filename each day)
 6. `docs/stable/API_CONTRACTS.md` — only if touching API endpoints
 
 After reading, state: current version, current day's top priority, any blockers. Then ask: "What would you like to focus on today?"
@@ -244,6 +244,7 @@ Open (LOW):
 1. **KI-059:** single-stock bear untested — DEFERRED. Stocks return 400. ETF-only going forward.
 2. **KI-099:** buy_call direction for Leading/Improving ETFs — deferred, single-leg only.
 
+Resolved (Day 69): Audit H1 (GateExplainer IVR 35→40), M1 (framework stale refs), L1 (ibkr_cache label). Tradier OHLCV wired. ib_worker.py + ibkr_provider.py deleted.
 Resolved (Day 68): No KI resolutions — peer review calibration session.
 Resolved (Day 67): No KI resolutions — research + skill session.
 Resolved (Day 66): No KI resolutions — gate philosophy + new feature session.
@@ -286,6 +287,7 @@ Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_
 | Day 28 | Apr 22–26, 2026 | **Gate robustness — ChatGPT-driven fixes (v0.20.0).** KI-079 resolved: ETF_KEY_HOLDINGS (16 ETFs) + COMPANY_EARNINGS (52 companies, Q2–Q4 2026) + _etf_holdings_at_risk() + _etf_holdings_earnings_gate() wired into all 4 ETF direction tracks. KI-080 resolved: SPREAD_DATA_FAIL_PCT=20.0 in constants, spread_pct exposed on liquidity gate dict, apply_etf_gate_adjustments() now keeps blocking=True above 20%. FOMC gate fixed: now warns whenever fomc_days < dte (inside holding window) not just ≤10 days imminent — caught by ChatGPT on XLK sell_put (FOMC April 29, DTE 30, gate was passing). KI-082 logged: credit-to-width ratio ($0.05 on $1-wide = 5%, industry min ~20%). Tests: 27→29. Two ChatGPT stress tests (XLK + XLY) validated all gate fixes live. Feature idea logged: pre-analysis prompts in UI for Day 29. |
 | Day 29 | Apr 27, 2026 | **Data observability + gate hardening (v0.21.0).** KI-082 resolved: MIN_CREDIT_WIDTH_RATIO=0.33 (tastylive/Sinclair empirical), _credit_width() in strategy_ranker, wired into bear_call/bull_put R1/R2, 4 tests. HV/IV VRP gate: _etf_hv_iv_seller_gate() — sell only when IV>HV (Sinclair volatility risk premium). VIX regime gate: <15 warn, >30 warn, >40 fail, wired into seller tracks. IVR seller threshold: 50→35 (tastylive: IVR>50 sacrifices 60-70% frequency). FOMC imminent fix: <5 days now warns (was falling through). Multi-LLM synthesis doc created. Best Setups tab: parallel ETF scan, manual Run Scan, watchlist with IVR (fixed key mismatch iv_data→ivr_data). Data Health tab: GET /api/data-health — source health + IV history + chain cache + field-level resolution (7 fields × 15 ETFs). DataProvenance.jsx built. Pre-analysis prompts + Paper Trade Dashboard shipped (SQLite-backed). Tab state retention: display:none pattern (preserves scan state across switches). Signal board display:grid fix (was overridden by display:block). KI-083 (XLE HV=413% from corrupted OHLCV) + KI-084 (XLC/XLRE no OHLCV) discovered via data health tab. FOMC confirmed 2 days away (Apr 29) — explains all Best Setups blocked. |
 | Day 30 | Apr 28, 2026 | **McMillan Stress Check + OHLCV cleanup (v0.22.0).** Gemini book-audit driven. compute_max_21d_move(ticker) in iv_store.py — worst 21-day drawdown + best 21-day rally. _historical_stress_gate(p, direction) in gate_engine — WARN (non-blocking) if sell_put strike inside historical worst-drawdown zone; sell_call if inside worst-rally zone. gate_payload gets stress fields. OHLCV cleanup: XLE 18 rows deleted (close>80, HV 413%→17%). IWM 17 rows deleted (close<150, worst_dd 65%→9.2%). Tests: 29→33. KI-083 + KI-IWM resolved. KI-087 logged (XLRE/SCHB 0 OHLCV). |
+| Day 69 | Jun 16, 2026 | **Audit + Tradier OHLCV fix + dead code removal (v0.36.1).** Targeted audit 0C/1H/1M/1L, all fixed. Tradier OHLCV wired as primary for HV. ib_worker.py + ibkr_provider.py deleted. IBWorker stripped from 8 files. P0 live /chartreview passed (NO_TRADE on FOMC day). 110 tests. |
 | Day 68 | Jun 15, 2026 | **Peer review calibration (v0.36.0).** IVR seller threshold raised 35→40 + warn band 35–40% added (IVR_SELLER_WARN_MIN=35). EM distance ratio labels fixed: thresholds 0.75/0.50, "x EM" not "σ OTM". TQQQ satellite gate rewritten: 4 separate conditions (IVR≥50, IV/HV≥1.15, VIX<18, skew<8pts), can now return PASS. GLD tenor audit confirmed correct. GATE_REFERENCE.md updated. 110 tests (+10). |
 | Day 67 | Jun 6–10, 2026 | **Peer review + blended skill + Playbook tab (v0.35.9).** 3-model gate review complete (Perplexity/Gemini/ChatGPT). chartreview.md rewritten as 3-in-1 blended skill. UI context boxes 3→2. Playbook tab added: 7 macro regime patterns (Tier 1/2/3), IDLE/WATCH/ACTIVE toggles, regime stacking, decision matrix. Macro research docs saved. 100 tests. |
 | Day 66 | Jun 5, 2026 | **Gate philosophy + skew gate + Marcus Webb review (v0.35.8).** skew_flow gate added to sell_put + sell_call (WARN only — institutional IV skew signal). Marcus Webb adversarial review: ivr_seller + market_regime_seller downgraded to WARN (Rule 23 — double-gatekeeping). sell_put hard blocks: 9→6. GATE_REFERENCE.md + QUANT_PERSONA.md created. Peer review prompts ready (Perplexity/ChatGPT/Gemini). Pine Script upgraded to v6, pure ASCII, direction-aware gate verdicts. /chartreview live-tested on QQQ. 100 tests. |
@@ -326,25 +328,23 @@ Resolved (Day 60): No KI resolutions — Day 60 was a new feature session (scan_
 
 ---
 
-## Next Session Priorities (Day 69)
+## Next Session Priorities (Day 70)
 
-### P0 — Live end-to-end test with blended /chartreview
-Run morning workflow: `/ibkr-scan` → `/chartreview` (blended 3-in-1 skill, paste screenshot + SCAN CONTEXT) → paste both context blocks into OptionsIQ → verify direction verdict matches backend recommendation. Carried over from Day 68.
+### P0 — Test the cleanup live
+Restart backend, verify no ImportError, hit `/api/health`, run `POST /api/options/analyze` on QQQ sell_put. Confirm `data_source="tradier"` and `hv_20` is populated (Tradier OHLCV path live).
 
-### P1 — Verify IVR calibration live
-After running /ibkr-scan, run analysis on an ETF with IVR in 35–40 range. Confirm the gate shows WARN (not PASS). Verify the 4-condition TQQQ gate output when ticker=TQQQ.
+### P1 — GLD skew inversion flag
+`gate_engine._skew_flow_gate()`: GLD skew inverts during gold rallies. Add GLD-specific branch for sell_call skew signal. ~10 lines.
 
-### P2 — GLD skew inversion flag (peer review MEDIUM)
-`gate_engine.py _skew_flow_gate()`: GLD calls get bid above puts during gold rallies (inverted skew vs equity ETFs). Add GLD-specific branch to invert the sell_call skew signal check. ~10 lines.
+### P2 — XLF post-FOMC re-entry check
+FOMC Jun 16-17. Check `/ibkr-scan` Jun 17 — if IV/HV recovers > 1.10 and IVR climbs → XLF sell_put candidate.
 
 ### P3 — Frontend redesign (backlog)
-Warnings-only gate display, one trade per screen, cleaner aesthetic. Low priority.
+Warnings-only gate display, one trade per screen. Low priority.
 
 ### Reference
-- `docs/versioned/KNOWN_ISSUES_DAY68.md` — current issue list
-- `docs/status/PROJECT_STATUS_DAY68_SHORT.md` — Day 68 summary
-- `docs/stable/GATE_REFERENCE.md` — complete gate inventory (updated Day 68)
-- `docs/stable/QUANT_PERSONA.md` — Marcus Webb persona for gate review
+- `docs/versioned/KNOWN_ISSUES_DAY69.md` — current issue list
+- `docs/status/PROJECT_STATUS_DAY69_SHORT.md` — Day 69 summary
+- `docs/stable/GATE_REFERENCE.md` — gate inventory (updated Day 68)
 - `skills/ibkr-scan.md` — MCP-powered morning scan
-- `skills/chartreview.md` — blended 3-in-1 skill (chart + catalyst + direction verdict)
-- `skills/catalyst-check.md` — catalyst risk check (standalone)
+- `skills/chartreview.md` — blended 3-in-1 skill
