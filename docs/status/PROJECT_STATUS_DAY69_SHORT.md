@@ -68,9 +68,21 @@ Ran morning workflow successfully on FOMC day (Jun 16):
 
 ---
 
+### Live Test Results (post-commit)
+All 5 checks passed:
+- Import test: ✅ no ModuleNotFoundError after deleting ib_worker.py + ibkr_provider.py
+- `/api/health`: ✅ `tradier_ok: true`, `ibkr_error: "IB Gateway removed"`
+- `data_source`: ✅ `"tradier"` in analyze response
+- `hv_20`: ✅ `28.23` populated (existing SQLite), `28.68` after forced Tradier OHLCV refresh
+- Syntax fix: stray `)` in data_service.py line 181 caught by import test — fixed commit 1a537c1
+
+**Lesson:** unit tests pass but app crashes on import — always run `python3 -c "import app"` after structural refactors.
+
+---
+
 ## Next Session Priorities (Day 70)
 
-### P0 — Test the cleanup live
+### P0 — ~~Test the cleanup live~~ ✅ DONE
 Restart backend, hit `/api/health`, run analyze on QQQ sell_put, confirm:
 - `data_source = "tradier"` in response
 - `hv_20` is populated (Tradier OHLCV path working)

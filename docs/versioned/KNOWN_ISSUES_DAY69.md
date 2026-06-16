@@ -37,5 +37,10 @@ now uses same source as chains.
 IB Gateway dead since Day 56. 1000+ lines of dead code removed across 8 service files.
 `scanner_service.py` IBWorker functions stripped (kept `get_scanner_data()` for cache reads).
 
+### Syntax error in data_service.py from dead code removal ✅
+Stray `)` left on line 181 after removing `_timeout()` method. Caused `SyntaxError` on
+startup — caught immediately by live import test. Fixed and pushed as separate commit 1a537c1.
+This confirms: always run import test after structural refactors, not just unit tests.
+
 ## Audit Health
 **0 CRITICAL / 0 HIGH / 0 MEDIUM** — Safe to paper trade.
